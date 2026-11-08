@@ -1,0 +1,1483 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>拾藏 · 手机壳原型</title>
+<!--
+  PROTOTYPE — throwaway. 不是产品 UI，不接后端，不持久化。
+  问题：MVP 手机消费壳的信息架构应该长什么样？
+  3 个结构变体：A Library-first / B Now Playing / C Queue → Player。
+  已选方向：C 作为列表；点开 Item 进入 B；B 的 transcript 就地展开/收起。
+  切换：?variant=A|B|C，底部原型栏或键盘 ←/→。
+  Q10 / Media Session / 锁屏播放不在本原型验证。
+-->
+<style>
+  :root {
+    --paper: #f4efe6;
+    --paper-2: #fbf8f2;
+    --ink: #1f1d1a;
+    --muted: #746e64;
+    --line: #ddd5c8;
+    --accent: #b5462f;
+    --accent-soft: #e8c9bf;
+    --green: #2f5d50;
+    --gold: #b58a2f;
+    --player: #1d1b18;
+    --white: #fffdf8;
+    --serif: "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC", Georgia, serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    --radius: 18px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    background: #e8e1d6;
+    color: var(--ink);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .icon { display: inline-flex; width: 20px; height: 20px; flex: none; }
+  .icon svg { width: 100%; height: 100%; display: block; }
+  .muted { color: var(--muted); }
+
+  /* prototype chrome */
+  .proto-badge {
+    position: fixed; top: 12px; left: 12px; z-index: 1000;
+    background: var(--ink); color: var(--paper);
+    padding: 7px 10px; border-radius: 999px;
+    font-size: 10px; letter-spacing: .12em; font-weight: 700;
+  }
+  .proto-state {
+    position: fixed; top: 12px; right: 12px; z-index: 1000;
+    background: var(--white); border: 1px solid var(--line); border-radius: 999px;
+    padding: 4px 8px; display: flex; align-items: center; gap: 6px;
+    font-size: 11px; color: var(--muted); box-shadow: 0 4px 18px rgba(31,29,26,.08);
+  }
+  .proto-state select { border: 0; background: transparent; font-size: 11px; color: var(--ink); padding: 2px; }
+  .proto-bar {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1000;
+    background: var(--ink); color: var(--paper);
+    border-radius: 999px; padding: 5px;
+    display: flex; align-items: center; gap: 4px;
+    box-shadow: 0 16px 40px rgba(31,29,26,.28);
+    max-width: calc(100vw - 24px);
+  }
+  .proto-bar button {
+    width: 34px; height: 34px; border-radius: 50%; border: 0;
+    background: transparent; color: var(--paper); font-size: 22px; line-height: 1;
+    display: grid; place-items: center;
+  }
+  .proto-bar button:hover { background: rgba(255,255,255,.12); }
+  .proto-bar .label { min-width: 150px; text-align: center; line-height: 1.25; padding: 0 4px; }
+  .proto-bar .label strong { display: block; font-size: 11px; letter-spacing: .12em; color: var(--accent-soft); }
+  .proto-bar .label span { display: block; font-size: 11px; color: var(--paper); }
+  .proto-bar .key { font-size: 9px; color: rgba(255,255,255,.45); padding-right: 6px; white-space: nowrap; }
+
+  .stage {
+    min-height: 100dvh;
+    display: flex; flex-direction: column; align-items: center;
+    padding: 64px 18px 112px;
+    background-image:
+      radial-gradient(circle at 18% 8%, rgba(255,255,255,.55), transparent 38%),
+      repeating-linear-gradient(0deg, transparent 0 31px, rgba(31,29,26,.035) 31px 32px);
+  }
+  .phone-frame {
+    width: min(420px, 100vw);
+    height: min(820px, calc(100dvh - 176px));
+    background: #111;
+    border-radius: 32px;
+    padding: 6px;
+    box-shadow: 0 28px 70px rgba(31,29,26,.25);
+  }
+  .phone {
+    position: relative;
+    width: 100%; height: 100%;
+    border-radius: 27px;
+    overflow: hidden;
+    background: var(--paper);
+    display: flex; flex-direction: column;
+  }
+  .variant-note {
+    width: min(420px, 100vw);
+    margin: 12px 0 0;
+    font-size: 12px; line-height: 1.55; color: #5d574d; text-align: center;
+  }
+
+  /* shared: covers, buttons, chips */
+  .cover {
+    position: relative; overflow: hidden; flex: none;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--cover-a, #3a3731), var(--cover-b, #1f1d1a));
+    color: var(--white);
+    display: grid; place-items: center;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.12);
+  }
+  .cover::after {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+      radial-gradient(circle at 22% 18%, rgba(255,255,255,.22), transparent 34%),
+      repeating-linear-gradient(45deg, transparent 0 8px, rgba(255,255,255,.05) 8px 9px);
+    pointer-events: none;
+  }
+  .cover span { position: relative; z-index: 1; font-family: var(--serif); font-weight: 600; text-shadow: 0 2px 12px rgba(0,0,0,.25); }
+  .cover-vermilion { --cover-a: #b5462f; --cover-b: #762b20; }
+  .cover-green { --cover-a: #356657; --cover-b: #1d3d34; }
+  .cover-blue { --cover-a: #3c5a78; --cover-b: #22364a; }
+  .cover-gold { --cover-a: #b58a2f; --cover-b: #765719; }
+  .cover-ink { --cover-a: #3a3731; --cover-b: #1b1917; }
+  .cover-clay { --cover-a: #a8684a; --cover-b: #693b2a; }
+
+  .icon-btn {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent; background: transparent; color: inherit;
+  }
+  .icon-btn:hover { background: rgba(31,29,26,.06); }
+  .variant-b .icon-btn:hover { background: rgba(255,255,255,.09); }
+  .primary {
+    border: 0; border-radius: 999px; padding: 10px 16px;
+    background: var(--accent); color: var(--white);
+    font-size: 12px; font-weight: 650;
+  }
+  .primary.wide { width: 100%; padding: 13px 16px; }
+  .ghost {
+    border: 1px solid var(--line); border-radius: 999px;
+    padding: 9px 14px; background: transparent; color: var(--ink);
+    font-size: 12px;
+  }
+  .ghost:hover { background: rgba(31,29,26,.04); }
+  .chip {
+    border: 1px solid var(--line); background: transparent; color: var(--muted);
+    border-radius: 999px; padding: 6px 11px; font-size: 11px; white-space: nowrap;
+  }
+  .chip.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+
+  /* variant A: library-first */
+  .variant-a .topbar { display: flex; align-items: center; justify-content: space-between; padding: 18px 18px 10px; gap: 8px; }
+  .brand { display: flex; align-items: baseline; gap: 8px; font-family: var(--serif); font-size: 24px; font-weight: 600; letter-spacing: .02em; }
+  .brand-sub { font-family: var(--sans); font-size: 9px; letter-spacing: .18em; color: var(--muted); font-weight: 650; }
+  .top-actions { display: flex; align-items: center; gap: 2px; }
+  .variant-a .scroll { flex: 1; overflow-y: auto; padding: 0 18px 142px; scrollbar-width: none; }
+  .variant-a .scroll::-webkit-scrollbar { display: none; }
+
+  .hero {
+    position: relative; overflow: hidden;
+    display: flex; align-items: center; gap: 14px;
+    background: var(--ink); color: var(--paper);
+    border-radius: 22px; padding: 16px; margin-bottom: 18px;
+  }
+  .hero::after {
+    content: ""; position: absolute; width: 140px; height: 140px; right: -50px; top: -70px;
+    border-radius: 50%; background: radial-gradient(circle, rgba(181,70,47,.5), transparent 68%);
+    pointer-events: none;
+  }
+  .hero-cover { width: 72px; height: 72px; border-radius: 14px; }
+  .hero-cover span { font-size: 30px; }
+  .hero-body { flex: 1; min-width: 0; position: relative; z-index: 1; }
+  .hero-eyebrow { font-size: 10px; letter-spacing: .14em; color: rgba(244,239,230,.55); text-transform: uppercase; }
+  .hero-title { margin: 5px 0 4px; font-family: var(--serif); font-size: 20px; line-height: 1.25; }
+  .hero-meta { font-size: 11px; color: rgba(244,239,230,.58); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero-progress { height: 3px; background: rgba(255,255,255,.16); border-radius: 999px; margin-top: 12px; overflow: hidden; }
+  .hero-progress span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .hero-play {
+    width: 46px; height: 46px; border-radius: 50%; border: 0;
+    background: var(--accent); color: var(--white);
+    display: grid; place-items: center; flex: none; position: relative; z-index: 1;
+  }
+  .hero-play .icon { width: 20px; height: 20px; }
+
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 0 10px; }
+  .section-head h2 { margin: 0; font-family: var(--serif); font-size: 17px; font-weight: 600; }
+  .section-head span { font-size: 11px; color: var(--muted); }
+  .filters { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+
+  .lib-list { display: flex; flex-direction: column; }
+  .lib-row { display: grid; grid-template-columns: 52px 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .lib-row:last-child { border-bottom: 0; }
+  .row-cover { width: 52px; height: 52px; border-radius: 10px; }
+  .row-cover span { font-size: 22px; }
+  .row-main { border: 0; background: transparent; text-align: left; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .row-title { font-size: 14px; font-weight: 650; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .row-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-state { font-size: 10px; color: var(--muted); }
+  .row-state.failed { color: #a54535; }
+  .row-state.processing { color: #8c6a23; }
+  .row-state.finished { color: var(--green); }
+  .progress-line { display: block; height: 2px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 3px; }
+  .progress-line span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .mini-play {
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--paper-2); color: var(--ink); display: grid; place-items: center;
+  }
+  .mini-play .icon { width: 16px; height: 16px; }
+  .row-disabled { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: rgba(31,29,26,.04); }
+  .row-disabled .icon { width: 16px; height: 16px; }
+
+  .bottom-player {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10;
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 13px calc(11px + env(safe-area-inset-bottom));
+    background: var(--player); color: var(--paper);
+    border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .player-cover { width: 44px; height: 44px; border-radius: 9px; }
+  .player-cover span { font-size: 18px; }
+  .player-body { flex: 1; min-width: 0; }
+  .player-title { font-size: 12px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .player-meta { font-size: 10px; color: rgba(244,239,230,.55); margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .player-progress { height: 2px; background: rgba(255,255,255,.16); border-radius: 999px; overflow: hidden; margin-top: 7px; }
+  .player-progress span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .player-actions { display: flex; align-items: center; gap: 1px; }
+  .player-btn {
+    min-width: 32px; height: 32px; border: 0; border-radius: 50%;
+    background: transparent; color: var(--paper); display: grid; place-items: center;
+    font-size: 10px; font-variant-numeric: tabular-nums;
+  }
+  .player-btn:hover { background: rgba(255,255,255,.1); }
+  .player-btn.play { width: 36px; height: 36px; background: var(--accent); color: var(--white); }
+  .player-btn .icon { width: 17px; height: 17px; }
+
+  /* shared: status, empty, forms, search, transcript, reader */
+  .status-panel { border: 1px dashed var(--line); border-radius: 16px; padding: 14px; background: rgba(255,255,255,.25); }
+  .status-panel.processing { border-color: #d4b36a; }
+  .status-panel.failed { border-color: #c98a7a; }
+  .status-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 650; }
+  .status-title .icon { width: 16px; height: 16px; }
+  .status-text { margin: 5px 0 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+  .status-bar { height: 3px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 10px; }
+  .status-bar span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .status-panel .ghost { margin-top: 10px; }
+
+  .empty { text-align: center; padding: 48px 18px; }
+  .empty-mark {
+    width: 62px; height: 62px; border-radius: 50%; margin: 0 auto 14px;
+    background: var(--ink); color: var(--paper); display: grid; place-items: center;
+    font-family: var(--serif); font-size: 26px;
+  }
+  .empty h3 { margin: 0 0 6px; font-family: var(--serif); font-size: 20px; font-weight: 600; }
+  .empty p { margin: 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+  .empty .primary { margin-top: 16px; }
+
+  .search-page { padding: 4px 0 18px; }
+  .search-form { display: flex; gap: 8px; align-items: center; background: var(--paper-2); border: 1px solid var(--line); border-radius: 14px; padding: 7px 9px; }
+  .search-form input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 5px 3px; font-size: 14px; outline: none; }
+  .search-form button { width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--ink); color: var(--paper); display: grid; place-items: center; }
+  .search-form button .icon { width: 16px; height: 16px; }
+  .search-meta { font-size: 11px; color: var(--muted); margin: 10px 1px 12px; }
+  .search-results { display: flex; flex-direction: column; gap: 8px; }
+  .search-result { display: flex; gap: 11px; width: 100%; text-align: left; padding: 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--paper-2); color: inherit; }
+  .search-result:hover { border-color: #c9bfae; }
+  .result-cover { width: 46px; height: 46px; border-radius: 9px; }
+  .result-cover span { font-size: 19px; }
+  .result-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .result-title { font-size: 13px; font-weight: 650; line-height: 1.35; }
+  .result-meta { font-size: 10px; color: var(--muted); }
+  .result-snippet { font-size: 12px; line-height: 1.55; color: #4f4a42; margin-top: 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .result-ref { font-size: 10px; color: var(--accent); margin-top: 2px; }
+
+  .sheet-overlay { position: absolute; inset: 0; z-index: 30; display: flex; align-items: flex-end; }
+  .sheet-scrim { position: absolute; inset: 0; background: rgba(23,22,20,.48); backdrop-filter: blur(2px); }
+  .sheet {
+    position: relative; z-index: 1; width: 100%; max-height: 86%;
+    overflow-y: auto; background: var(--paper); color: var(--ink);
+    border-radius: 22px 22px 0 0; padding: 18px 18px calc(20px + env(safe-area-inset-bottom));
+    box-shadow: 0 -18px 40px rgba(0,0,0,.2);
+  }
+  .sheet-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 13px; }
+  .sheet-head h3 { margin: 0; font-family: var(--serif); font-size: 20px; line-height: 1.25; font-weight: 600; }
+  .sheet-sub { margin: 4px 0 0; font-size: 11px; color: var(--muted); }
+  .sheet-title-row { display: flex; gap: 10px; align-items: center; min-width: 0; }
+  .sheet-cover { width: 44px; height: 44px; border-radius: 9px; }
+  .sheet-cover span { font-size: 18px; }
+  .sheet .icon-btn { flex: none; }
+
+  .segments { display: flex; flex-direction: column; }
+  .seg { display: grid; grid-template-columns: 46px 1fr; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .seg:last-child { border-bottom: 0; }
+  .seg-time { font-size: 10px; color: var(--accent); font-variant-numeric: tabular-nums; padding-top: 2px; }
+  .seg-text { font-size: 13px; line-height: 1.65; }
+
+  .add-form { display: flex; flex-direction: column; gap: 12px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > span { font-size: 11px; color: var(--muted); }
+  .field input { border: 1px solid var(--line); background: var(--paper-2); border-radius: 12px; padding: 11px 12px; font-size: 13px; outline: none; }
+  .field input:focus { border-color: #b9ab97; }
+  .file-drop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px dashed var(--line); border-radius: 12px; padding: 12px; }
+  .file-drop span { font-size: 11px; color: var(--muted); }
+  .privacy { margin: 0; font-size: 11px; line-height: 1.55; color: var(--muted); background: var(--paper-2); border-radius: 10px; padding: 10px; }
+
+  .chapter-tabs { display: flex; gap: 5px; overflow-x: auto; padding-bottom: 12px; scrollbar-width: none; }
+  .chapter-tabs::-webkit-scrollbar { display: none; }
+  .chapter-tab { border: 1px solid var(--line); background: transparent; border-radius: 999px; padding: 6px 10px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+  .chapter-tab.active { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .book-text { font-family: var(--serif); font-size: 15px; line-height: 1.9; color: #38342e; }
+  .book-chapter-title { font-family: var(--sans); font-size: 11px; letter-spacing: .08em; color: var(--accent); margin: 0 0 12px; }
+  .book-text p { margin: 0 0 14px; }
+
+  /* variant B: now playing */
+  .variant-b { background: #171614; color: #f4efe6; }
+  .now-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 17px 16px 8px; flex: none; }
+  .now-eyebrow { font-size: 10px; letter-spacing: .16em; color: rgba(244,239,230,.52); text-transform: uppercase; }
+  .variant-b .icon-btn { color: #f4efe6; }
+  .now-main { flex: 1; overflow-y: auto; padding: 0 22px 40px; scrollbar-width: none; }
+  .now-main::-webkit-scrollbar { display: none; }
+  .now-cover-wrap { display: flex; justify-content: center; margin: 8px 0 20px; }
+  .now-cover { width: 214px; height: 214px; border-radius: 22px; box-shadow: 0 26px 50px rgba(0,0,0,.38); }
+  .now-cover span { font-size: 66px; }
+  .now-title { margin: 0 0 7px; text-align: center; font-family: var(--serif); font-size: 27px; line-height: 1.22; font-weight: 600; }
+  .now-meta { margin: 0; text-align: center; font-size: 12px; color: rgba(244,239,230,.58); }
+  .now-tags { display: flex; justify-content: center; flex-wrap: wrap; gap: 5px; margin: 13px 0 0; }
+  .now-tag { border: 1px solid rgba(255,255,255,.14); color: rgba(244,239,230,.68); border-radius: 999px; padding: 4px 9px; font-size: 10px; }
+  .now-seek { margin: 24px 0 6px; }
+  .now-times { display: flex; justify-content: space-between; font-size: 10px; color: rgba(244,239,230,.5); font-variant-numeric: tabular-nums; margin-bottom: 6px; }
+  .seek-track { height: 3px; background: rgba(255,255,255,.14); border-radius: 999px; overflow: hidden; }
+  .seek-track span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .now-controls { display: flex; align-items: center; justify-content: space-between; margin: 12px 0 28px; }
+  .round-btn { width: 40px; height: 40px; border-radius: 50%; border: 1px solid rgba(255,255,255,.14); background: transparent; color: #f4efe6; display: grid; place-items: center; font-size: 10px; font-variant-numeric: tabular-nums; }
+  .round-btn:hover { background: rgba(255,255,255,.08); }
+  .round-btn.play { width: 62px; height: 62px; border: 0; background: var(--accent); color: var(--white); }
+  .round-btn .icon { width: 18px; height: 18px; }
+  .round-btn.play .icon { width: 25px; height: 25px; }
+  .now-transcript { border-top: 1px solid rgba(255,255,255,.12); padding-top: 8px; }
+  .transcript-toggle { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: transparent; color: inherit; padding: 10px 0; text-align: left; }
+  .transcript-heading { font-family: var(--serif); font-size: 18px; font-weight: 600; flex: none; }
+  .transcript-toggle .sheet-sub { flex: 1; margin: 0; }
+  .transcript-toggle .icon { width: 18px; height: 18px; color: rgba(244,239,230,.55); }
+  .transcript-preview { margin: 2px 0 0; font-size: 12px; line-height: 1.65; color: rgba(244,239,230,.55); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .now-transcript .sheet-sub { color: rgba(244,239,230,.45); }
+  .now-transcript .seg { border-color: rgba(255,255,255,.09); }
+  .now-transcript .seg-time { color: var(--accent-soft); }
+  .now-transcript .seg-text { color: rgba(244,239,230,.82); }
+  .now-transcript .icon-btn { color: #f4efe6; }
+  .variant-b .status-panel { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.16); color: #f4efe6; }
+  .variant-b .status-text { color: rgba(244,239,230,.58); }
+  .variant-b .empty h3 { color: #f4efe6; }
+  .variant-b .empty p { color: rgba(244,239,230,.52); }
+
+  .drawer-scrim { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.52); }
+  .drawer {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 41;
+    width: 88%; max-width: 360px; background: var(--paper); color: var(--ink);
+    padding: 18px; overflow-y: auto; border-radius: 0 22px 22px 0;
+    box-shadow: 18px 0 50px rgba(0,0,0,.25);
+  }
+  .drawer-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .drawer-head h2 { margin: 0; font-family: var(--serif); font-size: 22px; font-weight: 600; }
+  .drawer-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: 14px 0 16px; }
+  .drawer-tab { border: 0; background: transparent; padding: 8px 10px; font-size: 12px; color: var(--muted); border-bottom: 2px solid transparent; }
+  .drawer-tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .drawer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 11px; color: var(--muted); }
+  .drawer .lib-row { grid-template-columns: 44px 1fr auto; padding: 10px 0; }
+  .drawer .row-cover { width: 44px; height: 44px; }
+  .drawer .row-cover span { font-size: 18px; }
+  .drawer .row-title { font-size: 13px; }
+  .drawer .search-page { padding-top: 0; }
+  .drawer .search-form input { font-size: 13px; }
+
+  /* variant C: inline queue */
+  .tape-top { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; padding: 18px 18px 8px; flex: none; }
+  .tape-title { font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1; }
+  .tape-sub { font-size: 9px; letter-spacing: .16em; color: var(--muted); margin-bottom: 2px; }
+  .tape-filters { display: flex; gap: 6px; overflow-x: auto; padding: 8px 18px 10px; scrollbar-width: none; flex: none; }
+  .tape-filters::-webkit-scrollbar { display: none; }
+  .tape-scroll { flex: 1; overflow-y: auto; padding: 0 18px 96px; scrollbar-width: none; }
+  .tape-scroll::-webkit-scrollbar { display: none; }
+  .tape-item { border-top: 1px solid var(--line); padding: 13px 0; }
+  .tape-item:first-child { border-top: 0; }
+  .tape-item.open { background: var(--paper-2); border-top-color: transparent; border-radius: 16px; padding: 13px 11px; margin: 0 -11px 6px; }
+  .tape-head { display: grid; grid-template-columns: 22px 46px 1fr auto; gap: 10px; align-items: center; }
+  .tape-index { font-family: var(--serif); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .tape-cover { width: 46px; height: 46px; border-radius: 9px; }
+  .tape-cover span { font-size: 19px; }
+  .tape-main { border: 0; background: transparent; text-align: left; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .tape-title-text { font-size: 13px; font-weight: 650; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tape-meta { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tape-play { width: 31px; height: 31px; border-radius: 50%; border: 1px solid var(--line); background: var(--paper-2); color: var(--ink); display: grid; place-items: center; }
+  .tape-play .icon { width: 15px; height: 15px; }
+  .tape-status { width: 31px; height: 31px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: rgba(31,29,26,.04); }
+  .tape-status .icon { width: 15px; height: 15px; }
+  .tape-expanded { margin-top: 12px; }
+  .inline-player { background: var(--ink); color: var(--paper); border-radius: 14px; padding: 12px; }
+  .inline-times { display: flex; justify-content: space-between; font-size: 10px; color: rgba(244,239,230,.55); font-variant-numeric: tabular-nums; margin-bottom: 5px; }
+  .inline-track { height: 3px; background: rgba(255,255,255,.16); border-radius: 999px; overflow: hidden; }
+  .inline-track span { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+  .inline-controls { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .inline-speed { border: 0; background: transparent; color: var(--paper); font-size: 10px; font-variant-numeric: tabular-nums; }
+  .inline-play { width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--accent); color: var(--white); display: grid; place-items: center; }
+  .inline-play .icon { width: 16px; height: 16px; }
+  .inline-link { border: 0; background: transparent; color: var(--accent-soft); font-size: 10px; padding: 4px; }
+  .inline-transcript { margin-top: 12px; }
+  .inline-transcript .seg { padding: 8px 0; }
+  .inline-transcript .seg-text { font-size: 12px; }
+  .inline-book { background: var(--paper-2); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+  .inline-book .row-meta { margin-bottom: 8px; }
+  .inline-book .progress-line { margin: 0 0 10px; }
+  .bottom-nav { position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; display: flex; gap: 2px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: var(--paper-2); border-top: 1px solid var(--line); }
+  .nav-btn { flex: 1; border: 0; background: transparent; color: var(--muted); border-radius: 12px; padding: 6px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; }
+  .nav-btn.active { color: var(--ink); background: rgba(31,29,26,.05); }
+  .nav-btn .icon { width: 19px; height: 19px; }
+
+  .reader-sheet { max-height: 90%; }
+  .toast {
+    position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%) translateY(8px);
+    background: var(--ink); color: var(--paper); border-radius: 999px;
+    padding: 9px 14px; font-size: 11px; line-height: 1.4; max-width: calc(100vw - 36px);
+    opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 2000;
+    box-shadow: 0 12px 30px rgba(31,29,26,.24); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 560px) {
+    .stage { padding: 54px 0 84px; }
+    .phone-frame { width: 100%; height: calc(100dvh - 88px); border-radius: 0; padding: 0; box-shadow: none; }
+    .phone { border-radius: 0; }
+    .variant-note { padding: 0 18px; font-size: 11px; }
+    .proto-badge { top: 8px; left: 8px; font-size: 9px; padding: 6px 8px; }
+    .proto-state { top: 8px; right: 8px; font-size: 10px; }
+    .proto-bar { bottom: 8px; padding: 4px; }
+    .proto-bar .key { display: none; }
+    .proto-bar .label { min-width: 128px; }
+    .toast { bottom: 72px; }
+  }
+</style>
+</head>
+<body>
+  <div class="proto-badge">PROTOTYPE · 不是产品 UI</div>
+  <div class="proto-state">
+    <label for="state-select">状态</label>
+    <select id="state-select" aria-label="原型数据状态">
+      <option value="default">默认</option>
+      <option value="empty">空库</option>
+      <option value="processing">处理中</option>
+      <option value="failed">失败</option>
+    </select>
+  </div>
+
+  <main class="stage">
+    <div class="phone-frame">
+      <div id="app" class="phone variant-a"></div>
+    </div>
+    <p class="variant-note" id="variant-note"></p>
+  </main>
+
+  <div class="proto-bar" role="navigation" aria-label="原型变体切换">
+    <button type="button" id="prev-variant" aria-label="上一个变体">‹</button>
+    <div class="label">
+      <strong id="variant-label">A</strong>
+      <span id="variant-name">Library-first</span>
+    </div>
+    <button type="button" id="next-variant" aria-label="下一个变体">›</button>
+    <span class="key">← →</span>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script>
+  // ---------------------------------------------------------------------------
+  // PROTOTYPE DATA — fake, in-memory, no persistence.
+  // ---------------------------------------------------------------------------
+  const ITEMS = [
+    {
+      id: 'memory',
+      title: '记忆是智能体的瓶颈',
+      author: '张三',
+      type: '播客',
+      source: '小宇宙',
+      duration: 4350,
+      progress: 1824,
+      state: 'in_progress',
+      status: 'ready',
+      tags: ['智能体', '记忆', 'LLM'],
+      cover: 'vermilion',
+      transcript: [
+        { time: '00:00', text: '今天想聊一个我最近反复想到的问题：为什么智能体的瓶颈不是模型，而是记忆。' },
+        { time: '04:12', text: '我们总把上下文窗口当成记忆，但上下文是临时的；记忆需要被选择、压缩和遗忘。' },
+        { time: '11:40', text: '一个可用的记忆系统至少要有三件事：写入、检索，以及什么时候不该想起。' },
+        { time: '19:05', text: '如果你的 Agent 什么都记得，它其实什么都想不起来。' },
+        { time: '26:30', text: '最后留一个问题：你希望它记住的是事实，还是你当时为什么在意这件事？' }
+      ]
+    },
+    {
+      id: 'noticing',
+      title: 'The Art of Noticing',
+      author: 'Rob Walker',
+      type: '书',
+      source: 'EPUB',
+      duration: 0,
+      progress: 0.18,
+      state: 'in_progress',
+      status: 'ready',
+      tags: ['注意力', '设计', '观察'],
+      cover: 'green',
+      book: {
+        chapters: [
+          { title: '01 · 从走神开始', paragraphs: ['我们不是缺少注意力，而是缺少决定把注意力放在哪里的练习。', '走神不是失败；它是注意力在告诉你，眼前的东西还不够具体。'] },
+          { title: '02 · 收集微小的证据', paragraphs: ['观察不是收集信息，而是决定什么值得被记住。', '每天挑一件小到别人不会注意的事，把它写下来。'] },
+          { title: '03 · 观察的练习', paragraphs: ['找一个你每天经过、却从未认真看过的角落，停留三分钟。', '不要拍照，不要命名；先只看。'] }
+        ]
+      }
+    },
+    {
+      id: 'ai-pm',
+      title: 'AI 产品经理的 2026 观察',
+      author: '李四',
+      type: '视频',
+      source: 'Bilibili',
+      duration: 0,
+      progress: 0,
+      state: 'unstarted',
+      status: 'processing',
+      stage: '转写中',
+      stagePct: 62,
+      tags: ['AI', '产品'],
+      cover: 'clay'
+    },
+    {
+      id: 'short-term',
+      title: '为什么我们总是高估短期',
+      author: '王五',
+      type: '视频',
+      source: 'YouTube',
+      duration: 0,
+      progress: 0,
+      state: 'unstarted',
+      status: 'failed',
+      error: '转写失败：网络中断',
+      tags: ['决策'],
+      cover: 'blue'
+    },
+    {
+      id: 'attention',
+      title: '注意力是一种可训练的能力',
+      author: '赵六',
+      type: '播客',
+      source: '小宇宙',
+      duration: 2700,
+      progress: 2700,
+      state: 'finished',
+      status: 'ready',
+      tags: ['注意力', '习惯'],
+      cover: 'gold',
+      transcript: [
+        { time: '00:00', text: '注意力不是一种天赋，而是一组可以练习的动作。' },
+        { time: '08:20', text: '第一件事：把“我要专注”换成一个具体的下一步。' },
+        { time: '17:45', text: '第二件事：给分心留一个出口，而不是和它对抗。' }
+      ]
+    },
+    {
+      id: 'local-first',
+      title: '本地优先软件的三个误解',
+      author: '陈七',
+      type: '视频',
+      source: 'YouTube',
+      duration: 2100,
+      progress: 0,
+      state: 'unstarted',
+      status: 'ready',
+      tags: ['本地优先', '软件'],
+      cover: 'ink',
+      transcript: [
+        { time: '00:00', text: '本地优先不是离线优先；它首先是一种所有权模型。' },
+        { time: '06:30', text: '第二个误解：本地优先等于不做同步。' },
+        { time: '12:04', text: '第三个误解：本地优先只适合开发者。' }
+      ]
+    }
+  ];
+
+  const SEARCH_RESULTS = [
+    { itemId: 'memory', snippet: '……为什么智能体的瓶颈不是模型，而是记忆。', ref: 'transcript · 00:00' },
+    { itemId: 'noticing', snippet: '观察不是收集信息，而是决定什么值得被记住。', ref: '03 · 观察的练习' },
+    { itemId: 'local-first', snippet: '本地优先不是离线优先；它首先是一种所有权模型。', ref: 'transcript · 00:00' }
+  ];
+
+  const VARIANTS = {
+    A: { name: 'Library-first', note: '浏览优先：Library 是主界面，播放器常驻底部，transcript 用抽屉。' },
+    B: { name: 'Now Playing', note: '全屏播放/阅读；transcript 就地展开/收起；返回 C 列表；Library / Search / Add 在抽屉。' },
+    C: { name: 'Queue → Player', note: '已选方向：列表 + 快速内联播放；点开 Item 进入 B 全屏；B 的 transcript 就地展开。' }
+  };
+  const ORDER = ['A', 'B', 'C'];
+  const FILTERS = [
+    ['all', '全部'],
+    ['in_progress', '进行中'],
+    ['processing', '处理中'],
+    ['finished', '已完成']
+  ];
+  const SPEEDS = [1, 1.25, 1.5, 2];
+
+  // ---------------------------------------------------------------------------
+  // State — memory only.
+  // ---------------------------------------------------------------------------
+  const state = {
+    variant: 'A',
+    activeId: 'memory',
+    playing: false,
+    speed: 1,
+    filter: 'all',
+    libraryState: 'default',
+    mode: 'library',
+    drawerOpen: false,
+    drawerTab: 'library',
+    sheet: null,
+    query: '记忆',
+    chapter: 0,
+    transcriptOpen: false,
+    inlineId: null
+  };
+  let ticker = null;
+
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  const $ = (selector, root = document) => root.querySelector(selector);
+
+  const esc = (value = '') => String(value).replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[char]));
+
+  const ICONS = {
+    play: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.4v13.2L19 12z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6.5" y="5" width="3.6" height="14" rx="1"/><rect x="13.9" y="5" width="3.6" height="14" rx="1"/></svg>',
+    search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>',
+    plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>',
+    back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 5-7 7 7 7"/></svg>',
+    close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>',
+    list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
+    headphones: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><path d="M4 14h3v5H5a1 1 0 0 1-1-1zM20 14h-3v5h2a1 1 0 0 0 1-1z"/></svg>',
+    book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H5z"/><path d="M19 4h-3a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h3z"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 3 20h18z"/><path d="M12 9v5M12 17h.01"/></svg>',
+    more: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.25"/><circle cx="12" cy="12" r="1.25"/><circle cx="19" cy="12" r="1.25"/></svg>',
+    transcript: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M5 6h14M5 10h10M5 14h14M5 18h8"/></svg>',
+    'chevron-down': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>',
+    'chevron-up': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>'
+  };
+
+  const icon = (name) => `<span class="icon">${ICONS[name] || ''}</span>`;
+  const cover = (item, cls = '') => `<div class="cover cover-${item.cover || 'ink'} ${cls}" aria-hidden="true"><span>${esc((item.title || '?').slice(0, 1))}</span></div>`;
+  const iconBtn = (action, name, label, attrs = '') => `<button class="icon-btn" type="button" data-action="${action}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}">${icon(name)}</button>`;
+  const meta = (item) => [item.author, item.type, item.source].filter(Boolean).join(' · ');
+
+  const pct = (item) => {
+    if (!item || item.status !== 'ready') return 0;
+    if (item.type === '书') return Math.round((item.progress || 0) * 100);
+    return item.duration ? Math.min(100, Math.round((item.progress / item.duration) * 100)) : 0;
+  };
+
+  const fmt = (seconds) => {
+    const value = Math.max(0, Math.round(seconds || 0));
+    const h = Math.floor(value / 3600);
+    const m = Math.floor((value % 3600) / 60);
+    const s = value % 60;
+    return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  const progressLabel = (item) => {
+    if (!item) return '';
+    if (item.status === 'processing') return `${item.stage || '处理中'}${item.stagePct ? ` · ${item.stagePct}%` : ''}`;
+    if (item.status === 'failed') return item.error || '处理失败';
+    if (item.state === 'finished') return item.type === '书' ? '已读完' : '已听完';
+    if (item.state === 'unstarted') return '未开始';
+    return item.type === '书' ? `${pct(item)}% 已读` : `${pct(item)}% 已听`;
+  };
+
+  const visibleItems = () => {
+    if (state.libraryState === 'empty') return [];
+    let items = ITEMS.slice();
+    if (state.libraryState === 'processing') items = items.filter((item) => item.status === 'processing' || item.id === 'memory');
+    if (state.libraryState === 'failed') items = items.filter((item) => item.status === 'failed' || item.id === 'memory');
+    if (state.filter === 'in_progress') items = items.filter((item) => item.status === 'ready' && item.state === 'in_progress');
+    if (state.filter === 'processing') items = items.filter((item) => item.status === 'processing');
+    if (state.filter === 'finished') items = items.filter((item) => item.status === 'ready' && item.state === 'finished');
+    return items;
+  };
+
+  const getActive = () => {
+    const items = visibleItems();
+    return items.find((item) => item.id === state.activeId) || items[0] || null;
+  };
+
+  const ensureActive = () => {
+    const items = visibleItems();
+    const active = items.find((item) => item.id === state.activeId);
+    if (!active) state.activeId = items[0]?.id || null;
+    if (state.inlineId && !items.some((item) => item.id === state.inlineId)) state.inlineId = null;
+    const current = items.find((item) => item.id === state.activeId);
+    if (!current || current.status !== 'ready' || current.type === '书') {
+      state.playing = false;
+      stopTicker();
+    }
+  };
+
+  function startTicker() {
+    stopTicker();
+    if (!state.playing) return;
+    ticker = setInterval(() => {
+      const item = getActive();
+      if (!item || !state.playing || item.status !== 'ready' || item.type === '书') return;
+      item.progress = Math.min(item.duration, (item.progress || 0) + state.speed);
+      if (item.progress >= item.duration) {
+        item.progress = item.duration;
+        item.state = 'finished';
+        state.playing = false;
+        stopTicker();
+        render();
+      } else {
+        updateProgressDom();
+      }
+    }, 1000);
+  }
+
+  function stopTicker() {
+    if (ticker) {
+      clearInterval(ticker);
+      ticker = null;
+    }
+  }
+
+  function updateProgressDom() {
+    const item = getActive();
+    if (!item) return;
+    document.querySelectorAll('[data-progress-bar]').forEach((el) => { el.style.width = `${pct(item)}%`; });
+    document.querySelectorAll('[data-time-current]').forEach((el) => { el.textContent = fmt(item.progress || 0); });
+    document.querySelectorAll('[data-time-total]').forEach((el) => { el.textContent = fmt(item.duration || 0); });
+    document.querySelectorAll('[data-progress-label]').forEach((el) => { el.textContent = progressLabel(item); });
+  }
+
+  function toast(message) {
+    const el = $('#toast');
+    el.textContent = message;
+    el.classList.add('show');
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => el.classList.remove('show'), 2400);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Shared render pieces
+  // ---------------------------------------------------------------------------
+  function renderFilters() {
+    return FILTERS.map(([key, label]) => `<button class="chip ${state.filter === key ? 'active' : ''}" type="button" data-action="filter" data-filter="${key}">${label}</button>`).join('');
+  }
+
+  function renderRow(item) {
+    const ready = item.status === 'ready';
+    const isBook = item.type === '书';
+    const playAction = isBook ? 'select-item' : 'play-item';
+    return `<div class="lib-row">
+      ${cover(item, 'row-cover')}
+      <button class="row-main" type="button" data-action="select-item" data-id="${item.id}">
+        <span class="row-title">${esc(item.title)}</span>
+        <span class="row-meta">${esc(meta(item))}</span>
+        <span class="row-state ${item.status} ${item.state}">${esc(progressLabel(item))}</span>
+        ${ready ? `<span class="progress-line"><span style="width:${pct(item)}%"></span></span>` : ''}
+      </button>
+      ${ready ? `<button class="mini-play" type="button" data-action="${playAction}" data-id="${item.id}" aria-label="${isBook ? '阅读' : '播放'}">${icon(isBook ? 'book' : 'play')}</button>` : `<span class="row-disabled">${icon(item.status === 'failed' ? 'alert' : 'headphones')}</span>`}
+    </div>`;
+  }
+
+  function renderStatusPanel(item) {
+    if (item.status === 'processing') {
+      return `<div class="status-panel processing">
+        <div class="status-title">${icon('headphones')} ${esc(item.stage || '处理中')}</div>
+        <p class="status-text">${esc(item.stagePct ? `${item.stagePct}% · 可以关闭浏览器，Host 会继续。` : '可以关闭浏览器，Host 会继续。')}</p>
+        <div class="status-bar"><span style="width:${item.stagePct || 0}%"></span></div>
+      </div>`;
+    }
+    if (item.status === 'failed') {
+      return `<div class="status-panel failed">
+        <div class="status-title">${icon('alert')} 处理失败</div>
+        <p class="status-text">${esc(item.error || '未知错误')}</p>
+        <button class="ghost" type="button" data-action="retry">重试</button>
+      </div>`;
+    }
+    return '';
+  }
+
+  function renderSegments(item, limit) {
+    const segments = item.transcript || [];
+    if (!segments.length) return '<p class="muted">还没有 transcript。</p>';
+    return `<div class="segments">${segments.slice(0, limit || segments.length).map((segment) => `<div class="seg"><span class="seg-time">${esc(segment.time)}</span><span class="seg-text">${esc(segment.text)}</span></div>`).join('')}</div>`;
+  }
+
+  function renderEmpty(title, copy) {
+    return `<div class="empty">
+      <div class="empty-mark">拾</div>
+      <h3>${esc(title)}</h3>
+      <p>${esc(copy)}</p>
+      <button class="primary" type="button" data-action="open-add">添加第一条内容</button>
+    </div>`;
+  }
+
+  function renderSearchPage() {
+    const query = state.query.trim();
+    const results = query ? SEARCH_RESULTS : [];
+    return `<div class="search-page">
+      <form class="search-form" data-form="search">
+        <input name="q" value="${esc(query)}" placeholder="搜标题、摘要、transcript、书、Tag" autocomplete="off">
+        <button type="submit" aria-label="搜索">${icon('search')}</button>
+      </form>
+      <p class="search-meta">${query ? `${results.length} 个 Item 命中「${esc(query)}」 · 按 Item 聚合` : '输入关键词；中文两字词必须命中。'}</p>
+      <div class="search-results">
+        ${results.length ? results.map((result) => {
+          const item = ITEMS.find((entry) => entry.id === result.itemId);
+          if (!item) return '';
+          return `<button class="search-result" type="button" data-action="open-result" data-id="${item.id}">
+            ${cover(item, 'result-cover')}
+            <span class="result-body">
+              <span class="result-title">${esc(item.title)}</span>
+              <span class="result-meta">${esc(meta(item))}</span>
+              <span class="result-snippet">${esc(result.snippet)}</span>
+              <span class="result-ref">${esc(result.ref)}</span>
+            </span>
+          </button>`;
+        }).join('') : (query ? `<div class="empty"><div class="empty-mark">?</div><h3>没有命中</h3><p>试试两字中文词或英文关键词。</p></div>` : '')}
+      </div>
+    </div>`;
+  }
+
+  function renderAddForm() {
+    return `<form class="add-form" data-form="add">
+      <label class="field"><span>链接</span><input name="url" placeholder="B 站 / YouTube 单条视频 URL"></label>
+      <div class="file-drop">
+        <button class="ghost" type="button" data-action="pick-file">选择本地音频 / 视频 / EPUB</button>
+        <span>或拖入文件</span>
+      </div>
+      <label class="field"><span>播客 feed</span><input name="feed" placeholder="粘贴 RSS feed URL，预览最近单集"></label>
+      <p class="privacy">转写/书文本会分块发送给 DeepSeek 生成摘要和 Tag。原型不会真的上传或提交。</p>
+      <button class="primary wide" type="submit">开始处理</button>
+    </form>`;
+  }
+
+  function renderReader(item) {
+    const chapters = item.book?.chapters || [];
+    const index = Math.min(state.chapter, Math.max(0, chapters.length - 1));
+    const chapter = chapters[index];
+    if (!chapter) return '<p class="muted">这本书还没有可读章节。</p>';
+    return `<div class="chapter-tabs">${chapters.map((entry, entryIndex) => `<button class="chapter-tab ${entryIndex === index ? 'active' : ''}" type="button" data-action="chapter" data-index="${entryIndex}">${esc(entry.title.split(' · ')[0])}</button>`).join('')}</div>
+      <div class="book-text">
+        <p class="book-chapter-title">${esc(chapter.title)}</p>
+        ${chapter.paragraphs.map((paragraph) => `<p>${esc(paragraph)}</p>`).join('')}
+      </div>`;
+  }
+
+  function renderSheet() {
+    if (state.sheet === 'add') {
+      return `<div class="sheet-overlay">
+        <div class="sheet-scrim" data-action="close-sheet"></div>
+        <section class="sheet" role="dialog" aria-modal="true" aria-label="添加内容">
+          <div class="sheet-head">
+            <div><h3>添加内容</h3><p class="sheet-sub">链接、文件或播客单集</p></div>
+            ${iconBtn('close-sheet', 'close', '关闭')}
+          </div>
+          ${renderAddForm()}
+        </section>
+      </div>`;
+    }
+    const item = getActive();
+    if (!item) return '';
+    if (state.sheet === 'transcript' && item.type !== '书' && item.status === 'ready') {
+      return `<div class="sheet-overlay">
+        <div class="sheet-scrim" data-action="close-sheet"></div>
+        <section class="sheet" role="dialog" aria-modal="true" aria-label="Transcript">
+          <div class="sheet-head">
+            <div class="sheet-title-row">${cover(item, 'sheet-cover')}<div><h3>${esc(item.title)}</h3><p class="sheet-sub">${esc(meta(item))} · 分段 transcript</p></div></div>
+            ${iconBtn('close-sheet', 'close', '关闭')}
+          </div>
+          ${renderSegments(item)}
+        </section>
+      </div>`;
+    }
+    if (state.sheet === 'reader' && item.type === '书') {
+      return `<div class="sheet-overlay">
+        <div class="sheet-scrim" data-action="close-sheet"></div>
+        <section class="sheet reader-sheet" role="dialog" aria-modal="true" aria-label="阅读">
+          <div class="sheet-head">
+            <div class="sheet-title-row">${cover(item, 'sheet-cover')}<div><h3>${esc(item.title)}</h3><p class="sheet-sub">${esc(meta(item))} · ${pct(item)}% 已读</p></div></div>
+            ${iconBtn('close-sheet', 'close', '关闭')}
+          </div>
+          ${renderReader(item)}
+        </section>
+      </div>`;
+    }
+    return '';
+  }
+
+  // ---------------------------------------------------------------------------
+  // Variant A: Library-first
+  // ---------------------------------------------------------------------------
+  function renderHeroA(item) {
+    const isBook = item.type === '书';
+    return `<div class="hero">
+      ${cover(item, 'hero-cover')}
+      <div class="hero-body">
+        <div class="hero-eyebrow">${isBook ? '继续读' : '继续听'}</div>
+        <div class="hero-title">${esc(item.title)}</div>
+        <div class="hero-meta">${esc(meta(item))}</div>
+        <div class="hero-progress"><span style="width:${pct(item)}%"></span></div>
+      </div>
+      <button class="hero-play" type="button" data-action="${isBook ? 'open-reader' : 'toggle-play'}" aria-label="${isBook ? '继续阅读' : state.playing ? '暂停' : '播放'}">${icon(isBook ? 'book' : state.playing ? 'pause' : 'play')}</button>
+    </div>`;
+  }
+
+  function renderPlayerA(item) {
+    if (!item) return '';
+    if (item.status !== 'ready') {
+      return `<div class="bottom-player">
+        ${cover(item, 'player-cover')}
+        <div class="player-body"><div class="player-title">${esc(item.title)}</div><div class="player-meta">${esc(progressLabel(item))}</div></div>
+        <div class="player-actions">${item.status === 'failed' ? `<button class="player-btn" type="button" data-action="retry" aria-label="重试">${icon('alert')}</button>` : ''}</div>
+      </div>`;
+    }
+    if (item.type === '书') {
+      return `<div class="bottom-player">
+        ${cover(item, 'player-cover')}
+        <div class="player-body"><div class="player-title">${esc(item.title)}</div><div class="player-meta">${pct(item)}% 已读 · ${esc(item.type)}</div><div class="player-progress"><span style="width:${pct(item)}%"></span></div></div>
+        <div class="player-actions"><button class="player-btn play" type="button" data-action="open-reader" aria-label="继续阅读">${icon('book')}</button></div>
+      </div>`;
+    }
+    return `<div class="bottom-player">
+      ${cover(item, 'player-cover')}
+      <div class="player-body">
+        <div class="player-title">${esc(item.title)}</div>
+        <div class="player-meta"><span data-time-current>${fmt(item.progress)}</span> / <span data-time-total>${fmt(item.duration)}</span> · ${esc(item.type)}</div>
+        <div class="player-progress"><span data-progress-bar style="width:${pct(item)}%"></span></div>
+      </div>
+      <div class="player-actions">
+        <button class="player-btn" type="button" data-action="toggle-speed" aria-label="倍速">${state.speed}×</button>
+        <button class="player-btn play" type="button" data-action="toggle-play" aria-label="${state.playing ? '暂停' : '播放'}">${icon(state.playing ? 'pause' : 'play')}</button>
+        <button class="player-btn" type="button" data-action="open-transcript" aria-label="Transcript">${icon('transcript')}</button>
+      </div>
+    </div>`;
+  }
+
+  function renderVariantA() {
+    if (state.mode === 'search') {
+      return `<header class="topbar">
+        ${iconBtn('back-library', 'back', '返回资料库')}
+        <div class="brand" style="font-size:19px">搜索</div>
+        ${iconBtn('open-add', 'plus', '添加')}
+      </header>
+      <main class="scroll">${renderSearchPage()}</main>
+      ${renderPlayerA(getActive())}
+      ${renderSheet()}
+      `;
+    }
+    const items = visibleItems();
+    const active = getActive();
+    return `<header class="topbar">
+      <div class="brand">拾藏<span class="brand-sub">TROVE</span></div>
+      <div class="top-actions">${iconBtn('open-search', 'search', '搜索')}${iconBtn('open-add', 'plus', '添加')}</div>
+    </header>
+    <main class="scroll">
+      ${active && active.status === 'ready' ? renderHeroA(active) : active ? renderStatusPanel(active) : ''}
+      ${items.length ? `<div class="section-head"><h2>全部内容</h2><span>${items.length} 条</span></div><div class="filters">${renderFilters()}</div><div class="lib-list">${items.map(renderRow).join('')}</div>` : renderEmpty('库还是空的', '粘贴一条链接，或上传音频 / EPUB。')}
+    </main>
+    ${renderPlayerA(active)}
+    ${renderSheet()}
+    `;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Variant B: Now Playing
+  // ---------------------------------------------------------------------------
+  function renderAudioNow(item) {
+    if (item.status !== 'ready') {
+      return `<div class="now-cover-wrap">${cover(item, 'now-cover')}</div>
+        <h1 class="now-title">${esc(item.title)}</h1>
+        <p class="now-meta">${esc(meta(item))}</p>
+        ${renderStatusPanel(item)}`;
+    }
+    return `<div class="now-cover-wrap">${cover(item, 'now-cover')}</div>
+      <h1 class="now-title">${esc(item.title)}</h1>
+      <p class="now-meta">${esc(meta(item))}</p>
+      <div class="now-tags">${(item.tags || []).map((tag) => `<span class="now-tag">#${esc(tag)}</span>`).join('')}</div>
+      <div class="now-seek">
+        <div class="now-times"><span data-time-current>${fmt(item.progress)}</span><span data-time-total>${fmt(item.duration)}</span></div>
+        <div class="seek-track"><span data-progress-bar style="width:${pct(item)}%"></span></div>
+      </div>
+      <div class="now-controls">
+        <button class="round-btn" type="button" data-action="cycle-speed" aria-label="倍速">${state.speed}×</button>
+        <button class="round-btn" type="button" data-action="seek-back" aria-label="后退 15 秒">↺15</button>
+        <button class="round-btn play" type="button" data-action="toggle-play" aria-label="${state.playing ? '暂停' : '播放'}">${icon(state.playing ? 'pause' : 'play')}</button>
+        <button class="round-btn" type="button" data-action="seek-fwd" aria-label="前进 15 秒">↻15</button>
+        <button class="round-btn" type="button" data-action="open-transcript" aria-label="Transcript">${icon('transcript')}</button>
+      </div>
+      <div class="now-transcript" id="b-transcript">
+        <button class="transcript-toggle" type="button" data-action="toggle-transcript" aria-expanded="${state.transcriptOpen}">
+          <span class="transcript-heading">Transcript</span>
+          <span class="sheet-sub">${(item.transcript || []).length} 段 · 时间戳</span>
+          ${icon(state.transcriptOpen ? 'chevron-up' : 'chevron-down')}
+        </button>
+        ${state.transcriptOpen ? renderSegments(item) : (item.transcript?.length ? `<p class="transcript-preview">${esc(item.transcript[0].text)}</p>` : '')}
+      </div>`;
+  }
+
+  function renderBookNow(item) {
+    return `<div class="now-cover-wrap">${cover(item, 'now-cover')}</div>
+      <h1 class="now-title">${esc(item.title)}</h1>
+      <p class="now-meta">${esc(meta(item))} · ${pct(item)}% 已读</p>
+      <div class="now-tags">${(item.tags || []).map((tag) => `<span class="now-tag">#${esc(tag)}</span>`).join('')}</div>
+      <div style="margin-top:22px">${renderReader(item)}</div>`;
+  }
+
+  function renderDrawerLibrary() {
+    const items = visibleItems();
+    return `<div class="drawer-toolbar"><span>${items.length} 条</span><button class="ghost" type="button" data-action="open-add">添加</button></div>
+      <div class="filters">${renderFilters()}</div>
+      ${items.length ? `<div class="lib-list">${items.map(renderRow).join('')}</div>` : renderEmpty('库还是空的', '从链接、文件或播客 feed 开始。')}`;
+  }
+
+  function renderDrawerB() {
+    const tab = state.drawerTab;
+    return `<div class="drawer-scrim" data-action="close-drawer"></div>
+      <aside class="drawer" aria-label="资料库">
+        <div class="drawer-head"><h2>资料库</h2>${iconBtn('close-drawer', 'close', '关闭')}</div>
+        <div class="drawer-tabs">
+          <button class="drawer-tab ${tab === 'library' ? 'active' : ''}" type="button" data-action="drawer-tab" data-tab="library">资料库</button>
+          <button class="drawer-tab ${tab === 'search' ? 'active' : ''}" type="button" data-action="drawer-tab" data-tab="search">搜索</button>
+          <button class="drawer-tab ${tab === 'add' ? 'active' : ''}" type="button" data-action="drawer-tab" data-tab="add">添加</button>
+        </div>
+        ${tab === 'library' ? renderDrawerLibrary() : tab === 'search' ? renderSearchPage() : renderAddForm()}
+      </aside>`;
+  }
+
+  function renderVariantB() {
+    const active = getActive();
+    const isBook = active?.type === '书';
+    return `<header class="now-top">
+      ${iconBtn('back-to-library', 'back', '返回列表')}
+      <div class="now-eyebrow">${active ? (isBook ? '正在读' : '正在听') : '资料库'}</div>
+      ${iconBtn('open-drawer', 'list', '资料库菜单')}
+    </header>
+    <main class="now-main">
+      ${active ? (isBook ? renderBookNow(active) : renderAudioNow(active)) : renderEmpty('库还是空的', '打开资料库，添加一条链接或文件。')}
+    </main>
+    ${state.drawerOpen ? renderDrawerB() : ''}`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Variant C: Inline Queue
+  // ---------------------------------------------------------------------------
+  function renderTapeExpanded(item) {
+    if (item.status !== 'ready') return `<div class="tape-expanded">${renderStatusPanel(item)}</div>`;
+    if (item.type === '书') {
+      return `<div class="tape-expanded"><div class="inline-book">
+        <div class="row-meta">${pct(item)}% 已读 · ${esc(item.source)}</div>
+        <div class="progress-line"><span style="width:${pct(item)}%"></span></div>
+        <button class="ghost" type="button" data-action="open-reader">继续阅读</button>
+      </div></div>`;
+    }
+    return `<div class="tape-expanded">
+      <div class="inline-player">
+        <div class="inline-times"><span data-time-current>${fmt(item.progress)}</span><span data-time-total>${fmt(item.duration)}</span></div>
+        <div class="inline-track"><span data-progress-bar style="width:${pct(item)}%"></span></div>
+        <div class="inline-controls">
+          <button class="inline-speed" type="button" data-action="cycle-speed">${state.speed}×</button>
+          <button class="inline-play" type="button" data-action="toggle-play" aria-label="${state.playing ? '暂停' : '播放'}">${icon(state.playing ? 'pause' : 'play')}</button>
+          <button class="inline-link" type="button" data-action="open-transcript">Transcript</button>
+        </div>
+      </div>
+      <div class="inline-transcript">${renderSegments(item, 3)}<button class="inline-link" type="button" data-action="open-transcript">展开完整 transcript</button></div>
+    </div>`;
+  }
+
+  function renderTapeItem(item, index, active) {
+    const ready = item.status === 'ready';
+    const isBook = item.type === '书';
+    const expanded = active && state.inlineId === item.id;
+    const playAction = isBook ? 'open-now' : active ? 'toggle-play' : 'play-item';
+    return `<article class="tape-item ${expanded ? 'open' : ''}">
+      <div class="tape-head">
+        <span class="tape-index">${String(index + 1).padStart(2, '0')}</span>
+        ${cover(item, 'tape-cover')}
+        <button class="tape-main" type="button" data-action="open-now" data-id="${item.id}">
+          <span class="tape-title-text">${esc(item.title)}</span>
+          <span class="tape-meta">${esc(meta(item))} · ${esc(progressLabel(item))}</span>
+        </button>
+        ${ready ? `<button class="tape-play" type="button" data-action="${playAction}" data-id="${item.id}" aria-label="${isBook ? '打开' : active ? (state.playing ? '暂停' : '播放') : '快速播放'}">${icon(isBook ? 'book' : active && state.playing ? 'pause' : 'play')}</button>` : `<span class="tape-status">${icon(item.status === 'failed' ? 'alert' : 'headphones')}</span>`}
+      </div>
+      ${expanded ? renderTapeExpanded(item) : ''}
+    </article>`;
+  }
+
+  function renderBottomNav() {
+    return `<nav class="bottom-nav" aria-label="资料库导航">
+      <button class="nav-btn ${state.mode === 'library' ? 'active' : ''}" type="button" data-action="nav-library">${icon('list')}<span>资料库</span></button>
+      <button class="nav-btn ${state.mode === 'search' ? 'active' : ''}" type="button" data-action="nav-search">${icon('search')}<span>搜索</span></button>
+      <button class="nav-btn ${state.mode === 'add' ? 'active' : ''}" type="button" data-action="nav-add">${icon('plus')}<span>添加</span></button>
+    </nav>`;
+  }
+
+  function renderVariantC() {
+    if (state.mode === 'search') {
+      return `<header class="tape-top"><button class="icon-btn" type="button" data-action="back-library" aria-label="返回">${icon('back')}</button><div class="tape-title">搜索</div><span class="tape-sub">${SEARCH_RESULTS.length} 个 Item</span></header>
+        <main class="tape-scroll">${renderSearchPage()}</main>
+        ${renderBottomNav()}
+        ${renderSheet()}`;
+    }
+    if (state.mode === 'add') {
+      return `<header class="tape-top"><button class="icon-btn" type="button" data-action="back-library" aria-label="返回">${icon('back')}</button><div class="tape-title">添加</div><span class="tape-sub">新内容</span></header>
+        <main class="tape-scroll">${renderAddForm()}</main>
+        ${renderBottomNav()}
+        ${renderSheet()}`;
+    }
+    const items = visibleItems();
+    const active = getActive();
+    return `<header class="tape-top"><div><div class="tape-title">拾藏</div><div class="tape-sub">QUEUE → PLAYER · MVP</div></div><span class="tape-sub">${items.length} 条</span></header>
+      <div class="tape-filters">${renderFilters()}</div>
+      <main class="tape-scroll">
+        ${items.length ? items.map((item, index) => renderTapeItem(item, index, item.id === active?.id)).join('') : renderEmpty('库还是空的', '从链接、文件或播客 feed 开始。')}
+      </main>
+      ${renderBottomNav()}
+      ${renderSheet()}`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Render + actions
+  // ---------------------------------------------------------------------------
+  function render() {
+    ensureActive();
+    const app = $('#app');
+    app.className = `phone variant-${state.variant.toLowerCase()}`;
+    app.innerHTML = state.variant === 'A' ? renderVariantA() : state.variant === 'B' ? renderVariantB() : renderVariantC();
+    $('#variant-label').textContent = state.variant;
+    $('#variant-name').textContent = VARIANTS[state.variant].name;
+    $('#variant-note').textContent = VARIANTS[state.variant].note;
+    $('#state-select').value = state.libraryState;
+    document.title = `拾藏 · ${state.variant} ${VARIANTS[state.variant].name}`;
+    if (state.playing) startTicker();
+  }
+
+  function selectItem(id) {
+    const item = ITEMS.find((entry) => entry.id === id);
+    if (!item) return;
+    if (state.activeId !== id) state.inlineId = null;
+    state.activeId = id;
+    state.playing = false;
+    stopTicker();
+    state.sheet = null;
+    state.chapter = 0;
+    state.transcriptOpen = false;
+    if (state.variant === 'B') state.drawerOpen = false;
+    if (state.mode === 'search') state.mode = 'library';
+    if (item.type === '书') {
+      if (state.variant !== 'B') state.sheet = 'reader';
+    }
+    render();
+  }
+
+  function openNow(id) {
+    const item = ITEMS.find((entry) => entry.id === id);
+    if (!item) return;
+    if (state.activeId !== id) {
+      state.playing = false;
+      state.inlineId = null;
+      stopTicker();
+    }
+    state.activeId = id;
+    state.variant = 'B';
+    state.mode = 'library';
+    state.drawerOpen = false;
+    state.sheet = null;
+    state.chapter = 0;
+    state.transcriptOpen = false;
+    history.replaceState(null, '', '?variant=B');
+    render();
+  }
+
+  function openResult(id) {
+    if (state.variant === 'C') {
+      openNow(id);
+      return;
+    }
+    selectItem(id);
+  }
+
+  function backToLibrary() {
+    state.variant = 'C';
+    state.mode = 'library';
+    state.drawerOpen = false;
+    state.sheet = null;
+    state.transcriptOpen = false;
+    history.replaceState(null, '', '?variant=C');
+    render();
+  }
+
+  function playItem(id) {
+    const item = ITEMS.find((entry) => entry.id === id);
+    if (!item) return;
+    if (item.status !== 'ready') {
+      toast(item.status === 'processing' ? '这条内容还在处理中。' : '这条内容处理失败，先重试。');
+      return;
+    }
+    if (item.type === '书') {
+      selectItem(id);
+      return;
+    }
+    state.activeId = id;
+    state.playing = true;
+    state.sheet = null;
+    state.mode = 'library';
+    state.inlineId = id;
+    if (state.variant === 'B') state.drawerOpen = false;
+    startTicker();
+    render();
+  }
+
+  function togglePlay() {
+    const item = getActive();
+    if (!item) return;
+    if (item.status !== 'ready') {
+      toast(item.status === 'processing' ? '这条内容还在处理中。' : '这条内容处理失败，先重试。');
+      return;
+    }
+    if (item.type === '书') {
+      openReader();
+      return;
+    }
+    state.playing = !state.playing;
+    state.inlineId = item.id;
+    if (state.playing) startTicker();
+    else stopTicker();
+    render();
+  }
+
+  function cycleSpeed() {
+    const index = SPEEDS.indexOf(state.speed);
+    state.speed = SPEEDS[(index + 1) % SPEEDS.length];
+    render();
+  }
+
+  function seek(delta) {
+    const item = getActive();
+    if (!item || item.status !== 'ready' || item.type === '书') return;
+    item.progress = Math.max(0, Math.min(item.duration, (item.progress || 0) + delta));
+    if (item.progress >= item.duration) {
+      item.progress = item.duration;
+      item.state = 'finished';
+      state.playing = false;
+      stopTicker();
+    }
+    render();
+  }
+
+  function openSearch() {
+    state.mode = 'search';
+    state.sheet = null;
+    if (state.variant === 'B') {
+      state.drawerOpen = true;
+      state.drawerTab = 'search';
+    }
+    render();
+  }
+
+  function openAdd() {
+    state.sheet = null;
+    if (state.variant === 'A') state.sheet = 'add';
+    if (state.variant === 'B') {
+      state.drawerOpen = true;
+      state.drawerTab = 'add';
+    }
+    if (state.variant === 'C') state.mode = 'add';
+    render();
+  }
+
+  function openLibrary() {
+    state.mode = 'library';
+    state.sheet = null;
+    if (state.variant === 'B') {
+      state.drawerOpen = true;
+      state.drawerTab = 'library';
+    }
+    render();
+  }
+
+  function openTranscript() {
+    if (state.variant === 'B') {
+      state.transcriptOpen = true;
+      render();
+      requestAnimationFrame(() => {
+        document.getElementById('b-transcript')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return;
+    }
+    state.sheet = 'transcript';
+    render();
+  }
+
+  function toggleTranscript() {
+    if (state.variant !== 'B') {
+      openTranscript();
+      return;
+    }
+    state.transcriptOpen = !state.transcriptOpen;
+    render();
+    if (state.transcriptOpen) {
+      requestAnimationFrame(() => {
+        document.getElementById('b-transcript')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+  }
+
+  function openReader() {
+    const item = getActive();
+    if (!item || item.type !== '书') return;
+    state.chapter = 0;
+    if (state.variant === 'B') {
+      state.sheet = null;
+      render();
+      return;
+    }
+    state.sheet = 'reader';
+    render();
+  }
+
+  function setFilter(filter) {
+    state.filter = filter;
+    state.mode = 'library';
+    render();
+  }
+
+  function setLibraryState(value) {
+    state.libraryState = value;
+    state.filter = 'all';
+    state.mode = 'library';
+    state.sheet = null;
+    state.drawerOpen = false;
+    state.transcriptOpen = false;
+    state.inlineId = null;
+    state.playing = false;
+    stopTicker();
+    if (value === 'empty') state.activeId = null;
+    if (value === 'processing') state.activeId = 'ai-pm';
+    if (value === 'failed') state.activeId = 'short-term';
+    if (value === 'default') state.activeId = 'memory';
+    ensureActive();
+    render();
+  }
+
+  function setVariant(variant) {
+    if (!ORDER.includes(variant)) variant = 'A';
+    state.variant = variant;
+    state.sheet = null;
+    state.drawerOpen = false;
+    state.transcriptOpen = false;
+    state.inlineId = null;
+    state.mode = 'library';
+    state.filter = 'all';
+    history.replaceState(null, '', `?variant=${variant}`);
+    render();
+  }
+
+  function handleAction(element) {
+    const action = element.dataset.action;
+    const id = element.dataset.id;
+    switch (action) {
+      case 'select-item': selectItem(id); break;
+      case 'open-now': openNow(id); break;
+      case 'open-result': openResult(id); break;
+      case 'back-to-library': backToLibrary(); break;
+      case 'play-item': playItem(id); break;
+      case 'toggle-play': togglePlay(); break;
+      case 'toggle-transcript': toggleTranscript(); break;
+      case 'toggle-speed': cycleSpeed(); break;
+      case 'cycle-speed': cycleSpeed(); break;
+      case 'seek-back': seek(-15); break;
+      case 'seek-fwd': seek(15); break;
+      case 'open-transcript': openTranscript(); break;
+      case 'open-reader': openReader(); break;
+      case 'close-sheet': state.sheet = null; render(); break;
+      case 'open-search': openSearch(); break;
+      case 'open-add': openAdd(); break;
+      case 'open-library': openLibrary(); break;
+      case 'open-drawer': state.drawerOpen = true; state.drawerTab = 'library'; render(); break;
+      case 'close-drawer': state.drawerOpen = false; render(); break;
+      case 'drawer-tab': state.drawerTab = element.dataset.tab || 'library'; render(); break;
+      case 'back-library': state.mode = 'library'; state.sheet = null; render(); break;
+      case 'filter': setFilter(element.dataset.filter || 'all'); break;
+      case 'chapter': state.chapter = Number(element.dataset.index || 0); render(); break;
+      case 'nav-library': state.mode = 'library'; state.sheet = null; render(); break;
+      case 'nav-search': openSearch(); break;
+      case 'nav-add': openAdd(); break;
+      case 'pick-file': toast('原型中不上传文件；真实实现会走上传、校验和 SHA-256 去重。'); break;
+      case 'retry': toast('原型中不重试；真实实现会从失败阶段续跑。'); break;
+      default: break;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Events
+  // ---------------------------------------------------------------------------
+  document.addEventListener('click', (event) => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    handleAction(target);
+  });
+
+  document.addEventListener('submit', (event) => {
+    const form = event.target.closest('form[data-form]');
+    if (!form) return;
+    event.preventDefault();
+    if (form.dataset.form === 'search') {
+      const input = form.querySelector('input[name="q"]');
+      state.query = (input?.value || '').trim() || '记忆';
+      state.mode = 'search';
+      if (state.variant === 'B') {
+        state.drawerOpen = true;
+        state.drawerTab = 'search';
+      }
+      render();
+    }
+    if (form.dataset.form === 'add') {
+      toast('原型不会提交；真实实现会创建 Item 和 Processing Run。');
+    }
+  });
+
+  $('#prev-variant').addEventListener('click', () => {
+    const index = ORDER.indexOf(state.variant);
+    setVariant(ORDER[(index - 1 + ORDER.length) % ORDER.length]);
+  });
+
+  $('#next-variant').addEventListener('click', () => {
+    const index = ORDER.indexOf(state.variant);
+    setVariant(ORDER[(index + 1) % ORDER.length]);
+  });
+
+  $('#state-select').addEventListener('change', (event) => {
+    setLibraryState(event.target.value);
+  });
+
+  window.addEventListener('keydown', (event) => {
+    const active = document.activeElement;
+    if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT' || active.isContentEditable)) return;
+    if (event.key === 'ArrowLeft') {
+      const index = ORDER.indexOf(state.variant);
+      setVariant(ORDER[(index - 1 + ORDER.length) % ORDER.length]);
+    }
+    if (event.key === 'ArrowRight') {
+      const index = ORDER.indexOf(state.variant);
+      setVariant(ORDER[(index + 1) % ORDER.length]);
+    }
+    if (event.key === '1') setVariant('A');
+    if (event.key === '2') setVariant('B');
+    if (event.key === '3') setVariant('C');
+  });
+
+  // ---------------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------------
+  const params = new URLSearchParams(window.location.search);
+  const initialVariant = params.get('variant');
+  state.variant = ORDER.includes(initialVariant) ? initialVariant : 'C';
+  state.activeId = 'memory';
+  if (!ORDER.includes(initialVariant)) history.replaceState(null, '', '?variant=C');
+  render();
+</script>
+</body>
+</html>

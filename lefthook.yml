@@ -1,0 +1,37 @@
+# 本地提交前检查；配置 CI 后，CI 仍是最终门禁。
+# 仅在本地拦截问题；单次跳过：git commit --no-verify（lefthook 也接受 LEFTHOOK=0）。
+pre-commit:
+  parallel: true
+  commands:
+    git-policy:
+      run: bash scripts/git/check-commit.sh
+    worktree-path:
+      run: bash scripts/git/check-worktree.sh
+    docs:
+      run: python3 scripts/check-docs.py --staged
+    complexity:
+      # 阻断信号：新增或变复杂的函数超过阈值时阻止提交；COMPLEXITY=0 可跳过。
+      glob: "**/*.py"
+      run: python3 scripts/complexity.py --staged
+    shell-syntax:
+      glob: "{scripts/*.sh,scripts/git/*.sh}"
+      run: |
+        for f in scripts/*.sh scripts/git/*.sh; do [ -f "$f" ] && bash -n "$f"; done
+
+pre-merge-commit:
+  commands:
+    git-policy:
+      run: bash scripts/git/check-commit.sh
+
+commit-msg:
+  commands:
+    git-policy:
+      run: bash scripts/git/check-commit-msg.sh {1}
+
+pre-push:
+  commands:
+    git-policy:
+      run: bash scripts/git/check-push.sh {1}
+      use_stdin: true
+    complexity:
+      run: python3 scripts/complexity.py --push
