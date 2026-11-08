@@ -1,0 +1,8 @@
+# git worktree 工作区（AGENTS.md「Git 与提交」）
+.worktree/
+
+# 工具产物
+__pycache__/
+
+# macOS 元数据
+.DS_Store
