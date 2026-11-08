@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light">
+  <title>{% block title %}拾藏 Trove{% endblock %}</title>
+  <link rel="stylesheet" href="/static/pico.min.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/player.js" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body data-page="{% block page %}app{% endblock %}" hx-indicator="#page-progress">
+  <div id="page-progress" class="page-progress htmx-indicator" aria-hidden="true"></div>
+  {% block layout %}
+  <header class="topbar">
+    <a class="brand" href="/library" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">
+      <span class="brand-mark">拾</span>
+      <span class="brand-name">Trove</span>
+      <span class="brand-sub">藏</span>
+    </a>
+    <nav class="main-nav" aria-label="主导航">
+      <a href="/library" class="{% if active_nav == 'library' %}active{% endif %}" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">Library</a>
+      <a href="/search" class="{% if active_nav == 'search' %}active{% endif %}" hx-get="/search" hx-target="#main" hx-select="#main" hx-push-url="true">Search</a>
+      <a href="/add" class="{% if active_nav == 'add' %}active{% endif %}" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">Add</a>
+    </nav>
+    <form method="post" action="/logout" class="logout-form">
+      <button type="submit" class="link-button">退出</button>
+    </form>
+  </header>
+
+  <main id="main" class="shell">
+    {% block main %}{% endblock %}
+  </main>
+
+  <div id="player-error" class="player-error" role="alert" hidden></div>
+  <div id="mini-player" class="mini-player" hidden>
+    <audio id="global-audio" preload="metadata"></audio>
+    <button type="button" class="icon-button" data-player-action="toggle" aria-label="播放/暂停" title="播放/暂停">
+      <span data-player-icon="play">▶</span>
+    </button>
+    <div class="mini-body">
+      <a class="mini-title" data-player-link href="#"><span data-player-title>未在播放</span></a>
+      <div class="mini-meta"><span data-player-meta></span> · <span data-player-current>0:00</span> / <span data-player-duration>0:00</span></div>
+      <input class="seek" data-player-seek type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+    </div>
+    <button type="button" class="speed-button" data-player-action="speed" aria-label="播放速度"><span data-player-speed>1×</span></button>
+  </div>
+
+  <nav class="bottom-nav" aria-label="移动端主导航">
+    <a href="/library" class="{% if active_nav == 'library' %}active{% endif %}" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true"><span>▤</span>Library</a>
+    <a href="/search" class="{% if active_nav == 'search' %}active{% endif %}" hx-get="/search" hx-target="#main" hx-select="#main" hx-push-url="true"><span>⌕</span>Search</a>
+    <a href="/add" class="{% if active_nav == 'add' %}active{% endif %}" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true"><span>＋</span>Add</a>
+  </nav>
+  {% endblock %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}登录 · 拾藏{% endblock %}
+{% block layout %}
+<main class="login-shell">
+  <section class="login-card">
+    <div class="brand brand-large">
+      <span class="brand-mark">拾</span>
+      <span class="brand-name">Trove</span>
+    </div>
+    <h1>回到你的库</h1>
+    {% if not password_configured %}
+    <div class="alert alert-warning">
+      <strong>还没有设置密码。</strong>
+      <p>先在 Host 上运行：</p>
+      <pre>uv run trove auth set-password</pre>
+    </div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-error" role="alert">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login" class="stack-form">
+      <input type="hidden" name="next" value="{{ next_path }}">
+      <label>密码
+        <input name="password" type="password" autocomplete="current-password" required autofocus {% if not password_configured %}disabled{% endif %}>
+      </label>
+      <button type="submit" {% if not password_configured %}disabled{% endif %}>登录</button>
+    </form>
+    <p class="login-note">单用户、本地优先。未认证请求会被拒绝。</p>
+  </section>
+</main>
+{% endblock %}

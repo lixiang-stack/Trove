@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "macros.html" import item_row with context %}
+{% block title %}Library · 拾藏{% endblock %}
+{% block main %}
+<section class="library-head">
+  <div>
+    <p class="eyebrow">HOST CONSOLE</p>
+    <h1>Library</h1>
+    <p class="subtitle">{{ items|length }} 条内容{% if inbox %} · Inbox{% endif %}</p>
+  </div>
+  <div class="library-actions">
+    <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加内容</a>
+  </div>
+</section>
+
+<div class="filter-bar" aria-label="Library 过滤与排序">
+  <div class="filter-group">
+    <a class="chip {% if not inbox %}active{% endif %}" href="/library?sort={{ sort }}"
+       hx-get="/library?sort={{ sort }}" hx-target="#main" hx-select="#main" hx-push-url="true">全部</a>
+    <a class="chip {% if inbox %}active{% endif %}" href="/library?state=processing,failed&sort={{ sort }}"
+       hx-get="/library?state=processing,failed&sort={{ sort }}" hx-target="#main" hx-select="#main" hx-push-url="true">Inbox</a>
+  </div>
+  <div class="filter-group sort-group">
+    <a class="chip {% if sort == 'recent_added' %}active{% endif %}" href="/library?sort=recent_added{% if inbox %}&state=processing,failed{% endif %}"
+       hx-get="/library?sort=recent_added{% if inbox %}&state=processing,failed{% endif %}" hx-target="#main" hx-select="#main" hx-push-url="true">最近添加</a>
+    <a class="chip {% if sort == 'recent_consumed' %}active{% endif %}" href="/library?sort=recent_consumed{% if inbox %}&state=processing,failed{% endif %}"
+       hx-get="/library?sort=recent_consumed{% if inbox %}&state=processing,failed{% endif %}" hx-target="#main" hx-select="#main" hx-push-url="true">最近消费</a>
+  </div>
+</div>
+
+{% if items %}
+<section class="queue-list" aria-label="内容列表">
+  {% for bundle in items %}
+  {{ item_row(bundle, loop.index) }}
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty-state">
+  <div class="empty-mark">拾</div>
+  {% if inbox %}
+  <h2>Inbox 是空的</h2>
+  <p>没有正在处理或失败的内容。</p>
+  <a href="/library" role="button" class="secondary" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">返回 Library</a>
+  {% else %}
+  <h2>Library 还是空的</h2>
+  <p>粘贴一条 B 站/YouTube 链接、上传本地文件，或从播客 feed 选一集开始。</p>
+  <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加第一条内容</a>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

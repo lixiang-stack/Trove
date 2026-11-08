@@ -1,0 +1,31 @@
+{% if feed_error %}
+<div class="alert alert-error" role="alert">{{ feed_error }}</div>
+{% endif %}
+{% if feed %}
+<section class="feed-preview">
+  <h3>{{ feed.title }}{% if feed.author %} <small>{{ feed.author }}</small>{% endif %}</h3>
+  {% if feed.episodes %}
+  <ul class="feed-episodes">
+    {% for episode in feed.episodes %}
+    <li>
+      <div class="feed-episode-body">
+        <strong>{{ episode.title }}</strong>
+        <span>{{ episode.published_at or "日期未知" }}{% if episode.duration_sec %} · {{ episode.duration_sec|duration }}{% endif %}</span>
+      </div>
+      <form method="post" action="/add/podcast">
+        <input type="hidden" name="feed_url" value="{{ feed_url }}">
+        {% if episode.guid %}
+        <input type="hidden" name="episode_guid" value="{{ episode.guid }}">
+        {% else %}
+        <input type="hidden" name="enclosure_url" value="{{ episode.enclosure_url }}">
+        {% endif %}
+        <button type="submit" class="secondary">入库</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">这个 feed 没有可入库的单集。</p>
+  {% endif %}
+</section>
+{% endif %}
