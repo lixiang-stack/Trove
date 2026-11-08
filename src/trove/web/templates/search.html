@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Search · 拾藏{% endblock %}
+{% block main %}
+<section class="search-page">
+  <header class="page-head">
+    <p class="eyebrow">RETRIEVAL</p>
+    <h1>Search</h1>
+  </header>
+  <form method="get" action="/search" class="search-form">
+    <input name="q" value="{{ query }}" placeholder="搜标题、摘要、transcript、书、Tag" autocomplete="off">
+    <button type="submit">搜索</button>
+  </form>
+  {% if query %}
+  <p class="search-meta">{{ results|length }} 个 Item 命中「{{ query }}」 · 按 Item 聚合</p>
+  <div class="search-results">
+    {% for result in results %}
+    {% set bundle = result.bundle %}
+    {% set hit = result.hit %}
+    <a class="search-result" href="/items/{{ bundle.item.id }}/listen"
+       hx-get="/items/{{ bundle.item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">
+      <span class="cover cover-{{ bundle.item.id|cover_tone }}"><span>{{ bundle.item.title[:1] }}</span></span>
+      <span class="result-body">
+        <strong>{{ bundle.item.title }}</strong>
+        <span class="result-meta">{{ bundle.item.author or "未知作者" }} · {{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }}</span>
+        <span class="result-snippet">{{ hit.text }}</span>
+        <span class="result-ref">{{ hit.doc_kind|ref_label(hit.ref) }}</span>
+      </span>
+    </a>
+    {% endfor %}
+    {% if not results %}
+    <div class="empty-state compact">
+      <div class="empty-mark">?</div>
+      <h2>没有命中</h2>
+      <p>试试两字中文词或英文关键词。</p>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  <div class="empty-state compact">
+    <div class="empty-mark">⌕</div>
+    <h2>搜索你的库</h2>
+    <p>标题、摘要、transcript、书文本和 Tag 会一起被检索。</p>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}
