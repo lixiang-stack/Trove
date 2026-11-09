@@ -34,6 +34,11 @@ from trove.errors import ValidationError
             "https://www.bilibili.com/video/av123",
             "bilibili",
         ),
+        (
+            "https://www.bilibili.com/video/BV1MLqDYxEpN?p=2",
+            "https://www.bilibili.com/video/BV1MLqDYxEpN?p=2",
+            "bilibili",
+        ),
     ],
 )
 def test_url_normalization(raw, canonical, platform):
@@ -49,7 +54,7 @@ def test_url_normalization(raw, canonical, platform):
     [
         "https://www.youtube.com/playlist?list=PL123",
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123",
-        "https://www.bilibili.com/video/BV1xx411c7mD?p=2",
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=0",
         "https://www.bilibili.com/video/BV1xx411c7mD?list=123",
         "https://www.bilibili.com/live/123",
         "https://vimeo.com/123",
@@ -68,6 +73,7 @@ def test_add_bilibili_and_youtube_creates_queued_run(api_host):
     api_host.login()
     for url in (
         "https://www.bilibili.com/video/BV1xx411c7mD",
+        "https://www.bilibili.com/video/BV1xx411c7mD?p=2",
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
     ):
         response = api_host.client.post("/api/items", json={"kind": "url", "url": url})

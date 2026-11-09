@@ -8,7 +8,7 @@ from sqlalchemy.orm import sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage
-from trove.db.models import Artifact, BookChapter, Item, TranscriptSegment
+from trove.db.models import Artifact, Item, TranscriptSegment
 from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
 from trove.services.library import ItemBundle, LibraryService
@@ -87,6 +87,14 @@ class PlaybackService:
             return self.library.get(item_id)
 
     def set_consumption_state(self, item_id: str, state: str) -> ItemBundle:
+        if state not in {
+            ConsumptionState.UNSTARTED,
+            ConsumptionState.IN_PROGRESS,
+            ConsumptionState.FINISHED,
+        }:
+            raise ValidationError(
+                "Consumption State 无效", details={"code": "progress.invalid_state"}
+            )
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
@@ -117,24 +125,3 @@ class PlaybackService:
                 }
                 for segment in segments
             ]
-
-    def chapter(self, item_id: str, chapter_index: int) -> dict[str, Any]:
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("内容不存在")
-            chapter = session.execute(
-                select(BookChapter).where(
-                    BookChapter.item_id == item_id,
-                    BookChapter.chapter_index == chapter_index,
-                )
-            ).scalars().first()
-            if chapter is None:
-                raise NotFoundError("章节不存在")
-            return {
-                "item_id": item_id,
-                "chapter_index": chapter.chapter_index,
-                "title": chapter.title,
-                "html": chapter.html,
-                "text": chapter.text,
-            }

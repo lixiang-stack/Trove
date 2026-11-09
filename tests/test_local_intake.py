@@ -226,3 +226,14 @@ def test_failed_upload_validation_cleans_temp(host):
     assert response.status_code == 422
     assert response.json()["details"]["code"] == "epub.invalid"
     assert not (host.config.uploads_dir / upload_id).exists()
+
+
+def test_upload_rejects_wrong_mime_type(host):
+    host.login()
+    response = host.client.post(
+        "/api/uploads",
+        files={"file": ("audio.wav", b"not really audio", "text/plain")},
+    )
+    assert response.status_code == 422
+    assert response.json()["details"]["code"] == "upload.invalid_type"
+    assert list(host.config.uploads_dir.iterdir()) == []

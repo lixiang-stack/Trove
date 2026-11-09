@@ -71,8 +71,10 @@ def test_health_reports_host_database_and_worker(api_host):
 def test_base_layout_vendors_assets(api_host):
     response = api_host.client.get("/login")
     assert response.status_code == 200
-    assert "/static/htmx.min.js" in response.text
-    assert "/static/pico.min.css" in response.text
+    assert "/static/htmx.min.js?v=" in response.text
+    assert "/static/pico.min.css?v=" in response.text
+    assert "/static/app.css?v=" in response.text
+    assert "/static/player.js?v=" in response.text
     assert "unpkg.com" not in response.text
     assert "cdn.jsdelivr.net" not in response.text
 
@@ -118,3 +120,23 @@ def test_env_file_has_restrictive_mode(tmp_path):
     config = Config(home=tmp_path / "Trove")
     config.ensure_layout()
     assert os.stat(config.env_path).st_mode & 0o777 == 0o600
+
+
+def test_serve_starts_embedded_worker_by_default(tmp_path, monkeypatch):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    upgrade_database(config)
+    monkeypatch.setenv("TROVE_HOME", str(config.home))
+    started: list[object] = []
+
+    def fake_start(config):
+        started.append(config)
+        return None
+
+    monkeypatch.setattr("trove.cli._start_worker_child", fake_start)
+    monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: None)
+    assert main(["serve", "--host", "127.0.0.1", "--port", "8765"]) == 0
+    assert started
+    started.clear()
+    assert main(["serve", "--no-worker"]) == 0
+    assert started == []

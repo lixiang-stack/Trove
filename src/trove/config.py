@@ -19,6 +19,11 @@ DB_FILENAME = "trove.db"
 
 MB = 1024 * 1024
 GB = 1024 * MB
+DEFAULT_MAX_VIDEO_BYTES = 4 * GB
+DEFAULT_MAX_AUDIO_BYTES = 500 * MB
+DEFAULT_MAX_EPUB_BYTES = 100 * MB
+DEFAULT_MAX_FEED_BYTES = 10 * MB
+DEFAULT_MAX_PODCAST_MEDIA_BYTES = GB
 
 
 class ConfigError(RuntimeError):
@@ -34,11 +39,11 @@ class Config:
     home: Path = field(default_factory=_default_home)
     host: str = "127.0.0.1"
     port: int = 8765
-    max_video_bytes: int = 4 * GB
-    max_audio_bytes: int = 500 * MB
-    max_epub_bytes: int = 100 * MB
-    max_feed_bytes: int = 10 * MB
-    max_podcast_media_bytes: int = GB
+    max_video_bytes: int = DEFAULT_MAX_VIDEO_BYTES
+    max_audio_bytes: int = DEFAULT_MAX_AUDIO_BYTES
+    max_epub_bytes: int = DEFAULT_MAX_EPUB_BYTES
+    max_feed_bytes: int = DEFAULT_MAX_FEED_BYTES
+    max_podcast_media_bytes: int = DEFAULT_MAX_PODCAST_MEDIA_BYTES
     llm_enabled: bool = True
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
@@ -107,9 +112,6 @@ class Config:
             self._write_env("")
         else:
             self.env_path.chmod(0o600)
-
-    def item_dir(self, item_id: str) -> Path:
-        return self.library_dir / item_id
 
     # ------------------------------------------------------------------
     # config.toml
@@ -231,11 +233,21 @@ def load_config(home: Path | str | None = None) -> Config:
     config = Config(
         host=os.environ.get("TROVE_BIND", "127.0.0.1"),
         port=int(os.environ.get("TROVE_PORT", "8765")),
-        max_video_bytes=int(os.environ.get("TROVE_MAX_VIDEO_BYTES", str(4 * GB))),
-        max_audio_bytes=int(os.environ.get("TROVE_MAX_AUDIO_BYTES", str(500 * MB))),
-        max_epub_bytes=int(os.environ.get("TROVE_MAX_EPUB_BYTES", str(100 * MB))),
-        max_feed_bytes=int(os.environ.get("TROVE_MAX_FEED_BYTES", str(10 * MB))),
-        max_podcast_media_bytes=int(os.environ.get("TROVE_MAX_PODCAST_BYTES", str(GB))),
+        max_video_bytes=int(
+            os.environ.get("TROVE_MAX_VIDEO_BYTES", str(DEFAULT_MAX_VIDEO_BYTES))
+        ),
+        max_audio_bytes=int(
+            os.environ.get("TROVE_MAX_AUDIO_BYTES", str(DEFAULT_MAX_AUDIO_BYTES))
+        ),
+        max_epub_bytes=int(
+            os.environ.get("TROVE_MAX_EPUB_BYTES", str(DEFAULT_MAX_EPUB_BYTES))
+        ),
+        max_feed_bytes=int(
+            os.environ.get("TROVE_MAX_FEED_BYTES", str(DEFAULT_MAX_FEED_BYTES))
+        ),
+        max_podcast_media_bytes=int(
+            os.environ.get("TROVE_MAX_PODCAST_BYTES", str(DEFAULT_MAX_PODCAST_MEDIA_BYTES))
+        ),
         llm_enabled=os.environ.get("TROVE_LLM_ENABLED", "true").lower() not in {"0", "false", "no"},
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},

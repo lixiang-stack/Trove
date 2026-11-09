@@ -338,8 +338,21 @@
     });
   }
 
+  function refreshNav() {
+    const path = window.location.pathname;
+    const active = path.startsWith("/search")
+      ? "/search"
+      : path.startsWith("/add")
+        ? "/add"
+        : "/library";
+    $all(".main-nav a, .bottom-nav a").forEach((link) => {
+      link.classList.toggle("active", link.getAttribute("href") === active);
+    });
+  }
+
   function refreshPagePlayer() {
     document.body.dataset.page = $(".now-playing") ? "listen" : "app";
+    refreshNav();
     const script = $("[data-player-item]");
     if (script) {
       const item = itemFromScript(script);
@@ -366,6 +379,7 @@
       }
     });
     document.body.addEventListener("htmx:historyRestore", refreshPagePlayer);
+    window.addEventListener("popstate", refreshNav);
     window.addEventListener("pagehide", () => {
       if (state.item) saveProgress({}, { keepalive: true });
     });

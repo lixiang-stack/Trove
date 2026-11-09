@@ -5,7 +5,26 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
-from sqlalchemy.orm import Session
+__all__ = [
+    "AudioExtractor",
+    "AudioResult",
+    "BookChapterData",
+    "BookExtractor",
+    "BookResult",
+    "DownloadResult",
+    "Downloader",
+    "FeedClient",
+    "FeedEpisode",
+    "FeedPreview",
+    "OrganizationResult",
+    "Organizer",
+    "SearchHit",
+    "SearchIndex",
+    "StageContext",
+    "Transcriber",
+    "TranscriptResult",
+    "TranscriptSegmentData",
+]
 
 
 @dataclass(slots=True)
@@ -113,9 +132,7 @@ class SearchHit:
 
 
 class Downloader(Protocol):
-    def download(
-        self, source: dict[str, Any], context: StageContext
-    ) -> DownloadResult: ...
+    def download(self, source: dict[str, Any], context: StageContext) -> DownloadResult: ...
 
 
 class FeedClient(Protocol):
@@ -149,12 +166,14 @@ class Organizer(Protocol):
 
 
 class BookExtractor(Protocol):
+    def validate(self, book_path: Path) -> None: ...
+
     def extract(self, book_path: Path, context: StageContext) -> BookResult: ...
 
 
 class SearchIndex(Protocol):
-    def index_item(self, session: Session, item_id: str) -> None: ...
+    def index_item(self, item_id: str) -> None: ...
 
-    def delete_item(self, session: Session, item_id: str) -> None: ...
+    def delete_item(self, item_id: str) -> None: ...
 
-    def search(self, session: Session, query: str, *, limit: int = 50) -> list[SearchHit]: ...
+    def search(self, query: str, *, limit: int = 50) -> list[SearchHit]: ...

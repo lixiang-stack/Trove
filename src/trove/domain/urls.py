@@ -35,10 +35,10 @@ def canonicalize_video_url(raw: str) -> CanonicalVideoUrl:
         raise ValidationError("链接不能包含用户名或密码", details={"code": "url.credentials"})
     host = (parts.hostname or "").lower()
     if host in YOUTUBE_HOSTS:
-        canonical = _canonical_youtube(parts, raw)
+        canonical = _canonical_youtube(parts)
         return CanonicalVideoUrl(raw, canonical, canonical, Platform.YOUTUBE)
     if host in BILIBILI_HOSTS:
-        canonical = _canonical_bilibili(parts, raw)
+        canonical = _canonical_bilibili(parts)
         return CanonicalVideoUrl(raw, canonical, canonical, Platform.BILIBILI)
     raise ValidationError(
         "只支持 B 站和 YouTube 单条视频链接",
@@ -75,14 +75,14 @@ def _youtube_id(parts) -> str:
     )
 
 
-def _canonical_youtube(parts, raw: str) -> str:
+def _canonical_youtube(parts) -> str:
     video_id = _youtube_id(parts)
     if not YOUTUBE_ID_RE.match(video_id):
         raise ValidationError("YouTube 视频 ID 无效", details={"code": "url.parse"})
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
-def _canonical_bilibili(parts, raw: str) -> str:
+def _canonical_bilibili(parts) -> str:
     path = parts.path.rstrip("/")
     if not path.startswith("/video/"):
         if path.startswith("/live/"):
@@ -97,21 +97,23 @@ def _canonical_bilibili(parts, raw: str) -> str:
     query = parse_qs(parts.query)
     if any(key in query for key in PLAYLIST_PARAMS):
         raise ValidationError(
-            "不支持多 P 或播放列表链接，请只粘贴单条视频",
+            "不支持播放列表链接，请只粘贴单条视频",
             details={"code": "url.playlist_not_supported"},
         )
+    part = 1
     p_values = query.get("p") or []
-    for value in p_values:
+    if p_values:
         try:
-            if int(value) > 1:
-                raise ValidationError(
-                    "不支持多 P 链接，请只粘贴单条视频",
-                    details={"code": "url.playlist_not_supported"},
-                )
+            part = int(p_values[0])
         except ValueError as exc:
             raise ValidationError("B 站分 P 参数无效", details={"code": "url.parse"}) from exc
+        if part < 1:
+            raise ValidationError("B 站分 P 参数无效", details={"code": "url.parse"})
     normalized_id = video_id if video_id.lower().startswith("av") else f"BV{video_id[2:]}"
-    return f"https://www.bilibili.com/video/{normalized_id}"
+    canonical = f"https://www.bilibili.com/video/{normalized_id}"
+    if part > 1:
+        canonical += f"?p={part}"
+    return canonical
 
 
 TRACKING_PARAMS = {

@@ -254,5 +254,17 @@ def seed_item(
                 )
         session.commit()
     if tags:
-        host.runtime.library.set_tags(item_id, tags, source="user")
+        from trove.db.models import ItemTag, Tag
+        from trove.domain.tags import normalize_tag
+
+        with host.runtime.sessions() as session:
+            for raw in tags:
+                display, normalized = normalize_tag(raw)
+                tag = session.query(Tag).filter_by(normalized_name=normalized).first()
+                if tag is None:
+                    tag = Tag(name=display, normalized_name=normalized)
+                    session.add(tag)
+                    session.flush()
+                session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="user"))
+            session.commit()
     return host.runtime.library.get(item_id)

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import time
-
 from sqlalchemy import select
 
 from trove.db.models import Run, RunStep
@@ -65,13 +63,9 @@ def test_cancel_queued_run_worker_never_claims(host, host_factory):
     response = queued_host.client.post(f"/api/items/{item_id}/cancel")
     assert response.status_code == 200
     assert queued_host.item(item_id)["run"]["state"] == "cancelled"
-    worker = WorkerThread(queued_host.runtime).start()
-    try:
-        time.sleep(0.5)
-        assert queued_host.stack.downloader.calls == []
-        assert queued_host.item(item_id)["run"]["state"] == "cancelled"
-    finally:
-        worker.stop()
+    assert queued_host.runtime.processing.claim_next() is None
+    assert queued_host.stack.downloader.calls == []
+    assert queued_host.item(item_id)["run"]["state"] == "cancelled"
 
 
 def test_cancel_running_stage_stops_and_keeps_audio(host):

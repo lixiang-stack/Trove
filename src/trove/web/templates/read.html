@@ -1,9 +1,0 @@
-{% extends "base.html" %}
-{% block title %}{{ bundle.item.title }} · 阅读{% endblock %}
-{% block main %}
-<article class="reader-page">
-  <nav class="breadcrumbs"><a href="/items/{{ bundle.item.id }}" hx-get="/items/{{ bundle.item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">← 详情</a></nav>
-  <h1>{{ bundle.item.title }}</h1>
-  <p class="subtitle">薄阅读器将在 EPUB 解析完成后开放。</p>
-</article>
-{% endblock %}

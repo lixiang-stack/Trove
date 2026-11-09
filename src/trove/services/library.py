@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage
-from trove.db.models import AiResult, Artifact, Item, ItemTag, Run, RunStep, Tag
+from trove.db.models import Artifact, Item, ItemTag, Run, RunStep, Tag
 from trove.domain.items import (
     ACTIVE_RUN_STATES,
     CONSUMPTION_LABELS,
@@ -22,7 +22,6 @@ from trove.domain.items import (
     ConsumptionState,
     RunState,
 )
-from trove.domain.tags import normalize_tag
 from trove.errors import ConflictError, NotFoundError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
@@ -139,40 +138,47 @@ class LibraryService:
             ).scalars().first()
             if existing is not None:
                 return item_bundle(session, existing), True
-            item = Item(
-                id=str(uuid.uuid4()),
-                source_key=source_key,
-                source_type=source_type,
-                platform=platform,
-                source_url_raw=source_url_raw,
-                source_url_canonical=source_url_canonical,
-                source_path=source_path,
-                title=title or "未命名内容",
-                author=author,
-                published_at=published_at,
-                fetched_at=now,
-                language=language,
-                duration_sec=duration_sec,
-                consumption_state=ConsumptionState.UNSTARTED,
-                audio_position_sec=0.0,
-                created_at=now,
-                updated_at=now,
+        item = Item(
+            id=str(uuid.uuid4()),
+            source_key=source_key,
+            source_type=source_type,
+            platform=platform,
+            source_url_raw=source_url_raw,
+            source_url_canonical=source_url_canonical,
+            source_path=source_path,
+            title=title or "未命名内容",
+            author=author,
+            published_at=published_at,
+            fetched_at=now,
+            language=language,
+            duration_sec=duration_sec,
+            consumption_state=ConsumptionState.UNSTARTED,
+            audio_position_sec=0.0,
+            created_at=now,
+            updated_at=now,
+        )
+        # The content package is the portable fact source: write it before the DB row.
+        self.package.ensure(item.id)
+        try:
+            self.package.write_source(
+                item.id, self._source_document(item, extra=extra_source)
             )
+        except Exception:
+            self.package.remove(item.id)
+            raise
+        with self.sessions() as session:
             session.add(item)
             try:
                 session.commit()
             except IntegrityError as exc:
                 session.rollback()
+                self.package.remove(item.id)
                 existing = session.execute(
                     select(Item).where(Item.source_key == source_key)
                 ).scalars().first()
                 if existing is not None:
                     return item_bundle(session, existing), True
                 raise ConflictError("内容已存在") from exc
-            self.package.ensure(item.id)
-            self.package.write_source(
-                item.id, self._source_document(item, extra=extra_source)
-            )
             return item_bundle(session, item), False
 
     def get(self, item_id: str) -> ItemBundle:
@@ -187,21 +193,50 @@ class LibraryService:
         *,
         sort: str = "recent_added",
         states: set[str] | None = None,
-        limit: int = 500,
+        item_type: str | None = None,
+        consumption: str | None = None,
+        platform: str | None = None,
+        limit: int | None = None,
     ) -> list[ItemBundle]:
         with self.sessions() as session:
             statement = select(Item)
-            order = (
-                (Item.created_at.desc(), Item.id.desc())
-                if sort == "recent_added"
-                else (Item.updated_at.desc(), Item.id.desc())
-            )
-            statement = statement.order_by(*order).limit(limit)
+            if item_type:
+                statement = statement.where(Item.source_type == item_type)
+            if consumption:
+                statement = statement.where(Item.consumption_state == consumption)
+            if platform:
+                statement = statement.where(Item.platform == platform)
+            if sort == "recent_consumed":
+                activity = case(
+                    (
+                        or_(
+                            Item.consumption_state != ConsumptionState.UNSTARTED,
+                            Item.audio_position_sec > 0,
+                        ),
+                        Item.updated_at,
+                    ),
+                    else_=Item.created_at,
+                )
+                statement = statement.order_by(activity.desc(), Item.id.desc())
+            else:
+                statement = statement.order_by(Item.created_at.desc(), Item.id.desc())
+            if limit is not None:
+                statement = statement.limit(limit)
             items = session.scalars(statement).all()
             bundles = [item_bundle(session, item) for item in items]
         if not states:
             return bundles
         return [bundle for bundle in bundles if _matches_states(bundle, states)]
+
+    def tag_counts(self) -> list[tuple[str, int]]:
+        with self.sessions() as session:
+            rows = session.execute(
+                select(Tag.name, func.count(ItemTag.item_id).label("count"))
+                .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .group_by(Tag.id)
+                .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
+            )
+            return [(name, count) for name, count in rows]
 
     def source_document(self, item_id: str) -> dict[str, Any]:
         return self.package.read_source(item_id)
@@ -224,11 +259,11 @@ class LibraryService:
             if author is not None:
                 item.author = author.strip() or None
             item.updated_at = utc_ms()
-            self.search_index.index_item(session, item.id)
+            self.package.write_source(item.id, self._updated_source_document(item))
             session.commit()
-            source = self._source_document(item)
-            self.package.write_source(item.id, source)
-            return item_bundle(session, item)
+            bundle = item_bundle(session, item)
+        self.search_index.index_item(item_id)
+        return bundle
 
     def delete(self, item_id: str) -> None:
         with self.sessions() as session:
@@ -236,82 +271,13 @@ class LibraryService:
             if item is None:
                 raise NotFoundError("内容不存在")
             source_path = Path(item.source_path) if item.source_path else None
-            self.search_index.delete_item(session, item_id)
             session.delete(item)
             session.commit()
+        self.search_index.delete_item(item_id)
         self.package.remove(item_id)
         if source_path is not None and source_path.is_relative_to(self.config.uploads_dir):
             shutil.rmtree(source_path.parent, ignore_errors=True)
 
-    def set_tags(self, item_id: str, tags: list[str], *, source: str = "ai") -> None:
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("内容不存在")
-            existing = {
-                row.tag_id
-                for row in session.execute(
-                    select(ItemTag).where(
-                        ItemTag.item_id == item_id, ItemTag.source == source
-                    )
-                ).scalars()
-            }
-            keep: set[int] = set()
-            for raw in tags:
-                try:
-                    display, normalized = normalize_tag(raw)
-                except Exception:
-                    continue
-                tag = session.execute(
-                    select(Tag).where(Tag.normalized_name == normalized)
-                ).scalars().first()
-                if tag is None:
-                    tag = Tag(name=display, normalized_name=normalized)
-                    session.add(tag)
-                    session.flush()
-                if tag.id not in keep:
-                    if tag.id not in existing:
-                        session.add(ItemTag(item_id=item_id, tag_id=tag.id, source=source))
-                    keep.add(tag.id)
-            for tag_id in existing - keep:
-                row = session.get(ItemTag, (item_id, tag_id))
-                if row is not None and row.source == source:
-                    session.delete(row)
-            item.updated_at = utc_ms()
-            session.commit()
-
-    def add_ai_result(
-        self,
-        item_id: str,
-        *,
-        run_id: str | None,
-        summary: str,
-        model: str,
-        prompt_version: str,
-        input_tokens: int,
-        output_tokens: int,
-        cost_usd: float,
-    ) -> None:
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("内容不存在")
-            item.summary = summary
-            item.updated_at = utc_ms()
-            session.add(
-                AiResult(
-                    item_id=item_id,
-                    run_id=run_id,
-                    summary=summary,
-                    model=model,
-                    prompt_version=prompt_version,
-                    input_tokens=input_tokens,
-                    output_tokens=output_tokens,
-                    cost_usd=cost_usd,
-                    created_at=utc_ms(),
-                )
-            )
-            session.commit()
 
     # ------------------------------------------------------------------
     # Views
@@ -386,6 +352,23 @@ class LibraryService:
             ],
             "log_tail": tail_run_log(self.config, run.id),
         }
+
+    def _updated_source_document(self, item: Item) -> dict[str, Any]:
+        document = self.package.read_source(item.id)
+        document.update(
+            {
+                "title": item.title,
+                "author": item.author,
+                "published_at": item.published_at,
+                "fetched_at": item.fetched_at,
+                "language": item.language,
+                "duration_sec": item.duration_sec,
+                "source_path": item.source_path,
+                "source_url_raw": item.source_url_raw,
+                "source_url_canonical": item.source_url_canonical,
+            }
+        )
+        return document
 
     def _source_document(
         self, item: Item, *, extra: dict[str, Any] | None = None

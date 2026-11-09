@@ -267,3 +267,166 @@ def test_mobile_now_playing_layout(host, browser):
     assert page.locator(".now-playing").is_visible()
     assert page.locator(".now-controls").is_visible()
     context.close()
+
+
+def test_nav_active_state_follows_htmx_navigation(host, browser):
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    assert page.locator(".main-nav a.active").get_attribute("href") == "/library"
+    page.click('.main-nav a[href="/search"]')
+    page.wait_for_url("**/search")
+    assert page.locator(".main-nav a.active").get_attribute("href") == "/search"
+    page.click('.main-nav a[href="/add"]')
+    page.wait_for_url("**/add")
+    assert page.locator(".main-nav a.active").get_attribute("href") == "/add"
+    page.click('.main-nav a[href="/library"]')
+    page.wait_for_url("**/library")
+    assert page.locator(".main-nav a.active").get_attribute("href") == "/library"
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.click('.bottom-nav a[href="/search"]')
+    page.wait_for_url("**/search")
+    assert page.locator(".bottom-nav a.active").get_attribute("href") == "/search"
+    context.close()
+
+
+def test_search_input_is_usable(host, browser):
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/search", wait_until="domcontentloaded")
+    field = page.locator('input[name="q"]')
+    box = field.bounding_box()
+    assert box is not None and box["width"] > 200
+    field.fill("记忆")
+    assert field.input_value() == "记忆"
+    context.close()
+
+
+def test_light_theme_is_forced_in_dark_system(host, browser):
+    bundle = seed_item(host, title="深色系统下的可读性", author="作者")
+    host.login()
+    token = host.client.cookies.get("trove_session")
+    context = browser.new_context(
+        viewport={"width": 1280, "height": 900}, color_scheme="dark"
+    )
+    context.add_cookies(
+        [{"name": "trove_session", "value": token, "url": host.base_url}]
+    )
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    row = page.locator(f'.queue-item[data-item-id="{bundle.item.id}"]')
+    colors = row.evaluate(
+        "(e) => { const s = getComputedStyle(e);"
+        " return { background: s.backgroundColor, color: s.color }; }"
+    )
+    assert colors["color"] == "rgb(31, 29, 26)"
+    page.goto(f"{host.base_url}/add", wait_until="domcontentloaded")
+    heading = page.locator("h1").evaluate(
+        "(e) => { const s = getComputedStyle(e); return s.color; }"
+    )
+    assert heading == "rgb(31, 29, 26)"
+    context.close()
+
+
+def test_listen_page_is_readable_in_dark_system(host_factory, browser):
+    host = host_factory(start_worker=False, home_name="browser-listen-dark")
+    host.login()
+    response = host.client.post(
+        "/api/items",
+        json={"kind": "url", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"},
+    )
+    item_id = response.json()["item"]["id"]
+    from sqlalchemy import text
+
+    with host.runtime.sessions() as session:
+        session.execute(
+            text(
+                "UPDATE runs SET state = 'failed', current_stage = 'transcribing', "
+                "error_code = 'asr.not_configured', "
+                "error_message = '转写组件尚未配置，请稍后重试' WHERE item_id = :item_id"
+            ),
+            {"item_id": item_id},
+        )
+        session.commit()
+    _seed_transcript(host, item_id)
+    token = host.client.cookies.get("trove_session")
+    context = browser.new_context(
+        viewport={"width": 390, "height": 844}, color_scheme="dark"
+    )
+    context.add_cookies(
+        [{"name": "trove_session", "value": token, "url": host.base_url}]
+    )
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{item_id}/listen", wait_until="domcontentloaded")
+    assert page.locator(".now-playing").is_visible()
+    assert page.locator(".status-panel").count() == 1
+    colors = page.locator(".now-playing").evaluate(
+        "(e) => { const s = getComputedStyle(e);"
+        " return { background: s.backgroundColor, color: s.color }; }"
+    )
+    assert colors["background"] == "rgb(23, 22, 20)"
+    assert colors["color"] == "rgb(244, 239, 230)"
+    heading = page.locator(".now-title").evaluate(
+        "(e) => { const s = getComputedStyle(e); return s.color; }"
+    )
+    assert heading == "rgb(244, 239, 230)"
+    note = page.locator(".now-missing .status-message").evaluate(
+        "(e) => { const s = getComputedStyle(e); return s.color; }"
+    )
+    assert note == "rgba(244, 239, 230, 0.72)"
+    retry = page.locator(".now-missing .status-actions button").evaluate(
+        "(e) => { const s = getComputedStyle(e);"
+        " return { color: s.color, background: s.backgroundColor }; }"
+    )
+    assert retry["color"] == "rgb(244, 239, 230)"
+    assert retry["background"] != "rgba(0, 0, 0, 0)"
+    transcript = page.locator(".transcript-heading").evaluate(
+        "(e) => { const s = getComputedStyle(e); return s.color; }"
+    )
+    assert transcript == "rgb(244, 239, 230)"
+    context.close()
+
+
+def _circle_and_icon_center(page, selector):
+    return page.locator(selector).first.evaluate(
+        """(e) => {
+            const box = e.getBoundingClientRect();
+            const icon = e.querySelector('span') || e;
+            const glyph = icon.getBoundingClientRect();
+            return {
+                width: box.width,
+                height: box.height,
+                padding: getComputedStyle(e).padding,
+                offsetX: Math.abs((box.x + box.width / 2) - (glyph.x + glyph.width / 2)),
+                offsetY: Math.abs((box.y + box.height / 2) - (glyph.y + glyph.height / 2)),
+            };
+        }"""
+    )
+
+
+def test_round_player_buttons_stay_circular_and_centered(host, browser):
+    bundle = seed_item(host, title="按钮几何", duration=20.0, audio_fixture="long.m4a")
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    play = _circle_and_icon_center(page, ".play-button")
+    assert play["width"] == play["height"] == 36
+    assert play["padding"] == "0px"
+    assert play["offsetX"] < 1 and play["offsetY"] < 1
+
+    page.click(f'[data-play-item][data-item-id="{bundle.item.id}"]')
+    page.wait_for_selector(f'[data-inline-for="{bundle.item.id}"]', state="visible")
+    inline_play = _circle_and_icon_center(
+        page, f'[data-inline-for="{bundle.item.id}"] .round-button'
+    )
+    assert inline_play["width"] == inline_play["height"] == 38
+    assert inline_play["offsetX"] < 1 and inline_play["offsetY"] < 1
+
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/listen", wait_until="domcontentloaded")
+    now_play = _circle_and_icon_center(page, ".now-play")
+    assert now_play["width"] == now_play["height"] == 62
+    assert now_play["offsetX"] < 1 and now_play["offsetY"] < 1
+    speed = _circle_and_icon_center(page, ".now-controls .round-button")
+    assert speed["width"] == speed["height"] == 38
+    assert speed["offsetX"] < 1 and speed["offsetY"] < 1
+    context.close()

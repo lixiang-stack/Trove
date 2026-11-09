@@ -96,15 +96,6 @@ def _duration(entry) -> float | None:
         return None
 
 
-def feed_episode(preview: FeedPreview, guid: str | None) -> FeedEpisode:
-    for episode in preview.episodes:
-        if episode.guid == guid:
-            return episode
-    if guid:
-        raise ValidationError("feed 中找不到该单集", details={"code": "feed.episode_not_found"})
-    raise ValidationError("缺少单集标识", details={"code": "feed.episode_not_found"})
-
-
 def download_episode(
     http: SafeHttpClient,
     episode: FeedEpisode,

@@ -19,6 +19,11 @@ class ValidationError(TroveError):
     status_code = 422
     code = "request.invalid"
 
+    def __init__(self, message: str, *, details: dict[str, Any] | None = None) -> None:
+        super().__init__(message, details=details)
+        if details and details.get("code"):
+            self.code = str(details["code"])
+
 
 class UnauthorizedError(TroveError):
     status_code = 401

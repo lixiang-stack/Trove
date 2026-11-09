@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from .fakes import FIXTURES, wait_until
@@ -57,11 +59,11 @@ def test_epub_fixture_is_parsed(host):
     item_id = response.json()["item"]["id"]
     payload = host.wait_for_item(item_id)
     assert payload["processing_state"] == "completed"
-    chapter = host.client.get(f"/api/items/{item_id}/book/chapters/0")
-    assert chapter.status_code == 200
-    body = chapter.json()
-    assert "North Wind" in body["title"]
-    assert "traveller" in body["text"]
+    book = json.loads(
+        (host.config.library_dir / item_id / "book.json").read_text(encoding="utf-8")
+    )
+    assert "North Wind" in book["chapters"][0]["title"]
+    assert "traveller" in book["chapters"][0]["text"]
     detail = host.client.get(f"/api/items/{item_id}").json()
     assert detail["has_book"] is True
     assert (host.config.library_dir / item_id / "book.epub").is_file()
@@ -85,8 +87,3 @@ def test_ffmpeg_extracts_a_real_audio_artifact(host):
 def test_worker_polling_timeout_has_clear_diagnostic():
     with pytest.raises(TimeoutError, match="condition not met"):
         wait_until(lambda: False, timeout=0.1)
-
-
-@pytest.mark.network
-def test_network_marker_is_excluded_by_default():
-    assert True
