@@ -173,6 +173,9 @@ class FakeBookExtractor:
         self.real = EpubExtractor()
         self.fail_code: str | None = None
 
+    def validate(self, book_path: Path) -> None:
+        self.real.validate(book_path)
+
     def extract(self, book_path: Path, context: StageContext) -> BookResult:
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake book extraction failure")

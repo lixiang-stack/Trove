@@ -40,7 +40,7 @@ STAGE_INDEXING = "indexing"
 
 ACTIVE_RUN_STATES = frozenset(
     {
-        "queued",
+        RunState.QUEUED,
         STAGE_DOWNLOADING,
         STAGE_EXTRACTING_AUDIO,
         STAGE_EXTRACTING_TEXT,

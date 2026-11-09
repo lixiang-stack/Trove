@@ -12,7 +12,6 @@ from typing import BinaryIO
 
 from sqlalchemy import select
 
-from trove.adapters.epub import validate_epub
 from trove.config import Config
 from trove.content_package import ContentPackage, sha256_file
 from trove.db.models import Artifact, Item
@@ -23,7 +22,7 @@ from trove.domain.urls import (
     podcast_source_key,
 )
 from trove.errors import NotFoundError, ValidationError
-from trove.ports import FeedClient
+from trove.ports import BookExtractor, FeedClient
 from trove.services.library import ItemBundle, LibraryService
 from trove.services.processing import ProcessingService
 
@@ -48,7 +47,12 @@ class UploadStore:
         self.config = config
 
     def save_stream(
-        self, stream: BinaryIO, filename: str, *, kind: str | None = None
+        self,
+        stream: BinaryIO,
+        filename: str,
+        *,
+        kind: str | None = None,
+        content_type: str | None = None,
     ) -> UploadRecord:
         filename = Path(filename or "upload").name
         suffix = Path(filename).suffix.lower()
@@ -58,6 +62,7 @@ class UploadStore:
         if kind and kind != suffix_kind:
             raise ValidationError("文件类型与声明不符", details={"code": "upload.invalid_type"})
         detected_kind = suffix_kind
+        _check_content_type(detected_kind, content_type)
         limit = {
             "audio": self.config.max_audio_bytes,
             "video": self.config.max_video_bytes,
@@ -125,6 +130,7 @@ class IntakeService:
         library: LibraryService,
         processing: ProcessingService,
         feed_client: FeedClient,
+        book_extractor: BookExtractor,
         uploads: UploadStore,
     ) -> None:
         self.config = config
@@ -132,6 +138,7 @@ class IntakeService:
         self.library = library
         self.processing = processing
         self.feed_client = feed_client
+        self.book_extractor = book_extractor
         self.uploads = uploads
 
     # ------------------------------------------------------------------
@@ -217,7 +224,7 @@ class IntakeService:
             "epub": SourceType.EPUB,
         }[kind]
         if kind == "epub":
-            validate_epub(source_path)
+            self.book_extractor.validate(source_path)
         existing = self._find_by_source_key(checksum)
         if existing is not None:
             return existing, True
@@ -321,6 +328,22 @@ class IntakeService:
             return bundle, True
         self.processing.create_run(bundle.item.id)
         return self.library.get(bundle.item.id), False
+
+
+ALLOWED_CONTENT_TYPES = {
+    "audio": ("audio/",),
+    "video": ("video/",),
+    "epub": ("application/epub+zip", "application/zip"),
+}
+
+
+def _check_content_type(kind: str, content_type: str | None) -> None:
+    if not content_type or content_type == "application/octet-stream":
+        return
+    normalized = content_type.split(";", 1)[0].strip().lower()
+    allowed = ALLOWED_CONTENT_TYPES[kind]
+    if not any(normalized == value or normalized.startswith(value) for value in allowed):
+        raise ValidationError("文件 MIME 类型不受支持", details={"code": "upload.invalid_type"})
 
 
 def _kind_for_suffix(suffix: str) -> str | None:

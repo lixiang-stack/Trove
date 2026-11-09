@@ -14,9 +14,5 @@ def iso_from_ms(value: int | None) -> str | None:
     return datetime.fromtimestamp(value / 1000, tz=UTC).isoformat()
 
 
-def ms_from_datetime(value: datetime) -> int:
-    return int(value.timestamp() * 1000)
-
-
 def now_iso() -> str:
     return datetime.now(tz=UTC).isoformat()

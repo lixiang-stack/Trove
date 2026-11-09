@@ -12,9 +12,10 @@ uv run trove doctor
 uv run trove serve
 ```
 
-Open <http://127.0.0.1:8765>. Run the processing worker in a second process:
+Open <http://127.0.0.1:8765>. `trove serve` also starts a built-in processing worker child process. For two-process deployment (or debugging), run only the API and start the worker separately:
 
 ```bash
+uv run trove serve --no-worker
 uv run trove worker
 ```
 

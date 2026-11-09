@@ -3,8 +3,10 @@
 {% block main %}
 <section class="search-page">
   <header class="page-head">
-    <p class="eyebrow">RETRIEVAL</p>
-    <h1>Search</h1>
+    <div>
+      <p class="eyebrow">RETRIEVAL</p>
+      <h1>Search</h1>
+    </div>
   </header>
   <form method="get" action="/search" class="search-form">
     <input name="q" value="{{ query }}" placeholder="搜标题、摘要、transcript、书、Tag" autocomplete="off">

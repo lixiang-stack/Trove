@@ -26,6 +26,7 @@ from trove.db.models import (
 )
 from trove.domain.items import (
     ACTIVE_RUN_STATES,
+    STAGE_DOWNLOADING,
     STAGE_EXTRACTING_AUDIO,
     STAGE_EXTRACTING_TEXT,
     STAGE_INDEXING,
@@ -45,7 +46,6 @@ from trove.ports import (
     StageContext,
     Transcriber,
 )
-from trove.services.library import LibraryService
 
 
 class ProcessingService:
@@ -54,7 +54,6 @@ class ProcessingService:
         config,
         sessions: sessionmaker[Session],
         package: ContentPackage,
-        library: LibraryService,
         *,
         downloader: Downloader,
         audio_extractor: AudioExtractor,
@@ -66,7 +65,6 @@ class ProcessingService:
         self.config = config
         self.sessions = sessions
         self.package = package
-        self.library = library
         self.downloader = downloader
         self.audio_extractor = audio_extractor
         self.transcriber = transcriber
@@ -183,7 +181,7 @@ class ProcessingService:
                 return
             except ProcessingError as exc:
                 self._fail(run_id, stage, exc.code, exc.message, exc.details)
-                self._cleanup_work_dir(work_dir, keep_download=stage != "downloading")
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
                 append_run_log(
                     self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
                 )
@@ -196,11 +194,11 @@ class ProcessingService:
                     level="error",
                 )
                 self._fail(run_id, stage, "internal.error", "内部错误", {"error": str(exc)})
-                self._cleanup_work_dir(work_dir, keep_download=stage != "downloading")
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
                 return
             self._finish_step(run_id, stage)
             append_run_log(self.config, run_id, f"stage {stage} completed")
-            if stage in {"downloading", STAGE_EXTRACTING_AUDIO, STAGE_TRANSCRIBING}:
+            if stage in {STAGE_DOWNLOADING, STAGE_EXTRACTING_AUDIO, STAGE_TRANSCRIBING}:
                 self._cleanup_stage_leftovers(work_dir)
 
         self._complete(run_id)
@@ -233,6 +231,7 @@ class ProcessingService:
             return run
 
     def cancel(self, run_id: str) -> Run:
+        now = utc_ms()
         with self.sessions() as session:
             run = session.get(Run, run_id)
             if run is None:
@@ -240,10 +239,29 @@ class ProcessingService:
             if run.state in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
                 return run
             if run.state == RunState.QUEUED:
-                run.state = RunState.CANCELLED
-                run.finished_at = utc_ms()
-            else:
-                run.cancel_requested_at = utc_ms()
+                result = cast(
+                    CursorResult[Any],
+                    session.execute(
+                        text(
+                            "UPDATE runs SET state = 'cancelled', finished_at = :now "
+                            "WHERE id = :run_id AND state = 'queued'"
+                        ),
+                        {"now": now, "run_id": run_id},
+                    ),
+                )
+                session.commit()
+                if result.rowcount == 1:
+                    append_run_log(
+                        self.config, run.id, "cancel requested", level="warning"
+                    )
+                    session.refresh(run)
+                    return run
+                run = session.get(Run, run_id)
+                if run is None:
+                    raise TroveError("Processing Run 不存在")
+                if run.state in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
+                    return run
+            run.cancel_requested_at = now
             session.commit()
             append_run_log(self.config, run.id, "cancel requested", level="warning")
             return run
@@ -303,7 +321,7 @@ class ProcessingService:
         source: dict[str, Any],
         context: StageContext,
     ) -> None:
-        if stage == "downloading":
+        if stage == STAGE_DOWNLOADING:
             self._stage_download(session, item, source, context)
         elif stage == STAGE_EXTRACTING_AUDIO:
             self._stage_extract_audio(session, item, source, context)
@@ -314,7 +332,7 @@ class ProcessingService:
         elif stage == STAGE_ORGANIZING:
             self._stage_organize(session, item, run_id, context)
         elif stage == STAGE_INDEXING:
-            self.search_index.index_item(session, item.id)
+            self.search_index.index_item(item.id)
         else:
             raise ProcessingError("internal.error", f"未知阶段: {stage}")
 

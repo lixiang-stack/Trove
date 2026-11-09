@@ -71,8 +71,10 @@
     {% endif %}
   </details>
 
+  {% if bundle.audio_artifact %}
   <section class="now-process">
     {{ status_panel(bundle) }}
   </section>
+  {% endif %}
 </article>
 {% endblock %}

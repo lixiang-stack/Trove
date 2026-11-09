@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -27,6 +27,7 @@ def ensure_migrated(runtime: Runtime) -> None:
 
 def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> None:
     stop_event = stop_event or threading.Event()
+    parent_pid = _parent_pid()
     ensure_migrated(runtime)
     verify_fts5(runtime.engine)
     reclaimed = runtime.processing.reclaim_stale_runs()
@@ -34,6 +35,9 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
         logger.info("reclaimed stale runs", extra={"status": reclaimed})
     write_heartbeat(runtime, state="idle")
     while not stop_event.is_set():
+        if parent_pid is not None and os.getppid() != parent_pid:
+            logger.info("serve parent exited; stopping embedded worker")
+            break
         run_id = runtime.processing.claim_next()
         if run_id is None:
             write_heartbeat(runtime, state="idle")
@@ -117,9 +121,14 @@ def read_heartbeat(config) -> dict[str, Any] | None:
         return None
 
 
-def _pid() -> int:
-    import os
+def _parent_pid() -> int | None:
+    value = os.environ.get("TROVE_PARENT_PID")
+    if not value or not value.isdigit():
+        return None
+    return int(value)
 
+
+def _pid() -> int:
     return os.getpid()
 
 
@@ -154,7 +163,3 @@ def heartbeat_is_fresh(payload: dict[str, Any] | None, *, max_age_ms: int = 1500
     if not isinstance(updated, int):
         return False
     return int(time.time() * 1000) - updated <= max_age_ms
-
-
-def heartbeat_path_for(config) -> Path:
-    return config.worker_heartbeat_path

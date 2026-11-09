@@ -71,7 +71,7 @@ def test_delete_removes_derived_data_but_keeps_original(host):
     original.write_bytes(b"user-owned")
     bundle = seed_item(host, title="Delete me", source_path=str(original))
     with host.runtime.sessions() as session:
-        host.runtime.search_index.index_item(session, bundle.item.id)
+        host.runtime.search_index.index_item(bundle.item.id)
         session.commit()
         assert session.execute(text("SELECT count(*) FROM search_fts")).scalar() >= 1
     host.login()
@@ -108,7 +108,7 @@ def test_title_edit_updates_search_index(host):
     bundle = seed_item(host, title="Alpha Old", tags=["记忆"])
     host.login()
     with host.runtime.sessions() as session:
-        host.runtime.search_index.index_item(session, bundle.item.id)
+        host.runtime.search_index.index_item(bundle.item.id)
         session.commit()
     assert host.client.get("/api/search", params={"q": "Alpha"}).json()["count"] == 1
     host.client.patch(f"/api/items/{bundle.item.id}", json={"title": "Gamma New"})

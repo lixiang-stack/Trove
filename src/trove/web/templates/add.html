@@ -3,9 +3,11 @@
 {% block main %}
 <section class="add-page">
   <header class="page-head">
-    <p class="eyebrow">INTAKE</p>
-    <h1>添加内容</h1>
-    <p class="subtitle">链接、本地文件、EPUB 或播客单集。</p>
+    <div>
+      <p class="eyebrow">INTAKE</p>
+      <h1>添加内容</h1>
+      <p class="subtitle">链接、本地文件、EPUB 或播客单集。</p>
+    </div>
   </header>
 
   {% if error %}
@@ -19,7 +21,7 @@
         <label>B 站 / YouTube 单条视频 URL
           <input name="url" type="url" required placeholder="https://www.youtube.com/watch?v=...">
         </label>
-        <p class="hint">播放列表、多 P、直播链接会被拒绝。</p>
+        <p class="hint">播放列表、直播链接会被拒绝；B 站多 P 请保留 ?p= 分 P 参数。</p>
         <button type="submit">添加到处理队列</button>
       </form>
     </section>

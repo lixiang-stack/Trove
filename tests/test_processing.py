@@ -41,7 +41,7 @@ def test_stage_failure_is_terminal_and_readable(host):
     assert "fake download failure" in run["error_message"]
     assert run["current_stage"] == "downloading"
     assert run["steps"][-1]["state"] == "failed"
-    time.sleep(0.4)
+    assert host.runtime.processing.claim_next() is None
     assert len(host.stack.downloader.calls) == 1
     detail = host.client.get(f"/items/{item_id}")
     assert detail.status_code == 200

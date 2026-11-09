@@ -5,7 +5,7 @@ from dataclasses import replace
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from trove.db.models import Item
 from trove.domain.search import build_match_query, norm_text
@@ -13,15 +13,75 @@ from trove.ports import SearchHit
 
 
 class FtsSearchIndex:
-    def index_item(self, session: Session, item_id: str) -> None:
+    def __init__(self, sessions: sessionmaker[Session]) -> None:
+        self.sessions = sessions
+
+    def index_item(self, item_id: str) -> None:
+        with self.sessions() as session:
+            self._index_item(session, item_id)
+            session.commit()
+
+    def delete_item(self, item_id: str) -> None:
+        with self.sessions() as session:
+            session.execute(
+                text("DELETE FROM search_fts WHERE item_id = :item_id"), {"item_id": item_id}
+            )
+            session.commit()
+
+    def search(self, query: str, *, limit: int = 50) -> list[SearchHit]:
+        match, like_terms = build_match_query(query)
+        hits: list[SearchHit] = []
+        with self.sessions() as session:
+            if match:
+                rows = session.execute(
+                    text(
+                        "SELECT item_id, doc_kind, ref, text, "
+                        "bm25(search_fts, 1.0, 0.0, 0.0, 0.0, 0.0) AS score "
+                        "FROM search_fts WHERE search_fts MATCH :match LIMIT :limit"
+                    ),
+                    {"match": match, "limit": limit * 20},
+                )
+                for row in rows:
+                    hits.append(
+                        SearchHit(
+                            item_id=str(row.item_id),
+                            score=float(row.score),
+                            doc_kind=str(row.doc_kind),
+                            ref=str(row.ref),
+                            text=str(row.text),
+                        )
+                    )
+            for term in like_terms:
+                rows = session.execute(
+                    text(
+                        "SELECT item_id, doc_kind, ref, text FROM search_fts "
+                        "WHERE text LIKE :term LIMIT :limit"
+                    ),
+                    {"term": f"%{term}%", "limit": limit * 20},
+                )
+                for row in rows:
+                    hits.append(
+                        SearchHit(
+                            item_id=str(row.item_id),
+                            score=0.0,
+                            doc_kind=str(row.doc_kind),
+                            ref=str(row.ref),
+                            text=str(row.text),
+                        )
+                    )
+        return _group_hits(hits, limit)
+
+    def _index_item(self, session: Session, item_id: str) -> None:
         item = session.get(Item, item_id)
         if item is None:
             return
-        self.delete_item(session, item_id)
-        documents: list[tuple[str, str, str, str]] = []
-        documents.append(("title", item.title, "title", "title"))
+        session.execute(
+            text("DELETE FROM search_fts WHERE item_id = :item_id"), {"item_id": item_id}
+        )
+        documents: list[tuple[str, str, str]] = []
+        documents.append((item.title, "title", "title"))
         if item.summary:
-            documents.append(("summary", item.summary, "summary", "summary"))
+            documents.append((item.summary, "summary", "summary"))
         tags = session.execute(
             text(
                 "SELECT tags.name FROM tags "
@@ -31,7 +91,7 @@ class FtsSearchIndex:
             {"item_id": item_id},
         ).scalars()
         for name in tags:
-            documents.append(("tag", str(name), "tag", str(name)))
+            documents.append((str(name), "tag", str(name)))
         segments = session.execute(
             text(
                 "SELECT seq, start_ms, text FROM transcript_segments "
@@ -40,7 +100,7 @@ class FtsSearchIndex:
             {"item_id": item_id},
         )
         for seq, start_ms, segment_text in segments:
-            documents.append(("transcript", str(segment_text), "transcript", f"{seq}:{start_ms}"))
+            documents.append((str(segment_text), "transcript", f"{seq}:{start_ms}"))
         paragraphs = session.execute(
             text(
                 "SELECT chapter_index, paragraph_index, text FROM book_paragraphs "
@@ -50,15 +110,10 @@ class FtsSearchIndex:
         )
         for chapter_index, paragraph_index, paragraph_text in paragraphs:
             documents.append(
-                (
-                    "book",
-                    str(paragraph_text),
-                    "book",
-                    f"{chapter_index}:{paragraph_index}",
-                )
+                (str(paragraph_text), "book", f"{chapter_index}:{paragraph_index}")
             )
         rows: list[dict[str, Any]] = []
-        for _doc_kind, value, ref_kind, ref in documents:
+        for value, ref_kind, ref in documents:
             tokens = norm_text(value)
             if not tokens:
                 continue
@@ -80,53 +135,6 @@ class FtsSearchIndex:
                 rows,
             )
 
-    def delete_item(self, session: Session, item_id: str) -> None:
-        session.execute(
-            text("DELETE FROM search_fts WHERE item_id = :item_id"), {"item_id": item_id}
-        )
-
-    def search(self, session: Session, query: str, *, limit: int = 50) -> list[SearchHit]:
-        match, like_terms = build_match_query(query)
-        hits: list[SearchHit] = []
-        if match:
-            rows = session.execute(
-                text(
-                    "SELECT item_id, doc_kind, ref, text, "
-                    "bm25(search_fts, 1.0, 0.0, 0.0, 0.0, 0.0) AS score "
-                    "FROM search_fts WHERE search_fts MATCH :match LIMIT :limit"
-                ),
-                {"match": match, "limit": limit * 20},
-            )
-            for row in rows:
-                hits.append(
-                    SearchHit(
-                        item_id=str(row.item_id),
-                        score=float(row.score),
-                        doc_kind=str(row.doc_kind),
-                        ref=str(row.ref),
-                        text=str(row.text),
-                    )
-                )
-        for term in like_terms:
-            rows = session.execute(
-                text(
-                    "SELECT item_id, doc_kind, ref, text FROM search_fts "
-                    "WHERE text LIKE :term LIMIT :limit"
-                ),
-                {"term": f"%{term}%", "limit": limit * 20},
-            )
-            for row in rows:
-                hits.append(
-                    SearchHit(
-                        item_id=str(row.item_id),
-                        score=0.0,
-                        doc_kind=str(row.doc_kind),
-                        ref=str(row.ref),
-                        text=str(row.text),
-                    )
-                )
-        return _group_hits(hits, limit)
-
 
 KIND_WEIGHT = {"title": 3.0, "summary": 2.0, "tag": 2.0, "transcript": 1.0, "book": 1.0}
 
@@ -139,8 +147,6 @@ def _group_hits(hits: list[SearchHit], limit: int) -> list[SearchHit]:
     best: list[SearchHit] = []
     for item_hits in grouped.values():
         item_hits.sort(key=lambda hit: (hit.score, -KIND_WEIGHT.get(hit.doc_kind, 1.0)))
-        chosen = item_hits[0]
-        evidence = item_hits[:3]
-        best.append(replace(chosen, text=evidence[0].text))
+        best.append(item_hits[0])
     best.sort(key=lambda hit: (hit.score, hit.item_id))
     return best[:limit]

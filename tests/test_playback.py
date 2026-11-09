@@ -132,3 +132,13 @@ def test_listen_page_audio_url_and_media_session_payload(host):
     assert f"/api/items/{bundle.item.id}/audio" in page
     assert 'data-player-action="toggle"' in page
     assert 'data-player-action="speed"' in page
+
+
+def test_invalid_html_consumption_state_is_rejected(host):
+    bundle = seed_item(host, title="Invalid state route")
+    host.login()
+    response = host.client.post(
+        f"/items/{bundle.item.id}/state", data={"state": "nonsense"}
+    )
+    assert response.status_code == 422
+    assert "progress.invalid_state" in response.text

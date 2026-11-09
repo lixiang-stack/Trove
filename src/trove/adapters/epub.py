@@ -48,21 +48,24 @@ class EpubMetadata:
     language: str | None
 
 
-def validate_epub(path: Path, *, error_type: type[Exception] = ValidationError) -> EpubMetadata:
+def validate_epub(path: Path) -> EpubMetadata:
     try:
         with zipfile.ZipFile(path) as archive:
             _check_zip_sizes(archive)
             metadata, _, _, _, _, _ = _inspect(archive)
             return metadata
     except zipfile.BadZipFile as exc:
-        raise _error(error_type, "epub.invalid", "不是有效的 EPUB 文件") from exc
+        raise ValidationError("不是有效的 EPUB 文件", details={"code": "epub.invalid"}) from exc
     except KeyError as exc:
-        raise _error(error_type, "epub.invalid", "EPUB 缺少必要结构") from exc
+        raise ValidationError("EPUB 缺少必要结构", details={"code": "epub.invalid"}) from exc
     except (OSError, etree.XMLSyntaxError) as exc:
-        raise _error(error_type, "epub.parse", "EPUB 解析失败") from exc
+        raise ValidationError("EPUB 解析失败", details={"code": "epub.parse"}) from exc
 
 
 class EpubExtractor:
+    def validate(self, book_path: Path) -> None:
+        validate_epub(book_path)
+
     def extract(self, book_path: Path, context: StageContext) -> BookResult:
         try:
             with zipfile.ZipFile(book_path) as archive:
@@ -358,9 +361,3 @@ def _clean_text(value: str) -> str:
     value = unicodedata.normalize("NFKC", value or "")
     value = re.sub(r"\s+", " ", value).strip()
     return value
-
-
-def _error(error_type: type[Exception], code: str, message: str):
-    if error_type is ValidationError:
-        return ValidationError(message, details={"code": code})
-    return ProcessingError(code, message)

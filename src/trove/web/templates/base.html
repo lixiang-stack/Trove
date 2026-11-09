@@ -1,14 +1,14 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light">
   <title>{% block title %}拾藏 Trove{% endblock %}</title>
-  <link rel="stylesheet" href="/static/pico.min.css">
-  <link rel="stylesheet" href="/static/app.css">
-  <script src="/static/htmx.min.js" defer></script>
-  <script src="/static/player.js" defer></script>
+  <link rel="stylesheet" href="/static/pico.min.css?v={{ asset_version }}">
+  <link rel="stylesheet" href="/static/app.css?v={{ asset_version }}">
+  <script src="/static/htmx.min.js?v={{ asset_version }}" defer></script>
+  <script src="/static/player.js?v={{ asset_version }}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body data-page="{% block page %}app{% endblock %}" hx-indicator="#page-progress">

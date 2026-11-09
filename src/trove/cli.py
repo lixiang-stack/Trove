@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
+import time
 
 from trove import __version__
 from trove.app import create_app
@@ -29,6 +33,11 @@ def _build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--host", default=None)
     serve.add_argument("--port", type=int, default=None)
     serve.add_argument("--lan", action="store_true", help="bind all interfaces")
+    serve.add_argument(
+        "--no-worker",
+        action="store_true",
+        help="do not start the processing worker child process",
+    )
 
     subparsers.add_parser("worker", help="run the processing worker")
 
@@ -61,7 +70,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "worker":
         configure_logging(config)
         runtime = build_runtime(config)
-        run_worker(runtime)
+        stop_event = threading.Event()
+
+        def stop_worker(_signum, _frame) -> None:
+            stop_event.set()
+
+        signal.signal(signal.SIGINT, stop_worker)
+        signal.signal(signal.SIGTERM, stop_worker)
+        run_worker(runtime, stop_event)
         return 0
     if args.command == "db":
         return _db(config)
@@ -84,9 +100,69 @@ def _serve(config, args) -> int:
         print("提示：非本机访问建议使用 Tailscale Serve 或 HTTPS。", file=sys.stderr)
     if args.lan:
         print("警告：--lan 会绑定 0.0.0.0，仅建议在受信任局域网使用。", file=sys.stderr)
+    worker_process = None if args.no_worker else _start_worker_child(config)
     app = create_app(config)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    finally:
+        if worker_process is not None:
+            _stop_worker_child(worker_process)
     return 0
+
+
+def _start_worker_child(config) -> subprocess.Popen[str] | None:
+    from trove.worker import heartbeat_is_fresh, read_heartbeat
+
+    heartbeat = read_heartbeat(config)
+    if heartbeat_is_fresh(heartbeat) and _heartbeat_process_alive(heartbeat):
+        print("检测到已有 worker，跳过启动内置 worker。", file=sys.stderr)
+        return None
+    print("启动内置 processing worker（使用 --no-worker 可关闭）。", file=sys.stderr)
+    environment = os.environ.copy()
+    environment["TROVE_PARENT_PID"] = str(os.getpid())
+    process = subprocess.Popen(
+        [sys.executable, "-m", "trove.cli", "worker"],
+        env=environment,
+        text=True,
+    )
+    deadline = time.monotonic() + 3
+    from trove.worker import heartbeat_is_fresh, read_heartbeat
+
+    while time.monotonic() < deadline:
+        if heartbeat_is_fresh(read_heartbeat(config)):
+            break
+        if process.poll() is not None:
+            print(
+                "内置 worker 启动失败；请检查数据库迁移并运行 uv run trove doctor。",
+                file=sys.stderr,
+            )
+            break
+        time.sleep(0.05)
+    return process
+
+
+def _heartbeat_process_alive(heartbeat: dict | None) -> bool:
+    if not heartbeat:
+        return False
+    pid = heartbeat.get("pid")
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _stop_worker_child(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=5)
 
 
 def _db(config) -> int:

@@ -74,13 +74,12 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     engine = create_engine_for(config)
     sessions = create_session_factory(engine)
     package = ContentPackage(config)
-    search_index: SearchIndex = FtsSearchIndex()
+    search_index: SearchIndex = FtsSearchIndex(sessions)
     library = LibraryService(config, sessions, package, search_index)
     processing = ProcessingService(
         config,
         sessions,
         package,
-        library,
         downloader=ports.downloader,
         audio_extractor=ports.audio_extractor,
         transcriber=ports.transcriber,
@@ -89,7 +88,15 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         search_index=search_index,
     )
     uploads = UploadStore(config)
-    intake = IntakeService(config, package, library, processing, ports.feed_client, uploads)
+    intake = IntakeService(
+        config,
+        package,
+        library,
+        processing,
+        ports.feed_client,
+        ports.book_extractor,
+        uploads,
+    )
     playback = PlaybackService(sessions, package, library)
     auth = AuthService(config)
     return Runtime(

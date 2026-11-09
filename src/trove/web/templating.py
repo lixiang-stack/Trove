@@ -18,6 +18,17 @@ from trove.domain.search import ref_label
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 COVER_TONES = ("vermilion", "green", "blue", "gold", "ink", "clay")
+STATIC_ASSETS = ("app.css", "player.js", "htmx.min.js", "pico.min.css")
+
+
+def _asset_version() -> str:
+    digest = hashlib.sha1()
+    for name in STATIC_ASSETS:
+        digest.update(str((STATIC_DIR / name).stat().st_mtime_ns).encode("ascii"))
+    return digest.hexdigest()[:10]
+
+
+ASSET_VERSION = _asset_version()
 
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
@@ -63,6 +74,7 @@ templates.env.filters["cover_tone"] = cover_tone
 templates.env.filters["ref_label"] = ref_label
 templates.env.filters["error_label"] = error_label
 templates.env.globals.update(
+    asset_version=ASSET_VERSION,
     source_type_labels=SOURCE_TYPE_LABELS,
     platform_labels=PLATFORM_LABELS,
     consumption_labels=CONSUMPTION_LABELS,

@@ -17,12 +17,11 @@ from fastapi.responses import (
     Response,
 )
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from trove import __version__
 from trove.db.engine import fts5_available, migration_status
-from trove.db.models import Item, ItemTag, Run, Tag
+from trove.db.models import Item, Run
 from trove.errors import (
     NotFoundError,
     RateLimitedError,
@@ -305,17 +304,6 @@ def item_listen(request: Request, item_id: str):
     )
 
 
-@html_router.get("/items/{item_id}/read", include_in_schema=False)
-def item_read(request: Request, item_id: str):
-    runtime = request.app.state.runtime
-    bundle = runtime.library.get(item_id)
-    return _render(
-        request,
-        "read.html",
-        {"bundle": bundle, "active_nav": "library"},
-    )
-
-
 @html_router.get("/items/{item_id}/status", include_in_schema=False)
 def item_status(request: Request, item_id: str, context: str = "row"):
     runtime = request.app.state.runtime
@@ -377,7 +365,7 @@ def cancel_item(request: Request, item_id: str):
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
-def _add_context(request: Request, **extra: Any) -> dict[str, Any]:
+def _add_context(**extra: Any) -> dict[str, Any]:
     context: dict[str, Any] = {"active_nav": "add", "error": None}
     context.update(extra)
     return context
@@ -385,7 +373,7 @@ def _add_context(request: Request, **extra: Any) -> dict[str, Any]:
 
 @html_router.get("/add", include_in_schema=False)
 def add_page(request: Request):
-    return _render(request, "add.html", _add_context(request))
+    return _render(request, "add.html", _add_context())
 
 
 @html_router.post("/add/url", include_in_schema=False)
@@ -397,7 +385,7 @@ def add_url(request: Request, url: Annotated[str, Form()]):
         return _render(
             request,
             "add.html",
-            _add_context(request, error=exc.message),
+            _add_context(error=exc.message),
             status_code=exc.status_code,
         )
     return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
@@ -412,7 +400,7 @@ def add_path(request: Request, path: Annotated[str, Form()]):
         return _render(
             request,
             "add.html",
-            _add_context(request, error=exc.message),
+            _add_context(error=exc.message),
             status_code=exc.status_code,
         )
     return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
@@ -422,13 +410,15 @@ def add_path(request: Request, path: Annotated[str, Form()]):
 async def add_upload(request: Request, file: Annotated[UploadFile, File()]):
     runtime = request.app.state.runtime
     try:
-        record = runtime.uploads.save_stream(file.file, file.filename or "upload")
+        record = runtime.uploads.save_stream(
+            file.file, file.filename or "upload", content_type=file.content_type
+        )
         bundle, _ = runtime.intake.add_upload(record.upload_id)
     except TroveError as exc:
         return _render(
             request,
             "add.html",
-            _add_context(request, error=exc.message),
+            _add_context(error=exc.message),
             status_code=exc.status_code,
         )
     return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
@@ -449,7 +439,7 @@ def preview_feed(request: Request, feed_url: Annotated[str, Form()]):
         return _render(
             request,
             "add.html",
-            _add_context(request, error=exc.message),
+            _add_context(error=exc.message),
             status_code=exc.status_code,
         )
     if request.headers.get("HX-Request") == "true":
@@ -461,7 +451,7 @@ def preview_feed(request: Request, feed_url: Annotated[str, Form()]):
     return _render(
         request,
         "add.html",
-        _add_context(request, feed=feed, feed_url=feed_url),
+        _add_context(feed=feed, feed_url=feed_url),
     )
 
 
@@ -481,7 +471,7 @@ def add_podcast(
         return _render(
             request,
             "add.html",
-            _add_context(request, error=exc.message),
+            _add_context(error=exc.message),
             status_code=exc.status_code,
         )
     return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
@@ -493,12 +483,11 @@ def search_page(request: Request, q: str = ""):
     query = (q or "").strip()
     results: list[dict[str, Any]] = []
     if query:
+        try:
+            hits = runtime.search_index.search(query)
+        except ValueError:
+            hits = []
         with runtime.sessions() as session:
-            try:
-                hits = runtime.search_index.search(session, query)
-            except ValueError as exc:
-                hits = []
-                del exc
             for hit in hits:
                 item = session.get(Item, hit.item_id)
                 if item is None:
@@ -597,15 +586,13 @@ def api_list_items(
     if sort not in {"recent_added", "recent_consumed"}:
         sort = "recent_added"
     states = {value for value in state.split(",") if value}
-    bundles = runtime.library.list_items(sort=sort, states=states or None)
-    if type:
-        bundles = [bundle for bundle in bundles if bundle.item.source_type == type]
-    if consumption:
-        bundles = [
-            bundle for bundle in bundles if bundle.item.consumption_state == consumption
-        ]
-    if source:
-        bundles = [bundle for bundle in bundles if bundle.item.platform == source]
+    bundles = runtime.library.list_items(
+        sort=sort,
+        states=states or None,
+        item_type=type or None,
+        consumption=consumption or None,
+        platform=source or None,
+    )
     return {
         "items": [runtime.library.payload(bundle) for bundle in bundles],
         "count": len(bundles),
@@ -689,11 +676,6 @@ def api_transcript(request: Request, item_id: str):
     }
 
 
-@api_router.get("/items/{item_id}/book/chapters/{chapter_index}")
-def api_book_chapter(request: Request, item_id: str, chapter_index: int):
-    return request.app.state.runtime.playback.chapter(item_id, chapter_index)
-
-
 @api_router.put("/items/{item_id}/progress")
 def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     runtime = request.app.state.runtime
@@ -758,12 +740,12 @@ def api_search(request: Request, q: str = ""):
     query = (q or "").strip()
     if not query:
         return {"query": query, "results": [], "count": 0}
+    try:
+        hits = runtime.search_index.search(query)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    results = []
     with runtime.sessions() as session:
-        try:
-            hits = runtime.search_index.search(session, query)
-        except ValueError as exc:
-            raise ValidationError(str(exc)) from exc
-        results = []
         for hit in hits:
             item = session.get(Item, hit.item_id)
             if item is None:
@@ -783,19 +765,6 @@ def api_search(request: Request, q: str = ""):
     return {"query": query, "results": results, "count": len(results)}
 
 
-@api_router.get("/tags")
-def api_tags(request: Request):
-    runtime = request.app.state.runtime
-    with runtime.sessions() as session:
-        rows = session.execute(
-            select(Tag.name, func.count(ItemTag.item_id).label("count"))
-            .join(ItemTag, ItemTag.tag_id == Tag.id)
-            .group_by(Tag.id)
-            .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
-        )
-        return {"tags": [{"name": name, "count": count} for name, count in rows]}
-
-
 @api_router.post("/uploads")
 async def api_upload(
     request: Request,
@@ -803,7 +772,12 @@ async def api_upload(
     kind: Annotated[str | None, Form()] = None,
 ):
     runtime = request.app.state.runtime
-    record = runtime.uploads.save_stream(file.file, file.filename or "upload", kind=kind)
+    record = runtime.uploads.save_stream(
+        file.file,
+        file.filename or "upload",
+        kind=kind,
+        content_type=file.content_type,
+    )
     return {
         "upload_id": record.upload_id,
         "filename": record.filename,
@@ -862,6 +836,10 @@ def install_middleware(app) -> None:
             return RedirectResponse("/library", status_code=303)
 
         response = await call_next(request)
+        if path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        else:
+            response.headers.setdefault("Cache-Control", "no-store")
         duration_ms = round((time.monotonic() - started) * 1000, 1)
         if not path.startswith("/static/"):
             logger.info(

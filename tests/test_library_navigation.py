@@ -39,8 +39,20 @@ def test_library_orders_by_recent_added(host):
 
 
 def test_library_orders_by_recent_consumed(host):
-    first = seed_item(host, title="First consumed", source_key="seed:c1")
-    second = seed_item(host, title="Second consumed", source_key="seed:c2")
+    first = seed_item(
+        host,
+        title="First consumed",
+        source_key="seed:c1",
+        consumption_state="in_progress",
+        position=1.0,
+    )
+    second = seed_item(
+        host,
+        title="Second consumed",
+        source_key="seed:c2",
+        consumption_state="in_progress",
+        position=1.0,
+    )
     with host.runtime.sessions() as session:
         from trove.db.models import Item
 
