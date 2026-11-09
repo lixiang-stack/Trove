@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_panel with context %}
+{% block title %}{{ bundle.item.title }} · Now Playing{% endblock %}
+{% block page %}listen{% endblock %}
+{% block main %}
+<article class="now-playing" data-now-item-id="{{ bundle.item.id }}">
+  <header class="now-top">
+    <a href="/library" class="now-back" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">‹ 列表</a>
+    <span class="now-eyebrow">NOW PLAYING</span>
+    <a href="/items/{{ bundle.item.id }}" class="now-detail" hx-get="/items/{{ bundle.item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">详情</a>
+  </header>
+
+  <div class="now-cover cover-{{ bundle.item.id|cover_tone }}"><span>{{ bundle.item.title[:1] }}</span></div>
+  <h1 class="now-title">{{ bundle.item.title }}</h1>
+  <p class="now-meta">{{ bundle.item.author or "未知作者" }} · {{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }}</p>
+  {% if bundle.tags %}
+  <div class="now-tags">{% for tag in bundle.tags %}<span class="now-tag">{{ tag.name }}</span>{% endfor %}</div>
+  {% endif %}
+
+  {% if bundle.audio_artifact %}
+  <section class="now-player" aria-label="播放器">
+    <div class="now-times">
+      <span data-player-current>0:00</span>
+      <span data-player-duration>{{ bundle.item.duration_sec|duration if bundle.item.duration_sec else "0:00" }}</span>
+    </div>
+    <input class="seek now-seek" data-player-seek type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+    <div class="now-controls">
+      <button type="button" class="round-button" data-player-action="speed"><span data-player-speed>1×</span></button>
+      <button type="button" class="round-button now-play" data-player-action="toggle" aria-label="播放/暂停"><span data-player-icon="play">▶</span></button>
+      <button type="button" class="round-button" data-player-action="finish" aria-label="标记完成">✓</button>
+    </div>
+    <div class="now-state">
+      <span>播放位置会每 5 秒自动保存</span>
+      <span class="badge badge-consumption">{{ consumption_labels.get(bundle.item.consumption_state, bundle.item.consumption_state) }}</span>
+    </div>
+    <div class="now-source">
+      <a href="{{ bundle.item.source_url_raw or '#' }}" target="_blank" rel="noreferrer noopener">{{ bundle.item.source_url_raw or bundle.item.source_path or "本地内容" }}</a>
+    </div>
+    <script type="application/json" data-player-item>{{ {
+      "id": bundle.item.id,
+      "title": bundle.item.title,
+      "author": bundle.item.author or "",
+      "audio_url": "/api/items/" ~ bundle.item.id ~ "/audio",
+      "position": bundle.item.audio_position_sec or 0,
+      "duration": bundle.item.duration_sec or 0,
+      "listen_url": "/items/" ~ bundle.item.id ~ "/listen"
+    }|tojson }}</script>
+  </section>
+  {% else %}
+  <section class="now-missing">
+    {{ status_panel(bundle) }}
+  </section>
+  {% endif %}
+
+  <details class="now-transcript" {% if not transcript %}hidden{% endif %}>
+    <summary>
+      <span class="transcript-heading">Transcript</span>
+      <span class="sheet-sub">{{ transcript|length }} 个分段 · 点击展开</span>
+    </summary>
+    {% if transcript %}
+    <ol class="segments">
+      {% for segment in transcript %}
+      <li class="seg">
+        <span class="seg-time">{{ segment.start_ms|clock }}</span>
+        <span class="seg-text">{{ segment.text }}</span>
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="muted">还没有 transcript。</p>
+    {% endif %}
+  </details>
+
+  {% if bundle.audio_artifact %}
+  <section class="now-process">
+    {{ status_panel(bundle) }}
+  </section>
+  {% endif %}
+</article>
+{% endblock %}

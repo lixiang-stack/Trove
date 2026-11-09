@@ -1,0 +1,6 @@
+{% from "macros.html" import status_badge, status_panel with context %}
+{% if context == 'panel' %}
+{{ status_panel(bundle) }}
+{% else %}
+{{ status_badge(bundle, context or 'row') }}
+{% endif %}

@@ -35,3 +35,5 @@ pre-push:
       use_stdin: true
     complexity:
       run: python3 scripts/complexity.py --push
+    checks:
+      run: bash scripts/check.sh

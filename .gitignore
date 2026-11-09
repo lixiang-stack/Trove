@@ -6,3 +6,10 @@ __pycache__/
 
 # macOS 元数据
 .DS_Store
+
+# Python tooling
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
