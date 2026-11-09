@@ -47,6 +47,10 @@ from trove.ports import (
     Transcriber,
 )
 
+INDEX_AFTER_STAGES = frozenset(
+    {STAGE_DOWNLOADING, STAGE_TRANSCRIBING, STAGE_EXTRACTING_TEXT, STAGE_ORGANIZING}
+)
+
 
 class ProcessingService:
     def __init__(
@@ -164,6 +168,7 @@ class ProcessingService:
                 continue
             if self._cancel_requested(run_id):
                 self._cancel(run_id, stage)
+                self._try_index(run_id, context.item_id)
                 return
             step = self._start_step(run_id, stage)
             append_run_log(self.config, run_id, f"stage {stage} started (attempt {step.attempt})")
@@ -178,6 +183,7 @@ class ProcessingService:
                 self._cancel(run_id, stage)
                 self._cleanup_work_dir(work_dir, keep_download=True)
                 append_run_log(self.config, run_id, f"stage {stage} cancelled", level="warning")
+                self._try_index(run_id, context.item_id)
                 return
             except ProcessingError as exc:
                 self._fail(run_id, stage, exc.code, exc.message, exc.details)
@@ -185,6 +191,8 @@ class ProcessingService:
                 append_run_log(
                     self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
                 )
+                if stage != STAGE_INDEXING:
+                    self._try_index(run_id, context.item_id)
                 return
             except Exception as exc:  # noqa: BLE001 - boundary for a durable worker
                 append_run_log(
@@ -195,11 +203,15 @@ class ProcessingService:
                 )
                 self._fail(run_id, stage, "internal.error", "内部错误", {"error": str(exc)})
                 self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+                if stage != STAGE_INDEXING:
+                    self._try_index(run_id, context.item_id)
                 return
             self._finish_step(run_id, stage)
             append_run_log(self.config, run_id, f"stage {stage} completed")
             if stage in {STAGE_DOWNLOADING, STAGE_EXTRACTING_AUDIO, STAGE_TRANSCRIBING}:
                 self._cleanup_stage_leftovers(work_dir)
+            if stage in INDEX_AFTER_STAGES:
+                self._try_index(run_id, context.item_id)
 
         self._complete(run_id)
         self._cleanup_work_dir(work_dir, keep_download=False)
@@ -568,6 +580,17 @@ class ProcessingService:
             )
         )
         self._replace_ai_tags(session, item.id, result.tags)
+
+    def _try_index(self, run_id: str, item_id: str) -> None:
+        try:
+            self.search_index.index_item(item_id)
+        except Exception:  # noqa: BLE001 - retrieval must not change the run outcome
+            append_run_log(
+                self.config,
+                run_id,
+                f"search index refresh failed: {traceback.format_exc()}",
+                level="warning",
+            )
 
     def _item_text(self, session: Session, item: Item) -> str:
         rows = session.execute(

@@ -103,7 +103,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         ports.book_extractor,
         uploads,
     )
-    playback = PlaybackService(sessions, package, library)
+    playback = PlaybackService(sessions, package, library, search_index)
     reading = ReadingService(sessions)
     auth = AuthService(config)
     return Runtime(
