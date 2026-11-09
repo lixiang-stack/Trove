@@ -30,6 +30,13 @@
     </form>
   </header>
 
+  {% if request.state.worker_offline %}
+  <div class="worker-banner" role="alert">
+    <strong>处理服务未运行。</strong>
+    新内容会停在排队；请重启 <code>uv run trove serve</code>，或运行 <code>uv run trove worker</code>。
+  </div>
+  {% endif %}
+
   <main id="main" class="shell">
     {% block main %}{% endblock %}
   </main>

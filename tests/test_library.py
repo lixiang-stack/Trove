@@ -116,3 +116,18 @@ def test_title_edit_updates_search_index(host):
     results = host.client.get("/api/search", params={"q": "Gamma"}).json()
     assert results["count"] == 1
     assert results["results"][0]["item"]["title"] == "Gamma New"
+
+
+def test_worker_offline_banner_is_visible(host_factory):
+    from .fakes import wait_until
+
+    offline = host_factory(start_worker=False, home_name="offline-banner")
+    offline.login()
+    assert "处理服务未运行" in offline.client.get("/library").text
+    online = host_factory(start_worker=True, home_name="online-banner")
+    online.login()
+    wait_until(
+        lambda: online.client.get("/api/health").json()["worker"]["status"] == "ok",
+        timeout=10,
+    )
+    assert "处理服务未运行" not in online.client.get("/library").text

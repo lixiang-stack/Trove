@@ -835,6 +835,13 @@ def install_middleware(app) -> None:
         if request.state.authenticated and path == "/login" and request.method == "GET":
             return RedirectResponse("/library", status_code=303)
 
+        if not path.startswith("/static/"):
+            heartbeat = read_heartbeat(runtime.config)
+            request.state.worker_offline = (
+                not heartbeat_is_fresh(heartbeat)
+                or bool(heartbeat and heartbeat.get("state") == "stopped")
+            )
+
         response = await call_next(request)
         if path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"

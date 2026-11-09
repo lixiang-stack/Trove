@@ -140,3 +140,12 @@ def test_serve_starts_embedded_worker_by_default(tmp_path, monkeypatch):
     started.clear()
     assert main(["serve", "--no-worker"]) == 0
     assert started == []
+
+
+def test_static_assets_are_versioned_and_revalidated(api_host):
+    page = api_host.client.get("/login")
+    assert page.headers["cache-control"] == "no-store"
+    assert "app.css?v=" in page.text
+    asset = api_host.client.get("/static/app.css")
+    assert asset.status_code == 200
+    assert asset.headers["cache-control"] == "no-cache"

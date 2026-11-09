@@ -24,10 +24,7 @@ Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 ## Test
 
 ```bash
-uv run pytest
-uv run ruff check src tests
-uv run mypy
-python3 scripts/check-docs.py
+./scripts/check.sh
 ```
 
-Network tests are excluded by default: `uv run pytest -m network`.
+This runs ruff, mypy, pytest, and the documentation check. Network tests are excluded by default: `uv run pytest -m network`.
