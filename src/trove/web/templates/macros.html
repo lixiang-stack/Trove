@@ -1,0 +1,127 @@
+{% macro status_badge(bundle, context='row') -%}
+{% set active = bundle.status_category == 'processing' %}
+<span class="badge badge-{{ bundle.status_category }}"
+      {% if active %}
+      hx-get="/items/{{ bundle.item.id }}/status?context={{ context }}"
+      hx-trigger="every 3s"
+      hx-target="this"
+      hx-select="unset"
+      hx-push-url="false"
+      hx-swap="outerHTML"
+      {% endif %}>
+  {{ bundle.processing_label }}
+</span>
+{%- endmacro %}
+
+{% macro status_panel(bundle) -%}
+{% set active = bundle.status_category == 'processing' %}
+<section id="run-status" class="status-panel status-{{ bundle.status_category }}"
+         {% if active %}
+         hx-get="/items/{{ bundle.item.id }}/status?context=detail"
+         hx-trigger="every 3s"
+         hx-target="this"
+         hx-select="unset"
+         hx-push-url="false"
+         hx-swap="outerHTML"
+         {% endif %}>
+  <div class="status-head">
+    <span class="status-dot"></span>
+    <strong>{{ bundle.processing_label }}</strong>
+    {% if bundle.run and bundle.run.error_code %}
+    <span class="error-code">{{ bundle.run.error_code }}</span>
+    {% endif %}
+  </div>
+  {% if bundle.run and (bundle.run.error_code or bundle.run.error_message) %}
+  <p class="status-message">{{ bundle.run.error_code|error_label }}{% if bundle.run.error_message %}：{{ bundle.run.error_message }}{% endif %}</p>
+  {% endif %}
+  {% if active %}
+  <p class="status-note">可以关闭浏览器，Host 会继续处理。</p>
+  {% endif %}
+  {% if bundle.run and bundle.steps %}
+  <details class="run-steps">
+    <summary>阶段记录</summary>
+    <ol>
+      {% for step in bundle.steps %}
+      <li class="step-{{ step.state }}">
+        <span>{{ stage_labels.get(step.stage, step.stage) }}</span>
+        <span>尝试 {{ step.attempt }}</span>
+        <span>{{ step.state }}</span>
+        {% if step.error_code %}<span class="error-code">{{ step.error_code }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+  </details>
+  {% endif %}
+  {% if bundle.run %}
+  <details class="run-log">
+    <summary>日志 tail</summary>
+    <pre>{% for line in run_logs.get(bundle.run.id, []) %}{{ line }}
+{% endfor %}</pre>
+  </details>
+  {% endif %}
+  <div class="status-actions">
+    {% if bundle.status_category in ['failed', 'cancelled'] %}
+    <form method="post" action="/items/{{ bundle.item.id }}/retry"><button type="submit" class="secondary">重试</button></form>
+    {% endif %}
+    {% if active %}
+    <form method="post" action="/items/{{ bundle.item.id }}/cancel"><button type="submit" class="secondary">取消</button></form>
+    {% endif %}
+  </div>
+</section>
+{%- endmacro %}
+
+{% macro item_row(bundle, loop_index) -%}
+{% set item = bundle.item %}
+<article class="queue-item" data-item-id="{{ item.id }}">
+  <div class="queue-index">{{ "%02d"|format(loop_index) }}</div>
+  <a class="cover cover-{{ item.id|cover_tone }}" href="/items/{{ item.id }}/listen"
+     hx-get="/items/{{ item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true" aria-hidden="true" tabindex="-1">
+    <span>{{ item.title[:1] }}</span>
+  </a>
+  <a class="queue-body" href="/items/{{ item.id }}/listen"
+     hx-get="/items/{{ item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">
+    <span class="queue-title">{{ item.title }}</span>
+    <span class="queue-meta">
+      {{ item.author or "未知作者" }} · {{ source_type_labels.get(item.source_type, item.source_type) }}
+      {% if bundle.tags %} · {% for tag in bundle.tags[:3] %}{{ tag.name }}{% if not loop.last %} / {% endif %}{% endfor %}{% endif %}
+    </span>
+    <span class="queue-state">
+      {{ status_badge(bundle, 'row') }}
+      <span class="consumption state-{{ item.consumption_state }}">{{ consumption_labels.get(item.consumption_state, item.consumption_state) }}</span>
+      {% if item.duration_sec %}<span class="duration">{{ item.duration_sec|duration }}</span>{% endif %}
+    </span>
+    {% if item.duration_sec and item.audio_position_sec and item.audio_position_sec > 0 %}
+    <span class="progress-line"><span style="width: {{ ((item.audio_position_sec / item.duration_sec) * 100)|round(1) }}%"></span></span>
+    {% endif %}
+  </a>
+  {% if bundle.audio_artifact %}
+  <button type="button" class="play-button" data-play-item
+          data-item-id="{{ item.id }}"
+          data-title="{{ item.title }}"
+          data-author="{{ item.author or '' }}"
+          data-audio-url="/api/items/{{ item.id }}/audio"
+          data-position="{{ item.audio_position_sec or 0 }}"
+          data-duration="{{ item.duration_sec or 0 }}"
+          data-listen-url="/items/{{ item.id }}/listen"
+          aria-label="播放 {{ item.title }}" title="播放">
+    <span>▶</span>
+  </button>
+  {% else %}
+  <span class="play-button disabled" aria-label="尚不可播放" title="尚不可播放">◌</span>
+  {% endif %}
+  <div class="inline-player" data-inline-for="{{ item.id }}" hidden>
+    <div class="inline-head">
+      <strong data-inline-title>{{ item.title }}</strong>
+      <a href="/items/{{ item.id }}/listen"
+         hx-get="/items/{{ item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">打开播放页 →</a>
+    </div>
+    <div class="inline-times"><span data-inline-current>0:00</span><span data-inline-duration>0:00</span></div>
+    <input class="seek" data-inline-seek type="range" min="0" max="1000" value="0" step="1" aria-label="播放进度">
+    <div class="inline-controls">
+      <span class="inline-note">{{ item.author or "未知作者" }} · {{ platform_labels.get(item.platform, item.platform) }}</span>
+      <button type="button" class="round-button" data-player-action="toggle" aria-label="播放/暂停"><span data-player-icon="play">▶</span></button>
+      <button type="button" class="speed-button" data-player-action="speed"><span data-player-speed>1×</span></button>
+    </div>
+  </div>
+</article>
+{%- endmacro %}

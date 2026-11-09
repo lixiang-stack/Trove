@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ status }} · 拾藏{% endblock %}
+{% block main %}
+<section class="empty-state">
+  <div class="empty-mark">!</div>
+  <h1>{{ status }}</h1>
+  <p>{{ message }}</p>
+  {% if code %}<p class="error-code">{{ code }}</p>{% endif %}
+  <a href="/library" role="button" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">返回 Library</a>
+</section>
+{% endblock %}

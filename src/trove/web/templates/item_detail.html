@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "macros.html" import status_panel with context %}
+{% block title %}{{ bundle.item.title }} · 拾藏{% endblock %}
+{% block main %}
+<article class="detail-page">
+  <nav class="breadcrumbs" aria-label="面包屑">
+    <a href="/library" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">← Library</a>
+  </nav>
+
+  <header class="detail-head">
+    <div class="detail-cover cover-{{ bundle.item.id|cover_tone }}"><span>{{ bundle.item.title[:1] }}</span></div>
+    <div class="detail-title">
+      <p class="eyebrow">{{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }}</p>
+      <h1>{{ bundle.item.title }}</h1>
+      <p class="subtitle">{{ bundle.item.author or "未知作者" }}{% if bundle.item.published_at %} · {{ bundle.item.published_at }}{% endif %}</p>
+      <div class="tag-row">
+        {% for tag in bundle.tags %}<span class="tag">{{ tag.name }}</span>{% endfor %}
+        {% if not bundle.tags %}<span class="muted">尚无 Tag</span>{% endif %}
+      </div>
+      <div class="detail-actions">
+        {% if bundle.audio_artifact %}
+        <a href="/items/{{ bundle.item.id }}/listen" role="button"
+           hx-get="/items/{{ bundle.item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">播放</a>
+        {% endif %}
+        <span class="badge badge-{{ bundle.status_category }}">{{ bundle.processing_label }}</span>
+        <span class="badge badge-consumption">{{ consumption_labels.get(bundle.item.consumption_state, bundle.item.consumption_state) }}</span>
+      </div>
+    </div>
+  </header>
+
+  {{ status_panel(bundle) }}
+
+  <div class="detail-grid">
+    <section>
+      <h2>来源</h2>
+      <dl class="metadata">
+        <dt>原始 URL</dt><dd>{% if bundle.item.source_url_raw %}<a href="{{ bundle.item.source_url_raw }}" rel="noreferrer noopener" target="_blank">{{ bundle.item.source_url_raw }}</a>{% else %}—{% endif %}</dd>
+        <dt>规范化 URL</dt><dd>{{ bundle.item.source_url_canonical or "—" }}</dd>
+        <dt>本地路径</dt><dd class="path">{{ bundle.item.source_path or "—" }}</dd>
+        <dt>平台 / 类型</dt><dd>{{ platform_labels.get(bundle.item.platform, bundle.item.platform) }} / {{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }}</dd>
+        <dt>发布日期</dt><dd>{{ bundle.item.published_at or "—" }}</dd>
+        <dt>抓取时间</dt><dd>{{ bundle.item.fetched_at|datetime }}</dd>
+        <dt>时长</dt><dd>{{ bundle.item.duration_sec|duration if bundle.item.duration_sec else "—" }}</dd>
+        <dt>摘要</dt><dd>{{ bundle.item.summary or "—" }}</dd>
+      </dl>
+    </section>
+
+    <section>
+      <h2>编辑</h2>
+      <form method="post" action="/items/{{ bundle.item.id }}/edit" class="stack-form">
+        <label>标题<input name="title" value="{{ bundle.item.title }}" maxlength="2048" required></label>
+        <label>作者<input name="author" value="{{ bundle.item.author or '' }}" maxlength="1024"></label>
+        <button type="submit">保存</button>
+      </form>
+
+      <h2>消费状态</h2>
+      <form method="post" action="/items/{{ bundle.item.id }}/state" class="inline-form">
+        <button type="submit" name="state" value="unstarted" class="secondary">未开始</button>
+        <button type="submit" name="state" value="in_progress" class="secondary">进行中</button>
+        <button type="submit" name="state" value="finished" class="secondary">已完成</button>
+      </form>
+
+      <h2 class="danger-title">删除</h2>
+      <form method="post" action="/items/{{ bundle.item.id }}/delete" onsubmit="return confirm('只删除库内派生文件和索引，不删除你的原始文件。确定删除？');">
+        <button type="submit" class="contrast">删除 Item</button>
+      </form>
+    </section>
+  </div>
+</article>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Add · 拾藏{% endblock %}
+{% block main %}
+<section class="add-page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">INTAKE</p>
+      <h1>添加内容</h1>
+      <p class="subtitle">链接、本地文件、EPUB 或播客单集。</p>
+    </div>
+  </header>
+
+  {% if error %}
+  <div class="alert alert-error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <div class="add-grid">
+    <section class="panel">
+      <h2>视频链接</h2>
+      <form method="post" action="/add/url" class="stack-form">
+        <label>B 站 / YouTube 单条视频 URL
+          <input name="url" type="url" required placeholder="https://www.youtube.com/watch?v=...">
+        </label>
+        <p class="hint">播放列表、直播链接会被拒绝；B 站多 P 请保留 ?p= 分 P 参数。</p>
+        <button type="submit">添加到处理队列</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>本地路径</h2>
+      <form method="post" action="/add/path" class="stack-form">
+        <label>Mac 上的绝对路径
+          <input name="path" type="text" required placeholder="/Users/you/Downloads/audio.mp3">
+        </label>
+        <p class="hint">音频/EPUB 会复制进库；视频只保留路径和抽取的音频。</p>
+        <button type="submit">添加</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>上传文件</h2>
+      <form id="upload-form" method="post" action="/add/upload" enctype="multipart/form-data" class="stack-form">
+        <label>音频 / 视频 / EPUB
+          <input id="upload-input" name="file" type="file" accept="audio/*,video/*,.epub" required>
+        </label>
+        <progress id="upload-progress" max="100" value="0" hidden></progress>
+        <p class="hint" id="upload-note">视频最大 4 GB，音频 500 MB，EPUB 100 MB。</p>
+        <button type="submit">上传并处理</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>播客 feed</h2>
+      <form method="post" action="/add/feed/preview"
+            hx-post="/add/feed/preview" hx-target="#feed-preview" hx-swap="innerHTML" class="stack-form">
+        <label>RSS feed URL
+          <input name="feed_url" type="url" required placeholder="https://example.com/feed.xml">
+        </label>
+        <button type="submit">预览最近单集</button>
+      </form>
+      <div id="feed-preview">
+        {% include "feed_preview.html" %}
+      </div>
+    </section>
+  </div>
+
+  <p class="privacy-note">转写和书文本会分块发送给 DeepSeek 生成摘要与 Tag。音频和原文始终保存在你的 Mac 上。</p>
+</section>
+{% endblock %}
