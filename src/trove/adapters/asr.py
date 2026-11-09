@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import json
 import shutil
 import sys
@@ -9,7 +10,7 @@ from typing import Any
 
 from trove.adapters.process import run_command
 from trove.config import DEFAULT_ASR_MODEL
-from trove.domain.items import ASR_MODEL_MISSING_HINT
+from trove.domain.items import ASR_MODEL_MISSING_HINT, ASR_NOT_INSTALLED_HINT
 from trove.errors import ProcessingError
 from trove.ports import StageContext, TranscriptResult, TranscriptSegmentData
 
@@ -25,6 +26,8 @@ class MlxWhisperTranscriber:
         self.ffmpeg = ffmpeg
 
     def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult:
+        if not mlx_installed():
+            raise ProcessingError("asr.not_configured", ASR_NOT_INSTALLED_HINT)
         if not model_cached(self.model):
             raise ProcessingError("asr.model_missing", ASR_MODEL_MISSING_HINT)
         if shutil.which(self.ffmpeg) is None:
@@ -114,6 +117,10 @@ def transcript_from_payload(payload: dict[str, Any], *, model: str | None) -> Tr
     )
 
 
+def mlx_installed() -> bool:
+    return importlib.util.find_spec("mlx_whisper") is not None
+
+
 def model_cached(model: str) -> bool:
     try:
         from huggingface_hub import snapshot_download
@@ -130,7 +137,7 @@ def download_model(model: str) -> Path:
     try:
         from huggingface_hub import snapshot_download
     except ImportError as exc:
-        raise RuntimeError("mlx-whisper 尚未安装，请先运行: uv sync") from exc
+        raise RuntimeError(ASR_NOT_INSTALLED_HINT) from exc
     return Path(snapshot_download(model))
 
 
