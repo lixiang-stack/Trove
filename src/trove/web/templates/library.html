@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "macros.html" import item_row with context %}
+{% from "macros.html" import filter_stack, item_row with context %}
 {% block title %}Library · 拾藏{% endblock %}
 {% block main %}
 <section class="library-head">
@@ -13,20 +13,22 @@
   </div>
 </section>
 
-<div class="filter-bar" aria-label="Library 过滤与排序">
+<div class="filter-bar" aria-label="Library 视图与排序">
   <div class="filter-group">
-    <a class="chip {% if not inbox %}active{% endif %}" href="/library?sort={{ sort }}"
-       hx-get="/library?sort={{ sort }}" hx-target="#main" hx-select="#main" hx-push-url="true">全部</a>
-    <a class="chip {% if inbox %}active{% endif %}" href="/library?state=processing,failed&sort={{ sort }}"
-       hx-get="/library?state=processing,failed&sort={{ sort }}" hx-target="#main" hx-select="#main" hx-push-url="true">Inbox</a>
+    <a class="chip {% if not inbox and not has_filters %}active{% endif %}" href="{{ make_url(state='', type='', consumption='', tag='', source='') }}"
+       hx-get="{{ make_url(state='', type='', consumption='', tag='', source='') }}" hx-target="#main" hx-select="#main" hx-push-url="true">全部</a>
+    <a class="chip {% if inbox %}active{% endif %}" href="{{ make_url(state='' if inbox else 'processing,failed') }}"
+       hx-get="{{ make_url(state='' if inbox else 'processing,failed') }}" hx-target="#main" hx-select="#main" hx-push-url="true">Inbox</a>
   </div>
   <div class="filter-group sort-group">
-    <a class="chip {% if sort == 'recent_added' %}active{% endif %}" href="/library?sort=recent_added{% if inbox %}&state=processing,failed{% endif %}"
-       hx-get="/library?sort=recent_added{% if inbox %}&state=processing,failed{% endif %}" hx-target="#main" hx-select="#main" hx-push-url="true">最近添加</a>
-    <a class="chip {% if sort == 'recent_consumed' %}active{% endif %}" href="/library?sort=recent_consumed{% if inbox %}&state=processing,failed{% endif %}"
-       hx-get="/library?sort=recent_consumed{% if inbox %}&state=processing,failed{% endif %}" hx-target="#main" hx-select="#main" hx-push-url="true">最近消费</a>
+    <a class="chip {% if sort == 'recent_added' %}active{% endif %}" href="{{ make_url(sort='recent_added') }}"
+       hx-get="{{ make_url(sort='recent_added') }}" hx-target="#main" hx-select="#main" hx-push-url="true">最近添加</a>
+    <a class="chip {% if sort == 'recent_consumed' %}active{% endif %}" href="{{ make_url(sort='recent_consumed') }}"
+       hx-get="{{ make_url(sort='recent_consumed') }}" hx-target="#main" hx-select="#main" hx-push-url="true">最近消费</a>
   </div>
 </div>
+
+{{ filter_stack(filter_groups, make_url(state='', type='', consumption='', tag='', source=''), has_filters, 'Library 过滤') }}
 
 {% if items %}
 <section class="queue-list" aria-label="内容列表">
@@ -41,6 +43,10 @@
   <h2>Inbox 是空的</h2>
   <p>没有正在处理或失败的内容。</p>
   <a href="/library" role="button" class="secondary" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">返回 Library</a>
+  {% elif has_filters %}
+  <h2>没有匹配的内容</h2>
+  <p>试试清空过滤，或添加一条新内容。</p>
+  <a href="{{ make_url(type='', consumption='', tag='', source='') }}" role="button" class="secondary" hx-get="{{ make_url(type='', consumption='', tag='', source='') }}" hx-target="#main" hx-select="#main" hx-push-url="true">清空过滤</a>
   {% else %}
   <h2>Library 还是空的</h2>
   <p>粘贴一条 B 站/YouTube 链接、上传本地文件，或从播客 feed 选一集开始。</p>

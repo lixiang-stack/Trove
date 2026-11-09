@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import importlib.util
 import os
+import platform
 import shutil
 import signal
 import subprocess
@@ -20,8 +22,9 @@ from trove.db.engine import (
     head_revision,
     upgrade_database,
 )
+from trove.domain.items import ASR_MODEL_MISSING_HINT
 from trove.logging_setup import configure_logging
-from trove.worker import run_worker
+from trove.worker import ensure_migrated, run_worker
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -45,7 +48,12 @@ def _build_parser() -> argparse.ArgumentParser:
     db_sub = db.add_subparsers(dest="db_command", required=True)
     db_sub.add_parser("upgrade", help="apply migrations")
 
+    index = subparsers.add_parser("index", help="search index commands")
+    index_sub = index.add_subparsers(dest="index_command", required=True)
+    index_sub.add_parser("rebuild", help="rebuild the search index")
+
     subparsers.add_parser("doctor", help="check Host dependencies and layout")
+    subparsers.add_parser("setup", help="download the ASR model and check dependencies")
 
     auth = subparsers.add_parser("auth", help="authentication commands")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
@@ -81,8 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "db":
         return _db(config)
+    if args.command == "index":
+        return _index(config)
     if args.command == "doctor":
         return _doctor(config)
+    if args.command == "setup":
+        return _setup(config)
     if args.command == "auth":
         return _auth(config, args)
     parser.error("未知命令")
@@ -179,6 +191,14 @@ def _engine(config):
     return create_engine(f"sqlite:///{config.db_path}")
 
 
+def _index(config) -> int:
+    runtime = build_runtime(config)
+    ensure_migrated(runtime)
+    count = runtime.search_index.rebuild()
+    print(f"搜索索引已重建: {count} 个 Item")
+    return 0
+
+
 def _doctor(config) -> int:
     config.ensure_layout()
     problems: list[str] = []
@@ -246,6 +266,8 @@ def _doctor(config) -> int:
         else:
             print(f"yt-dlp: {ytdlp_result.stdout.strip()}")
 
+    _doctor_asr(config, problems)
+
     if problems:
         print("\n需要处理：")
         for problem in problems:
@@ -253,6 +275,57 @@ def _doctor(config) -> int:
         return 1
     print("\nHost 检查通过。")
     return 0
+
+
+def _doctor_asr(config, problems: list[str]) -> None:
+    if not _apple_silicon():
+        problems.append("mlx-whisper 需要 Apple Silicon macOS")
+        print("Apple Silicon: 否")
+    else:
+        print("Apple Silicon: OK")
+    if importlib.util.find_spec("mlx_whisper") is None:
+        problems.append("缺少 mlx-whisper，请运行: uv sync")
+        print("mlx-whisper: 缺失")
+        return
+    print("mlx-whisper: OK")
+    from trove.adapters.asr import model_cached
+
+    if model_cached(config.asr_model):
+        print(f"ASR 模型: {config.asr_model}")
+    else:
+        problems.append(ASR_MODEL_MISSING_HINT)
+        print("ASR 模型: 缺失")
+
+
+def _setup(config) -> int:
+    config.ensure_layout()
+    problems: list[str] = []
+    if not _apple_silicon():
+        problems.append("mlx-whisper 需要 Apple Silicon macOS")
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        problems.append("缺少 FFmpeg/ffprobe，请安装: brew install ffmpeg")
+    if importlib.util.find_spec("mlx_whisper") is None:
+        problems.append("缺少 mlx-whisper，请运行: uv sync")
+    if problems:
+        print("需要处理：")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+
+    from trove.adapters.asr import download_model
+
+    print(f"下载转写模型 {config.asr_model} …")
+    try:
+        path = download_model(config.asr_model)
+    except Exception as exc:  # noqa: BLE001 - setup reports the download failure
+        print(f"模型下载失败: {exc}", file=sys.stderr)
+        return 1
+    print(f"模型已就绪: {path}")
+    return 0
+
+
+def _apple_silicon() -> bool:
+    return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
 def _command_version(command: list[str]) -> str:

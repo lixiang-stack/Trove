@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import ColumnElement, case, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -22,7 +22,8 @@ from trove.domain.items import (
     ConsumptionState,
     RunState,
 )
-from trove.errors import ConflictError, NotFoundError
+from trove.domain.tags import normalize_tag
+from trove.errors import ConflictError, NotFoundError, TroveError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
 
@@ -196,16 +197,15 @@ class LibraryService:
         item_type: str | None = None,
         consumption: str | None = None,
         platform: str | None = None,
+        tag: str | None = None,
         limit: int | None = None,
     ) -> list[ItemBundle]:
         with self.sessions() as session:
             statement = select(Item)
-            if item_type:
-                statement = statement.where(Item.source_type == item_type)
-            if consumption:
-                statement = statement.where(Item.consumption_state == consumption)
-            if platform:
-                statement = statement.where(Item.platform == platform)
+            for condition in self._filter_conditions(
+                item_type=item_type, consumption=consumption, platform=platform, tag=tag
+            ):
+                statement = statement.where(condition)
             if sort == "recent_consumed":
                 activity = case(
                     (
@@ -227,6 +227,52 @@ class LibraryService:
         if not states:
             return bundles
         return [bundle for bundle in bundles if _matches_states(bundle, states)]
+
+    def filtered_item_ids(
+        self,
+        *,
+        item_type: str | None = None,
+        consumption: str | None = None,
+        platform: str | None = None,
+        tag: str | None = None,
+    ) -> set[str]:
+        with self.sessions() as session:
+            statement = select(Item.id)
+            for condition in self._filter_conditions(
+                item_type=item_type, consumption=consumption, platform=platform, tag=tag
+            ):
+                statement = statement.where(condition)
+            return {str(item_id) for item_id in session.execute(statement).scalars()}
+
+    @staticmethod
+    def _filter_conditions(
+        *,
+        item_type: str | None = None,
+        consumption: str | None = None,
+        platform: str | None = None,
+        tag: str | None = None,
+    ) -> list[ColumnElement[bool]]:
+        conditions: list[ColumnElement[bool]] = []
+        if item_type:
+            conditions.append(Item.source_type == item_type)
+        if consumption:
+            conditions.append(Item.consumption_state == consumption)
+        if platform:
+            conditions.append(Item.platform == platform)
+        if tag:
+            try:
+                _, normalized = normalize_tag(tag)
+            except TroveError:
+                conditions.append(false())
+            else:
+                conditions.append(
+                    Item.id.in_(
+                        select(ItemTag.item_id)
+                        .join(Tag, Tag.id == ItemTag.tag_id)
+                        .where(Tag.normalized_name == normalized)
+                    )
+                )
+        return conditions
 
     def tag_counts(self) -> list[tuple[str, int]]:
         with self.sessions() as session:

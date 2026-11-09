@@ -8,9 +8,12 @@ Trove is a personal long-content library: audio is the primary way to consume, t
 uv sync
 uv run trove db upgrade
 uv run trove auth set-password
+uv run trove setup
 uv run trove doctor
 uv run trove serve
 ```
+
+`trove setup` downloads the local mlx-whisper model (`mlx-community/whisper-large-v3-turbo`, about 1.6GB) on first use. If the model is missing, transcription fails with `asr.model_missing` and the same setup hint.
 
 Open <http://127.0.0.1:8765>. `trove serve` also starts a built-in processing worker child process. For two-process deployment (or debugging), run only the API and start the worker separately:
 
@@ -28,3 +31,5 @@ Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 ```
 
 This runs ruff, mypy, pytest, and the documentation check. Network tests are excluded by default: `uv run pytest -m network`.
+
+Rebuild the FTS search index from stored content with `uv run trove index rebuild`.

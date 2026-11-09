@@ -4,7 +4,7 @@ import logging
 import os
 import time
 from typing import Annotated, Any
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlencode, urlsplit
 
 from fastapi import APIRouter, File, Form, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from trove import __version__
 from trove.db.engine import fts5_available, migration_status
 from trove.db.models import Item, Run
+from trove.domain.items import CONSUMPTION_LABELS, PLATFORM_LABELS, SOURCE_TYPE_LABELS
 from trove.errors import (
     NotFoundError,
     RateLimitedError,
@@ -32,6 +33,7 @@ from trove.logging_setup import tail_run_log
 from trove.services.auth import SESSION_COOKIE, SESSION_MAX_AGE, is_secure_request
 from trove.services.library import item_bundle
 from trove.web.templating import templates
+from trove.web.urls import locate_url
 from trove.worker import heartbeat_is_fresh, read_heartbeat
 
 logger = logging.getLogger("trove.request")
@@ -169,6 +171,51 @@ def _safe_next(value: str | None) -> str:
     return value
 
 
+def _url_builder(path: str, base: dict[str, str]):
+    def build(**overrides: str) -> str:
+        params = {key: value for key, value in base.items() if value}
+        for key, value in overrides.items():
+            if value:
+                params[key] = value
+            else:
+                params.pop(key, None)
+        query = urlencode(params)
+        return f"{path}?{query}" if query else path
+
+    return build
+
+
+def _filter_groups(
+    build,
+    selected: dict[str, str],
+    dimensions: list[tuple[str, str, list[tuple[str, str]]]],
+) -> list[dict[str, Any]]:
+    groups = []
+    for key, label, choices in dimensions:
+        options = [
+            {"label": "全部", "href": build(**{key: ""}), "active": not selected.get(key)}
+        ]
+        options.extend(
+            {
+                "label": choice_label,
+                "href": build(**{key: value}),
+                "active": selected.get(key) == value,
+            }
+            for value, choice_label in choices
+        )
+        groups.append({"key": key, "label": label, "options": options})
+    return groups
+
+
+def _search_dimensions(runtime) -> list[tuple[str, str, list[tuple[str, str]]]]:
+    return [
+        ("type", "类型", list(SOURCE_TYPE_LABELS.items())),
+        ("consumption", "状态", list(CONSUMPTION_LABELS.items())),
+        ("tag", "Tag", [(name, name) for name, _ in runtime.library.tag_counts()]),
+        ("source", "来源", list(PLATFORM_LABELS.items())),
+    ]
+
+
 # ----------------------------------------------------------------------
 # HTML routes
 # ----------------------------------------------------------------------
@@ -253,13 +300,34 @@ def library_page(
     request: Request,
     sort: str = "recent_added",
     state: str = "",
+    type: str = "",
+    consumption: str = "",
+    tag: str = "",
+    source: str = "",
 ):
     runtime = request.app.state.runtime
     if sort not in {"recent_added", "recent_consumed"}:
         sort = "recent_added"
     states = {value for value in state.split(",") if value}
     inbox = bool(states & {"processing", "failed"})
-    items = runtime.library.list_items(sort=sort, states=states or None)
+    items = runtime.library.list_items(
+        sort=sort,
+        states=states or None,
+        item_type=type or None,
+        consumption=consumption or None,
+        platform=source or None,
+        tag=tag or None,
+    )
+    selected = {
+        "type": type,
+        "consumption": consumption,
+        "tag": tag,
+        "source": source,
+    }
+    build = _url_builder(
+        "/library",
+        {"sort": sort, "state": state, **selected},
+    )
     return _render(
         request,
         "library.html",
@@ -267,6 +335,11 @@ def library_page(
             "items": items,
             "sort": sort,
             "inbox": inbox,
+            "filter_groups": _filter_groups(
+                build, selected, _search_dimensions(runtime)
+            ),
+            "make_url": build,
+            "has_filters": any(selected.values()),
             "active_nav": "library",
         },
     )
@@ -282,6 +355,21 @@ def item_detail(request: Request, item_id: str):
         {
             "bundle": bundle,
             "run_logs": _run_logs(runtime, bundle),
+            "active_nav": "library",
+        },
+    )
+
+
+@html_router.get("/items/{item_id}/read", include_in_schema=False)
+def item_read(request: Request, item_id: str):
+    runtime = request.app.state.runtime
+    bundle = runtime.library.get(item_id)
+    return _render(
+        request,
+        "read.html",
+        {
+            "bundle": bundle,
+            "chapters": runtime.reading.chapters(item_id),
             "active_nav": "library",
         },
     )
@@ -478,27 +566,49 @@ def add_podcast(
 
 
 @html_router.get("/search", include_in_schema=False)
-def search_page(request: Request, q: str = ""):
+def search_page(
+    request: Request,
+    q: str = "",
+    type: str = "",
+    consumption: str = "",
+    tag: str = "",
+    source: str = "",
+):
     runtime = request.app.state.runtime
     query = (q or "").strip()
-    results: list[dict[str, Any]] = []
+    results = []
+    error: str | None = None
     if query:
         try:
-            hits = runtime.search_index.search(query)
-        except ValueError:
-            hits = []
-        with runtime.sessions() as session:
-            for hit in hits:
-                item = session.get(Item, hit.item_id)
-                if item is None:
-                    continue
-                results.append({"bundle": item_bundle(session, item), "hit": hit})
+            results = runtime.search.search(
+                query,
+                item_type=type or None,
+                consumption=consumption or None,
+                tag=tag or None,
+                platform=source or None,
+            )
+        except ValueError as exc:
+            error = str(exc)
+    selected = {
+        "type": type,
+        "consumption": consumption,
+        "tag": tag,
+        "source": source,
+    }
+    build = _url_builder("/search", {"q": query, **selected})
     return _render(
         request,
         "search.html",
         {
             "query": query,
             "results": results,
+            "search_error": error,
+            "filter_groups": _filter_groups(
+                build, selected, _search_dimensions(runtime)
+            ),
+            "make_url": build,
+            "clear_url": build(type="", consumption="", tag="", source=""),
+            "has_filters": any(selected.values()),
             "active_nav": "search",
         },
     )
@@ -580,6 +690,7 @@ def api_list_items(
     state: str = "",
     type: str = Query("", alias="type"),
     consumption: str = "",
+    tag: str = "",
     source: str = "",
 ):
     runtime = request.app.state.runtime
@@ -592,6 +703,7 @@ def api_list_items(
         item_type=type or None,
         consumption=consumption or None,
         platform=source or None,
+        tag=tag or None,
     )
     return {
         "items": [runtime.library.payload(bundle) for bundle in bundles],
@@ -735,33 +847,51 @@ def api_cancel_run(request: Request, run_id: str):
 
 
 @api_router.get("/search")
-def api_search(request: Request, q: str = ""):
+def api_search(
+    request: Request,
+    q: str = "",
+    type: str = Query("", alias="type"),
+    consumption: str = "",
+    tag: str = "",
+    source: str = "",
+):
     runtime = request.app.state.runtime
     query = (q or "").strip()
     if not query:
         return {"query": query, "results": [], "count": 0}
     try:
-        hits = runtime.search_index.search(query)
+        matching = runtime.search.search(
+            query,
+            item_type=type or None,
+            consumption=consumption or None,
+            tag=tag or None,
+            platform=source or None,
+        )
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
-    results = []
-    with runtime.sessions() as session:
-        for hit in hits:
-            item = session.get(Item, hit.item_id)
-            if item is None:
-                continue
-            bundle = item_bundle(session, item)
-            results.append(
+    results = [
+        {
+            "item": runtime.library.payload(result.bundle),
+            "score": result.score,
+            "evidence": [
                 {
-                    "item": runtime.library.payload(bundle),
-                    "evidence": {
-                        "doc_kind": hit.doc_kind,
-                        "ref": hit.ref,
-                        "text": hit.text,
-                        "score": hit.score,
-                    },
+                    "doc_kind": evidence.doc_kind,
+                    "ref": evidence.ref,
+                    "text": evidence.text,
+                    "snippet": evidence.snippet,
+                    "score": evidence.score,
+                    "url": locate_url(
+                        result.bundle.item.id,
+                        result.bundle.item.source_type,
+                        evidence.doc_kind,
+                        evidence.ref,
+                    ),
                 }
-            )
+                for evidence in result.evidence
+            ],
+        }
+        for result in matching
+    ]
     return {"query": query, "results": results, "count": len(results)}
 
 
