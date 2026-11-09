@@ -28,37 +28,32 @@ def normalize_text(value: str) -> str:
     return _WHITESPACE_RE.sub(" ", value).strip()
 
 
-def document_tokens(value: str) -> list[str]:
-    normalized = normalize_text(value)
-    tokens: list[str] = []
-    cjk_run: list[str] = []
-
-    def flush_cjk() -> None:
-        nonlocal cjk_run
-        if not cjk_run:
-            return
-        if len(cjk_run) == 1:
-            tokens.append(cjk_run[0])
-        else:
-            tokens.extend("".join(cjk_run[index : index + 2]) for index in range(len(cjk_run) - 1))
-        cjk_run = []
-
+def _scan(normalized: str):
     position = 0
     while position < len(normalized):
         char = normalized[position]
         if _is_cjk(char):
-            cjk_run.append(char)
-            position += 1
+            start = position
+            while position < len(normalized) and _is_cjk(normalized[position]):
+                position += 1
+            yield "cjk", normalized[start:position]
             continue
-        flush_cjk()
-        match = _LATIN_RE.match(normalized, position)
-        if match:
-            tokens.append(match.group(0))
-            position = match.end()
+        latin = _LATIN_RE.match(normalized, position)
+        if latin:
+            yield "latin", latin.group(0)
+            position = latin.end()
             continue
         position += 1
-    flush_cjk()
-    return list(dict.fromkeys(token for token in tokens if token))
+
+
+def document_tokens(value: str) -> list[str]:
+    tokens: list[str] = []
+    for kind, unit in _scan(normalize_text(value)):
+        if kind == "cjk" and len(unit) > 1:
+            tokens.extend(unit[index : index + 2] for index in range(len(unit) - 1))
+        else:
+            tokens.append(unit)
+    return tokens
 
 
 def norm_text(value: str) -> str:
@@ -68,7 +63,7 @@ def norm_text(value: str) -> str:
 def query_tokens(query: str) -> list[str]:
     query = normalize_text(query)
     if len(query) > MAX_QUERY_LENGTH:
-        raise ValueError(f"query longer than {MAX_QUERY_LENGTH} characters")
+        raise ValueError(f"查询过长，最多 {MAX_QUERY_LENGTH} 个字符")
     return document_tokens(query)
 
 
@@ -80,31 +75,43 @@ def build_match_query(query: str) -> tuple[str | None, list[str]]:
     """
     normalized = normalize_text(query)
     if len(normalized) > MAX_QUERY_LENGTH:
-        raise ValueError(f"query longer than {MAX_QUERY_LENGTH} characters")
+        raise ValueError(f"查询过长，最多 {MAX_QUERY_LENGTH} 个字符")
     phrases: list[str] = []
     like_terms: list[str] = []
-    position = 0
-    while position < len(normalized):
-        char = normalized[position]
-        if _is_cjk(char):
-            start = position
-            while position < len(normalized) and _is_cjk(normalized[position]):
-                position += 1
-            run = normalized[start:position]
-            if len(run) == 1:
-                like_terms.append(run)
-            else:
-                bigrams = [run[index : index + 2] for index in range(len(run) - 1)]
-                phrases.append('"' + " ".join(bigrams) + '"')
-            continue
-        latin = _LATIN_RE.match(normalized, position)
-        if latin:
-            phrases.append('"' + latin.group(0) + '"')
-            position = latin.end()
-            continue
-        position += 1
+    for kind, unit in _scan(normalized):
+        if kind == "latin":
+            phrases.append('"' + unit + '"')
+        elif len(unit) == 1:
+            like_terms.append(unit)
+        else:
+            bigrams = [unit[index : index + 2] for index in range(len(unit) - 1)]
+            phrases.append('"' + " ".join(bigrams) + '"')
     match = " AND ".join(phrases) if phrases else None
     return match, like_terms
+
+
+def query_words(query: str) -> list[str]:
+    """Keep phrase-like CJK runs and Latin words for snippets and highlighting."""
+    return [unit for _kind, unit in _scan(normalize_text(query))]
+
+
+def snippet(text: str, query: str, *, max_chars: int = 180) -> str:
+    value = text or ""
+    if len(value) <= max_chars:
+        return value
+    terms = query_words(query)
+    folded = value.casefold()
+    positions = [folded.find(term) for term in terms]
+    found = [position for position in positions if position >= 0]
+    if not found:
+        return value[:max_chars].rstrip() + "…"
+    index = min(found)
+    start = max(0, index - max_chars // 3)
+    end = min(len(value), start + max_chars)
+    start = max(0, end - max_chars)
+    prefix = "…" if start > 0 else ""
+    suffix = "…" if end < len(value) else ""
+    return prefix + value[start:end].strip() + suffix
 
 
 def ref_label(doc_kind: str, ref: str) -> str:

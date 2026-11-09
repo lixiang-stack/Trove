@@ -5,13 +5,14 @@ from dataclasses import dataclass
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from trove.adapters.asr import MlxWhisperTranscriber
 from trove.adapters.downloader import DefaultDownloader
 from trove.adapters.epub import EpubExtractor
 from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
 from trove.adapters.safe_http import SafeHttpClient
 from trove.adapters.search import FtsSearchIndex
-from trove.adapters.unavailable import UnavailableOrganizer, UnavailableTranscriber
+from trove.adapters.unavailable import UnavailableOrganizer
 from trove.config import Config
 from trove.content_package import ContentPackage
 from trove.db.engine import create_engine_for, create_session_factory
@@ -29,6 +30,8 @@ from trove.services.intake import IntakeService, UploadStore
 from trove.services.library import LibraryService
 from trove.services.playback import PlaybackService
 from trove.services.processing import ProcessingService
+from trove.services.reading import ReadingService
+from trove.services.search import SearchService
 
 
 @dataclass(slots=True)
@@ -49,6 +52,8 @@ class Runtime:
     package: ContentPackage
     search_index: SearchIndex
     library: LibraryService
+    search: SearchService
+    reading: ReadingService
     processing: ProcessingService
     intake: IntakeService
     playback: PlaybackService
@@ -63,7 +68,7 @@ def default_ports(config: Config) -> Ports:
         downloader=DefaultDownloader(config, http),
         feed_client=PodcastFeedClient(http, max_bytes=config.max_feed_bytes),
         audio_extractor=FfmpegAudioExtractor(),
-        transcriber=UnavailableTranscriber(),
+        transcriber=MlxWhisperTranscriber(config.asr_model),
         organizer=UnavailableOrganizer(config.llm_enabled),
         book_extractor=EpubExtractor(),
     )
@@ -74,8 +79,9 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     engine = create_engine_for(config)
     sessions = create_session_factory(engine)
     package = ContentPackage(config)
-    search_index: SearchIndex = FtsSearchIndex(sessions)
+    search_index: SearchIndex = FtsSearchIndex(sessions, package)
     library = LibraryService(config, sessions, package, search_index)
+    search = SearchService(sessions, search_index, library)
     processing = ProcessingService(
         config,
         sessions,
@@ -98,6 +104,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         uploads,
     )
     playback = PlaybackService(sessions, package, library)
+    reading = ReadingService(sessions)
     auth = AuthService(config)
     return Runtime(
         config=config,
@@ -106,6 +113,8 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         package=package,
         search_index=search_index,
         library=library,
+        search=search,
+        reading=reading,
         processing=processing,
         intake=intake,
         playback=playback,

@@ -122,6 +122,9 @@ def test_transcript_and_listen_page(host):
     assert page.status_code == 200
     assert "第一段关于记忆的内容" in page.text
     assert "<details class=\"now-transcript\"" in page.text
+    assert 'data-transcript-search' in page.text
+    assert 'id="segment-0"' in page.text
+    assert 'id="segment-1"' in page.text
     assert "<script type=\"application/json\" data-player-item>" in page.text
 
 

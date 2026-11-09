@@ -401,6 +401,7 @@ class ProcessingService:
         result = self.transcriber.transcribe(audio_path, context)
         payload = {
             "language": result.language or item.language,
+            "model": result.model,
             "segments": [
                 {
                     "seq": segment.seq,

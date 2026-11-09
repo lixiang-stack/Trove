@@ -13,6 +13,7 @@ dependencies = [
   "itsdangerous>=2.2",
   "jinja2>=3.1",
   "lxml>=5.3",
+  "mlx-whisper>=0.4",
   "nh3>=0.2.20",
   "pydantic>=2.10",
   "python-multipart>=0.0.20",
@@ -41,10 +42,11 @@ packages = ["src/trove"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -m 'not network'"
+addopts = "-q -m 'not network and not slow'"
 markers = [
   "network: hits real external services",
   "browser: requires a Playwright browser",
+  "slow: manual integration test with a downloaded model",
 ]
 filterwarnings = ["ignore::DeprecationWarning:starlette.*"]
 

@@ -17,6 +17,18 @@
   <div class="now-tags">{% for tag in bundle.tags %}<span class="now-tag">{{ tag.name }}</span>{% endfor %}</div>
   {% endif %}
 
+  <details class="now-search">
+    <summary>⌕ 搜索资料库</summary>
+    <div class="now-search-sheet">
+      <form method="get" action="/search" class="search-form"
+            hx-get="/search" hx-target="#now-search-results" hx-select="#search-results-region" hx-push-url="false">
+        <input name="q" placeholder="搜标题、transcript、书、Tag" autocomplete="off">
+        <button type="submit">搜索</button>
+      </form>
+      <div id="now-search-results"></div>
+    </div>
+  </details>
+
   {% if bundle.audio_artifact %}
   <section class="now-player" aria-label="播放器">
     <div class="now-times">
@@ -58,14 +70,19 @@
       <span class="sheet-sub">{{ transcript|length }} 个分段 · 点击展开</span>
     </summary>
     {% if transcript %}
-    <ol class="segments">
+    <div class="transcript-tools">
+      <input type="search" data-transcript-search placeholder="在 transcript 中搜索" aria-label="在 transcript 中搜索" autocomplete="off">
+      <span class="transcript-match" data-transcript-count></span>
+    </div>
+    <ol class="segments" data-transcript-segments>
       {% for segment in transcript %}
-      <li class="seg">
+      <li class="seg" id="segment-{{ segment.seq }}" data-transcript-segment>
         <span class="seg-time">{{ segment.start_ms|clock }}</span>
         <span class="seg-text">{{ segment.text }}</span>
       </li>
       {% endfor %}
     </ol>
+    <p class="transcript-empty muted" data-transcript-empty hidden>没有匹配的分段。</p>
     {% else %}
     <p class="muted">还没有 transcript。</p>
     {% endif %}

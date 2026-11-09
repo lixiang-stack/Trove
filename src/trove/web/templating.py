@@ -14,11 +14,12 @@ from trove.domain.items import (
     error_label,
 )
 from trove.domain.search import ref_label
+from trove.web.urls import locate_url
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 COVER_TONES = ("vermilion", "green", "blue", "gold", "ink", "clay")
-STATIC_ASSETS = ("app.css", "player.js", "htmx.min.js", "pico.min.css")
+STATIC_ASSETS = ("app.css", "player.js", "ui.js", "htmx.min.js", "pico.min.css")
 
 
 def _asset_version() -> str:
@@ -79,4 +80,5 @@ templates.env.globals.update(
     platform_labels=PLATFORM_LABELS,
     consumption_labels=CONSUMPTION_LABELS,
     stage_labels=STAGE_LABELS,
+    locate_url=locate_url,
 )
