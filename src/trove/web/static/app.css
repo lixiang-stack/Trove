@@ -85,6 +85,22 @@ p { line-height: 1.65; }
   font-size: 12px; padding: 4px; cursor: pointer;
 }
 .link-button:hover { color: var(--accent); }
+.worker-banner {
+  width: min(980px, calc(100% - 32px));
+  margin: 14px auto 0;
+  padding: 10px 14px;
+  border: 1px solid #c98a7a;
+  border-radius: 12px;
+  background: #f7e8e3;
+  color: #7a2f22;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.worker-banner code {
+  background: rgba(122, 47, 34, .08);
+  border-radius: 5px;
+  padding: 1px 4px;
+}
 .shell {
   width: min(1040px, 100%);
   margin: 0 auto;

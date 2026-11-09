@@ -430,3 +430,159 @@ def test_round_player_buttons_stay_circular_and_centered(host, browser):
     assert speed["width"] == speed["height"] == 38
     assert speed["offsetX"] < 1 and speed["offsetY"] < 1
     context.close()
+
+
+_CONTRAST_AUDIT_JS = """
+() => {
+  const parse = (value) => {
+    const match = value.match(/rgba?\\(([^)]+)\\)/);
+    if (!match) return [0, 0, 0, 0];
+    const parts = match[1].split(',').map((part) => parseFloat(part.trim()));
+    return [parts[0] || 0, parts[1] || 0, parts[2] || 0, parts.length > 3 ? parts[3] : 1];
+  };
+  const over = (fg, bg) => {
+    const alpha = fg[3] + bg[3] * (1 - fg[3]);
+    if (!alpha) return [0, 0, 0, 0];
+    return [
+      (fg[0] * fg[3] + bg[0] * bg[3] * (1 - fg[3])) / alpha,
+      (fg[1] * fg[3] + bg[1] * bg[3] * (1 - fg[3])) / alpha,
+      (fg[2] * fg[3] + bg[2] * bg[3] * (1 - fg[3])) / alpha,
+      alpha,
+    ];
+  };
+  const luminance = (color) => {
+    const values = color.slice(0, 3).map((value) => {
+      const channel = value / 255;
+      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * values[0] + 0.7152 * values[1] + 0.0722 * values[2];
+  };
+  const contrast = (a, b) => {
+    const first = luminance(a);
+    const second = luminance(b);
+    return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+  };
+  const effectiveBackground = (element) => {
+    const chain = [];
+    let node = element;
+    while (node && node.nodeType === 1) {
+      chain.push(node);
+      node = node.parentElement;
+    }
+    chain.reverse();
+    let background = [255, 255, 255, 1];
+    for (const ancestor of chain) {
+      const color = parse(getComputedStyle(ancestor).backgroundColor);
+      if (color[3] > 0) background = over(color, background);
+    }
+    return background;
+  };
+  const failures = [];
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const seen = new Set();
+  while (walker.nextNode()) {
+    const text = walker.currentNode.textContent.trim();
+    if (!text) continue;
+    const element = walker.currentNode.parentElement;
+    if (!element || seen.has(element) || element.closest('.cover')) continue;
+    seen.add(element);
+    const style = getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1 || style.visibility === 'hidden') continue;
+    if (parseFloat(style.opacity) === 0) continue;
+    const background = effectiveBackground(element);
+    const foreground = over(parse(style.color), background);
+    const ratio = contrast(foreground, background);
+    const size = parseFloat(style.fontSize);
+    const weight = parseInt(style.fontWeight) || 400;
+    const large = size >= 24 || (size >= 18.66 && weight >= 700);
+    if (ratio < (large ? 3 : 4.5)) {
+      failures.push({
+        text: text.slice(0, 50),
+        tag: element.tagName.toLowerCase(),
+        className: String(element.className || ''),
+        ratio: Math.round(ratio * 100) / 100,
+        color: style.color,
+        background: `rgba(${background.map((value) => Math.round(value)).join(',')})`,
+      });
+    }
+  }
+  return failures;
+}
+"""
+
+
+def _contrast_failures(page):
+    page.evaluate("document.querySelectorAll('details').forEach((details) => details.open = true)")
+    return page.evaluate(_CONTRAST_AUDIT_JS)
+
+
+def test_all_pages_pass_contrast_audit_in_light_and_dark(host, browser):
+    from sqlalchemy import text
+
+    failed = seed_item(
+        host,
+        title="失败的记忆播客",
+        author="张三",
+        tags=["记忆", "智能体"],
+        duration=20.0,
+        audio_fixture="long.m4a",
+        run_state="failed",
+    )
+    with host.runtime.sessions() as session:
+        session.execute(
+            text(
+                "UPDATE runs SET error_code = 'asr.not_configured', "
+                "error_message = '转写组件尚未配置，请稍后重试', "
+                "current_stage = 'transcribing' WHERE item_id = :item_id"
+            ),
+            {"item_id": failed.item.id},
+        )
+        session.commit()
+    _seed_transcript(host, failed.item.id)
+    ready = seed_item(
+        host,
+        title="已经完成的内容",
+        author="李四",
+        source_key="seed:contrast-ready",
+        tags=["注意力"],
+        consumption_state="in_progress",
+        position=1.0,
+    )
+    for item in (failed, ready):
+        host.runtime.search_index.index_item(item.item.id)
+
+    host.login()
+    token = host.client.cookies.get("trove_session")
+    pages = (
+        "/library",
+        "/add",
+        "/search?q=记忆",
+        f"/items/{failed.item.id}",
+        f"/items/{ready.item.id}",
+        f"/items/{failed.item.id}/listen",
+        f"/items/{ready.item.id}/listen",
+    )
+    for color_scheme in ("light", "dark"):
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 1000}, color_scheme=color_scheme
+        )
+        context.add_cookies(
+            [{"name": "trove_session", "value": token, "url": host.base_url}]
+        )
+        page = context.new_page()
+        for path in pages:
+            page.goto(f"{host.base_url}{path}", wait_until="domcontentloaded")
+            failures = _contrast_failures(page)
+            assert failures == [], f"{color_scheme} contrast failures on {path}: {failures}"
+        context.close()
+
+    for color_scheme in ("light", "dark"):
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 1000}, color_scheme=color_scheme
+        )
+        page = context.new_page()
+        page.goto(f"{host.base_url}/login", wait_until="domcontentloaded")
+        failures = _contrast_failures(page)
+        assert failures == [], f"{color_scheme} contrast failures on /login: {failures}"
+        context.close()
