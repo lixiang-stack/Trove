@@ -376,7 +376,7 @@ def item_read(request: Request, item_id: str):
 
 
 @html_router.get("/items/{item_id}/listen", include_in_schema=False)
-def item_listen(request: Request, item_id: str):
+def item_listen(request: Request, item_id: str, replace: int | None = None):
     runtime = request.app.state.runtime
     bundle = runtime.library.get(item_id)
     transcript = runtime.playback.transcript(item_id)
@@ -386,10 +386,28 @@ def item_listen(request: Request, item_id: str):
         {
             "bundle": bundle,
             "transcript": transcript,
+            "replace_count": replace,
             "run_logs": _run_logs(runtime, bundle),
             "active_nav": "library",
         },
     )
+
+
+@html_router.post("/items/{item_id}/transcript/replace", include_in_schema=False)
+def replace_transcript(
+    request: Request,
+    item_id: str,
+    old: Annotated[str, Form()] = "",
+    new: Annotated[str, Form()] = "",
+):
+    runtime = request.app.state.runtime
+    count, first_seq = runtime.playback.replace_transcript_text(
+        item_id, old=old, new=new
+    )
+    target = f"/items/{item_id}/listen?replace={count}"
+    if first_seq is not None:
+        target += f"#segment-{first_seq}"
+    return RedirectResponse(target, status_code=303)
 
 
 @html_router.get("/items/{item_id}/status", include_in_schema=False)

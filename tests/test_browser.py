@@ -145,6 +145,25 @@ def test_transcript_in_page_search_filters_and_highlights(host, browser):
     context.close()
 
 
+def test_batch_replace_transcript_from_now_playing(host, browser):
+    bundle = seed_item(host, title="转写修正")
+    _seed_transcript(host, bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/listen", wait_until="domcontentloaded")
+    page.click("details.now-transcript summary")
+    page.click("details.transcript-edit summary")
+    page.fill('.transcript-edit input[name="old"]', "智能体")
+    page.fill('.transcript-edit input[name="new"]', "智能代理")
+    page.click(".transcript-edit button[type=submit]")
+    page.wait_for_url("**/listen?replace=1*")
+    assert "已更新 1 个分段" in page.locator(".transcript-notice").inner_text()
+    page.wait_for_selector("details.now-transcript[open]")
+    assert "智能代理" in page.locator(".now-transcript").inner_text()
+    assert "智能体" not in page.locator(".now-transcript").inner_text()
+    context.close()
+
+
 def test_search_result_opens_now_playing_at_transcript_segment(host, browser):
     bundle = seed_item(host, title="定位测试", duration=20.0, audio_fixture="long.m4a")
     _seed_transcript(host, bundle.item.id)

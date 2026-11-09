@@ -18,7 +18,7 @@ TRANSCRIBE_TIMEOUT_SECONDS = 4 * 3600
 
 
 class MlxWhisperTranscriber:
-    """Local Apple Silicon ASR adapter; keep the heavy model work in a child process."""
+    """Local ASR adapter; keep the heavy model work in a child process."""
 
     def __init__(self, model: str = DEFAULT_ASR_MODEL, *, ffmpeg: str = "ffmpeg") -> None:
         self.model = model

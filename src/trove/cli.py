@@ -4,7 +4,6 @@ import argparse
 import getpass
 import importlib.util
 import os
-import platform
 import shutil
 import signal
 import subprocess
@@ -278,11 +277,6 @@ def _doctor(config) -> int:
 
 
 def _doctor_asr(config, problems: list[str]) -> None:
-    if not _apple_silicon():
-        problems.append("mlx-whisper 需要 Apple Silicon macOS")
-        print("Apple Silicon: 否")
-    else:
-        print("Apple Silicon: OK")
     if importlib.util.find_spec("mlx_whisper") is None:
         problems.append("缺少 mlx-whisper，请运行: uv sync")
         print("mlx-whisper: 缺失")
@@ -300,8 +294,6 @@ def _doctor_asr(config, problems: list[str]) -> None:
 def _setup(config) -> int:
     config.ensure_layout()
     problems: list[str] = []
-    if not _apple_silicon():
-        problems.append("mlx-whisper 需要 Apple Silicon macOS")
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         problems.append("缺少 FFmpeg/ffprobe，请安装: brew install ffmpeg")
     if importlib.util.find_spec("mlx_whisper") is None:
@@ -322,10 +314,6 @@ def _setup(config) -> int:
         return 1
     print(f"模型已就绪: {path}")
     return 0
-
-
-def _apple_silicon() -> bool:
-    return platform.system() == "Darwin" and platform.machine() == "arm64"
 
 
 def _command_version(command: list[str]) -> str:
