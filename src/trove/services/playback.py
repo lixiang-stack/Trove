@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage, sha256_file
-from trove.db.models import Artifact, Item, TranscriptSegment
+from trove.db.models import Artifact, Item
 from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
 from trove.ports import SearchIndex
@@ -155,22 +155,6 @@ class PlaybackService:
                 segment.text = segment.text.replace(keyword, new)
             document.language = document.language or item.language
             path = self.package.write_transcript(item_id, document)
-            session.execute(
-                text("DELETE FROM transcript_segments WHERE item_id = :item_id"),
-                {"item_id": item_id},
-            )
-            session.add_all(
-                [
-                    TranscriptSegment(
-                        item_id=item_id,
-                        seq=segment.seq,
-                        start_ms=segment.start_ms,
-                        end_ms=segment.end_ms,
-                        text=segment.text,
-                    )
-                    for segment in segments
-                ]
-            )
             artifact = session.execute(
                 select(Artifact).where(
                     Artifact.item_id == item_id, Artifact.kind == "transcript"

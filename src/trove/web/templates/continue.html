@@ -24,11 +24,11 @@
         {% endif %}
       </div>
       <div class="continue-body">
-        <span class="eyebrow">{{ "READING" if entry.kind == "read" else "LISTENING" }}</span>
+        <span class="eyebrow">{{ "READING" if entry.kind.value == "read" else "LISTENING" }}</span>
         <strong class="continue-title">{{ item.title }}</strong>
         <span class="continue-meta">{{ item.author or "未知作者" }} · {{ entry.progress }}</span>
       </div>
-      <span class="continue-cta">{{ "继续读 →" if entry.kind == "read" else "继续听 →" }}</span>
+      <span class="continue-cta">{{ "继续读 →" if entry.kind.value == "read" else "继续听 →" }}</span>
     </a>
     {% endfor %}
   </section>
