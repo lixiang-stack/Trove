@@ -67,6 +67,7 @@ from trove.services.package_documents import (
     source_document,
     transcript_document,
 )
+from trove.services.uploads import UploadStore
 
 INDEX_AFTER_STAGES = frozenset(
     {STAGE_DOWNLOADING, STAGE_TRANSCRIBING, STAGE_EXTRACTING_TEXT, STAGE_ORGANIZING}
@@ -87,6 +88,7 @@ class ProcessingService:
         organizer: Organizer,
         book_extractor: BookExtractor,
         search_index: SearchIndex,
+        uploads: UploadStore,
     ) -> None:
         self.config = config
         self.sessions = sessions
@@ -97,6 +99,7 @@ class ProcessingService:
         self.organizer = organizer
         self.book_extractor = book_extractor
         self.search_index = search_index
+        self.uploads = uploads
 
     # ------------------------------------------------------------------
     # Queue operations
@@ -487,15 +490,15 @@ class ProcessingService:
         )
         item.duration_sec = result.duration_sec or item.duration_sec
         item.updated_at = utc_ms()
+        if (
+            source.uploaded
+            and item.source_path
+            and self.uploads.discard_for_path(item.source_path)
+        ):
+            item.source_path = None
         self._sync_source(item, source)
         if item.source_type in {"video_url", "podcast_episode"}:
             media_path.unlink(missing_ok=True)
-        if source.uploaded and item.source_path:
-            upload_path = Path(item.source_path)
-            if upload_path.is_relative_to(self.config.uploads_dir):
-                upload_directory = upload_path.parent
-                upload_path.unlink(missing_ok=True)
-                shutil.rmtree(upload_directory, ignore_errors=True)
         context.log(f"audio artifact {artifact.path} ({artifact.size} bytes)")
 
     def _stage_transcribe(
@@ -539,6 +542,7 @@ class ProcessingService:
         title = self._book_title(result, item)
         path = self.package.write_book(item.id, book_document(result, title=title))
         self._record_document(session, item, kind=ArtifactKind.BOOK_JSON, path=path)
+        previous_cover = self._artifact(session, item.id, ArtifactKind.COVER)
         if result.cover is not None:
             cover_temp = context.work_dir / f"cover{result.cover.extension}"
             cover_temp.write_bytes(result.cover.data)
@@ -551,6 +555,9 @@ class ProcessingService:
                 mime=result.cover.mime,
                 duration=None,
             )
+        elif previous_cover is not None:
+            self.package.remove_artifact(item.id, previous_cover.path)
+            session.delete(previous_cover)
         session.execute(
             text("DELETE FROM book_chapters WHERE item_id = :item_id"), {"item_id": item.id}
         )
@@ -592,7 +599,7 @@ class ProcessingService:
     def _stage_organize(
         self, session: Session, item: Item, run_id: str, context: StageContext
     ) -> None:
-        source_text = self._item_text(session, item)
+        source_text = self._item_text(item)
         existing_tags = self._tag_vocabulary(session)
         result = self.organizer.organize(
             text=source_text,
@@ -644,22 +651,22 @@ class ProcessingService:
                 return title
         return "Untitled book"
 
-    def _item_text(self, session: Session, item: Item) -> str:
-        rows = session.execute(
-            text("SELECT text FROM transcript_segments WHERE item_id = :item_id ORDER BY seq"),
-            {"item_id": item.id},
-        ).scalars()
-        body = "\n".join(str(row) for row in rows)
-        if body:
-            return body
-        rows = session.execute(
-            text(
-                "SELECT text FROM book_paragraphs WHERE item_id = :item_id "
-                "ORDER BY chapter_index, paragraph_index"
-            ),
-            {"item_id": item.id},
-        ).scalars()
-        return "\n".join(str(row) for row in rows)
+    def _item_text(self, item: Item) -> str:
+        transcript = self.package.read_transcript(item.id)
+        if transcript is not None:
+            body = "\n".join(segment.text for segment in transcript.segments)
+            if body:
+                return body
+        book = self.package.read_book(item.id)
+        if book is not None:
+            body = "\n".join(
+                paragraph
+                for chapter in book.chapters
+                for paragraph in chapter.paragraphs
+            )
+            if body:
+                return body
+        return ""
 
     def _tag_vocabulary(self, session: Session) -> list[str]:
         return [

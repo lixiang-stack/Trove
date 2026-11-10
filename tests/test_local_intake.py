@@ -43,6 +43,11 @@ def test_upload_audio_creates_item_and_cleans_temp(host):
     item_dir = host.config.library_dir / item_id
     assert (item_dir / "audio.wav").is_file()
     assert (item_dir / "source.json").is_file()
+    assert host.item(item_id)["source_path"] is None
+    source = host.runtime.package.read_source(item_id)
+    assert source is not None
+    assert source.source_path is None
+    assert source.uploaded is True
     assert not (host.config.uploads_dir / upload_id).exists()
 
 
@@ -93,7 +98,38 @@ def test_upload_epub_is_copied_and_parsed(host):
     item_dir = host.config.library_dir / item_id
     assert (item_dir / "book.epub").is_file()
     assert (item_dir / "book.json").is_file()
+    assert host.item(item_id)["source_path"] is None
+    source = host.runtime.package.read_source(item_id)
+    assert source is not None
+    assert source.source_path is None
     assert not (host.config.uploads_dir / upload_id).exists()
+
+
+def test_deleting_a_pending_upload_cleans_it(api_host):
+    api_host.login()
+    upload = api_host.client.post(
+        "/api/uploads",
+        files={
+            "file": (
+                "pending.wav",
+                (FIXTURES / "short.wav").read_bytes(),
+                "audio/wav",
+            )
+        },
+    )
+    assert upload.status_code == 200, upload.text
+    upload_id = upload.json()["upload_id"]
+    response = api_host.client.post(
+        "/api/items", json={"kind": "upload", "upload_id": upload_id}
+    )
+    assert response.status_code == 201, response.text
+    item_id = response.json()["item"]["id"]
+    assert (api_host.config.uploads_dir / upload_id).exists()
+
+    delete = api_host.client.delete(f"/api/items/{item_id}")
+
+    assert delete.status_code == 204
+    assert not (api_host.config.uploads_dir / upload_id).exists()
 
 
 @pytest.mark.ffmpeg

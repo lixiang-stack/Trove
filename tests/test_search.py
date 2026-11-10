@@ -12,7 +12,7 @@ from trove.content_package import (
 from trove.content_package import (
     TranscriptSegment as TranscriptSegmentDocument,
 )
-from trove.db.models import BookChapter, BookParagraph, TranscriptSegment
+from trove.db.models import BookParagraph, TranscriptSegment
 
 from .conftest import seed_item
 
@@ -286,6 +286,10 @@ def test_index_reads_content_package_and_rebuilds_without_db_text(host):
     host.login()
     _index(host, item.item.id)
 
+    status = host.runtime.search.index_status()
+    row = next(entry for entry in status.items if entry.item_id == item.item.id)
+    assert row.missing_kinds == []
+
     assert host.client.get("/api/search", params={"q": "包内独有"}).json()["count"] == 1
     assert host.client.get("/api/search", params={"q": "包内书页"}).json()["count"] == 1
     with host.runtime.sessions() as session:
@@ -398,25 +402,21 @@ def test_book_search_result_links_to_paragraph_anchor(host):
         with_audio=False,
         run_state=None,
     )
-    with host.runtime.sessions() as session:
-        session.add(
-            BookChapter(
-                item_id=item.item.id,
-                chapter_index=0,
-                title="第一章",
-                html="<p>bookword 在这里</p>",
-                text="bookword 在这里",
-            )
-        )
-        session.add(
-            BookParagraph(
-                item_id=item.item.id,
-                chapter_index=0,
-                paragraph_index=0,
-                text="bookword 在这里",
-            )
-        )
-        session.commit()
+    host.runtime.package.write_book(
+        item.item.id,
+        BookDocument(
+            title="Book Locate",
+            chapters=[
+                BookChapterDocument(
+                    chapter_index=0,
+                    title="第一章",
+                    html="<p>bookword 在这里</p>",
+                    text="bookword 在这里",
+                    paragraphs=["bookword 在这里"],
+                )
+            ],
+        ),
+    )
     _index(host, item.item.id)
     host.login()
 

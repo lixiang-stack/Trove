@@ -3,18 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 
 from trove.clock import utc_ms
-from trove.content_package import (
-    ContentPackage,
-    TranscriptDocument,
-    sha256_file,
-)
-from trove.content_package import (
-    TranscriptSegment as TranscriptSegmentDocument,
-)
+from trove.content_package import ContentPackage, sha256_file
 from trove.db.models import Artifact, Item, TranscriptSegment
 from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
@@ -126,22 +119,18 @@ class PlaybackService:
             item = session.get(Item, item_id)
             if item is None:
                 raise NotFoundError("Content not found")
-            segments = list(
-                session.execute(
-                    select(TranscriptSegment)
-                    .where(TranscriptSegment.item_id == item_id)
-                    .order_by(TranscriptSegment.seq)
-                ).scalars()
-            )
-            return [
-                {
-                    "seq": segment.seq,
-                    "start_ms": segment.start_ms,
-                    "end_ms": segment.end_ms,
-                    "text": segment.text,
-                }
-                for segment in segments
-            ]
+        document = self.package.read_transcript(item_id)
+        if document is None:
+            return []
+        return [
+            {
+                "seq": segment.seq,
+                "start_ms": segment.start_ms,
+                "end_ms": segment.end_ms,
+                "text": segment.text,
+            }
+            for segment in sorted(document.segments, key=lambda segment: segment.seq)
+        ]
 
     def replace_transcript_text(
         self, item_id: str, *, old: str, new: str
@@ -155,30 +144,33 @@ class PlaybackService:
             item = session.get(Item, item_id)
             if item is None:
                 raise NotFoundError("Content not found")
-            segments = list(
-                session.execute(
-                    select(TranscriptSegment)
-                    .where(TranscriptSegment.item_id == item_id)
-                    .order_by(TranscriptSegment.seq)
-                ).scalars()
-            )
+            document = self.package.read_transcript(item_id)
+            if document is None:
+                return 0, None
+            segments = sorted(document.segments, key=lambda segment: segment.seq)
             changed = [segment for segment in segments if keyword in segment.text]
             if not changed:
                 return 0, None
             for segment in changed:
                 segment.text = segment.text.replace(keyword, new)
-            document = self.package.read_transcript(item_id) or TranscriptDocument()
             document.language = document.language or item.language
-            document.segments = [
-                TranscriptSegmentDocument(
-                    seq=segment.seq,
-                    start_ms=segment.start_ms,
-                    end_ms=segment.end_ms,
-                    text=segment.text,
-                )
-                for segment in segments
-            ]
             path = self.package.write_transcript(item_id, document)
+            session.execute(
+                text("DELETE FROM transcript_segments WHERE item_id = :item_id"),
+                {"item_id": item_id},
+            )
+            session.add_all(
+                [
+                    TranscriptSegment(
+                        item_id=item_id,
+                        seq=segment.seq,
+                        start_ms=segment.start_ms,
+                        end_ms=segment.end_ms,
+                        text=segment.text,
+                    )
+                    for segment in segments
+                ]
+            )
             artifact = session.execute(
                 select(Artifact).where(
                     Artifact.item_id == item_id, Artifact.kind == "transcript"

@@ -4,6 +4,7 @@ import json
 
 import httpx
 import pytest
+from sqlalchemy import text
 
 from trove.adapters.deepseek import DeepSeekOrganizer
 from trove.config import Config, resolve_llm_api_key
@@ -309,6 +310,32 @@ def test_reprocess_only_reruns_organizing_and_indexing(host):
     assert len(host.stack.transcriber.calls) == transcriptions_before
     stages = [step["stage"] for step in payload["run"]["steps"] if step["state"] == "completed"]
     assert "organizing" in stages and "indexing" in stages
+
+
+@pytest.mark.ffmpeg
+def test_reprocess_organizing_reads_package_transcript(host):
+    host.login()
+    response = host.client.post(
+        "/api/items", json={"kind": "url", "url": "https://www.youtube.com/watch?v=packageorganize"}
+    )
+    item_id = response.json()["item"]["id"]
+    host.wait_for_item(item_id)
+    with host.runtime.sessions() as session:
+        session.execute(
+            text("DELETE FROM transcript_segments WHERE item_id = :item_id"),
+            {"item_id": item_id},
+        )
+        session.commit()
+    calls_before = len(host.stack.organizer.calls)
+
+    reprocess = host.client.post(
+        f"/api/items/{item_id}/reprocess", json={"from_stage": "organizing"}
+    )
+    assert reprocess.status_code == 202, reprocess.text
+    host.wait_for_item(item_id)
+
+    assert len(host.stack.organizer.calls) == calls_before + 1
+    assert "为什么智能体的瓶颈不是模型" in host.stack.organizer.calls[-1]
 
 
 @pytest.mark.ffmpeg
