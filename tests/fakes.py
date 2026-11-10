@@ -126,6 +126,13 @@ class FakeOrganizer:
     def __init__(self) -> None:
         self.calls: list[str] = []
         self.fail_code: str | None = None
+        self.summary = "这是一段关于记忆与智能体的讨论。"
+        self.tags = ["智能体", "记忆", "LLM"]
+        self.model = "fake-model"
+        self.prompt_version = "test-1"
+        self.input_tokens = 120
+        self.output_tokens = 30
+        self.cost_usd = 0.0001
 
     def organize(
         self,
@@ -139,13 +146,13 @@ class FakeOrganizer:
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake organization failure")
         return OrganizationResult(
-            summary="这是一段关于记忆与智能体的讨论。",
-            tags=["智能体", "记忆", "LLM"],
-            model="fake-model",
-            prompt_version="test-1",
-            input_tokens=120,
-            output_tokens=30,
-            cost_usd=0.0001,
+            summary=self.summary,
+            tags=list(self.tags),
+            model=self.model,
+            prompt_version=self.prompt_version,
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cost_usd=self.cost_usd,
         )
 
 

@@ -25,6 +25,20 @@ DEFAULT_MAX_EPUB_BYTES = 100 * MB
 DEFAULT_MAX_FEED_BYTES = 10 * MB
 DEFAULT_MAX_PODCAST_MEDIA_BYTES = GB
 DEFAULT_ASR_MODEL = "mlx-community/whisper-large-v3-turbo"
+DEFAULT_LLM_MODEL = "deepseek-flash"
+DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
+DEFAULT_LLM_CHUNK_CHARS = 20_000
+DEFAULT_LLM_MAX_CALLS_PER_ITEM = 16
+DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL = 1024
+DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM = 200_000
+DEFAULT_LLM_INPUT_COST_PER_MILLION = 0.28
+DEFAULT_LLM_OUTPUT_COST_PER_MILLION = 0.42
+DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
+LLM_API_KEY_FILENAME = "llm_api_key"
+
+
+def default_llm_api_key_path() -> Path:
+    return Path.home() / ".config" / "trove" / LLM_API_KEY_FILENAME
 
 
 class ConfigError(RuntimeError):
@@ -46,12 +60,23 @@ class Config:
     max_feed_bytes: int = DEFAULT_MAX_FEED_BYTES
     max_podcast_media_bytes: int = DEFAULT_MAX_PODCAST_MEDIA_BYTES
     llm_enabled: bool = True
+    llm_model: str = DEFAULT_LLM_MODEL
+    llm_base_url: str = DEFAULT_LLM_BASE_URL
+    llm_chunk_chars: int = DEFAULT_LLM_CHUNK_CHARS
+    llm_max_calls_per_item: int = DEFAULT_LLM_MAX_CALLS_PER_ITEM
+    llm_max_output_tokens_per_call: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL
+    llm_max_input_tokens_per_item: int = DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM
+    llm_input_cost_per_million: float = DEFAULT_LLM_INPUT_COST_PER_MILLION
+    llm_output_cost_per_million: float = DEFAULT_LLM_OUTPUT_COST_PER_MILLION
+    llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
+    llm_api_key_path: Path = field(default_factory=default_llm_api_key_path)
     asr_model: str = DEFAULT_ASR_MODEL
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
     def __post_init__(self) -> None:
         self.home = self.home.expanduser().resolve()
+        self.llm_api_key_path = self.llm_api_key_path.expanduser()
 
     # ------------------------------------------------------------------
     # Layout
@@ -227,6 +252,18 @@ class Config:
                     os.environ.setdefault(key, value)
         except OSError:
             return
+
+
+def resolve_llm_api_key(config: Config) -> str | None:
+    try:
+        file_key = config.llm_api_key_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ConfigError(
+            f"Could not read DeepSeek API key {config.llm_api_key_path}: {exc}"
+        ) from exc
+    return file_key or None
 
 
 def load_config(home: Path | str | None = None) -> Config:

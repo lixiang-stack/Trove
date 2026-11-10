@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import time
+from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote, urlencode, urlsplit
 
@@ -17,12 +18,14 @@ from fastapi.responses import (
     Response,
 )
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from trove import __version__
 from trove.db.engine import fts5_available, migration_status
 from trove.db.models import Item, Run
 from trove.domain.items import CONSUMPTION_LABELS, PLATFORM_LABELS, SOURCE_TYPE_LABELS
+from trove.domain.reading import BookLocator, parse_book_locator
 from trove.errors import (
     NotFoundError,
     RateLimitedError,
@@ -32,7 +35,7 @@ from trove.errors import (
 from trove.logging_setup import tail_run_log
 from trove.services.auth import SESSION_COOKIE, SESSION_MAX_AGE, is_secure_request
 from trove.services.library import item_bundle
-from trove.web.templating import templates
+from trove.web.templating import duration, templates
 from trove.web.urls import locate_url
 from trove.worker import heartbeat_is_fresh, read_heartbeat
 
@@ -50,6 +53,17 @@ PUBLIC_PATHS = {
     "/redoc",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "media-src 'self'; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
 
 
 class LoginRequest(BaseModel):
@@ -69,15 +83,31 @@ class ItemCreateRequest(BaseModel):
 class ItemPatchRequest(BaseModel):
     title: str | None = None
     author: str | None = None
+    tags: list[str] | None = None
+
+
+class BookLocatorRequest(BaseModel):
+    chapter_index: int = Field(ge=0)
+    paragraph_index: int | None = Field(default=None, ge=0)
+    scroll_ratio: float = Field(default=0.0, ge=0, le=1)
 
 
 class ProgressRequest(BaseModel):
-    position_sec: float = Field(ge=0)
+    position_sec: float | None = Field(default=None, ge=0)
     consumption_state: str | None = None
+    book_locator: BookLocatorRequest | None = None
 
 
 class FeedPreviewRequest(BaseModel):
     url: str
+
+
+class ReprocessRequest(BaseModel):
+    from_stage: str = "organizing"
+
+
+class TagRequest(BaseModel):
+    tag: str
 
 
 def _is_api(path: str) -> bool:
@@ -207,6 +237,26 @@ def _filter_groups(
     return groups
 
 
+def _export_ids(values: list[str] | None) -> list[str] | None:
+    if values is None:
+        return None
+    return [item_id for value in values for item_id in value.split(",") if item_id]
+
+
+def _export_response(runtime, values: list[str] | None) -> FileResponse:
+    path, filename = runtime.export.create(_export_ids(values))
+    return FileResponse(
+        path,
+        media_type="application/zip",
+        filename=filename,
+        background=BackgroundTask(_remove_file, path),
+    )
+
+
+def _remove_file(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
 def _search_dimensions(runtime) -> list[tuple[str, str, list[tuple[str, str]]]]:
     return [
         ("type", "Type", list(SOURCE_TYPE_LABELS.items())),
@@ -295,6 +345,14 @@ def logout_submit(request: Request):
     return response
 
 
+@html_router.get("/export", include_in_schema=False)
+def export_library(
+    request: Request, ids: Annotated[list[str] | None, Query()] = None
+):
+    runtime = request.app.state.runtime
+    return _export_response(runtime, ids)
+
+
 @html_router.get("/library", include_in_schema=False)
 def library_page(
     request: Request,
@@ -345,6 +403,46 @@ def library_page(
     )
 
 
+@html_router.get("/continue", include_in_schema=False)
+def continue_page(request: Request):
+    runtime = request.app.state.runtime
+    entries = []
+    for entry in runtime.library.continue_items():
+        item = entry.bundle.item
+        if entry.kind == "read":
+            locator = parse_book_locator(item.book_locator)
+            progress = "继续阅读"
+            if locator is not None:
+                try:
+                    runtime.reading.chapter(item.id, locator.chapter_index)
+                except NotFoundError:
+                    pass
+                else:
+                    progress = f"第 {locator.chapter_index + 1} 章"
+        else:
+            progress = f"{duration(item.audio_position_sec)} / {duration(item.duration_sec)}"
+        entries.append(
+            {
+                "bundle": entry.bundle,
+                "kind": entry.kind,
+                "progress": progress,
+                "url": (
+                    f"/items/{item.id}/read"
+                    if entry.kind == "read"
+                    else f"/items/{item.id}/listen"
+                ),
+            }
+        )
+    return _render(
+        request,
+        "continue.html",
+        {
+            "entries": entries,
+            "active_nav": "continue",
+        },
+    )
+
+
 @html_router.get("/items/{item_id}", include_in_schema=False)
 def item_detail(request: Request, item_id: str):
     runtime = request.app.state.runtime
@@ -361,15 +459,40 @@ def item_detail(request: Request, item_id: str):
 
 
 @html_router.get("/items/{item_id}/read", include_in_schema=False)
-def item_read(request: Request, item_id: str):
+def item_read(request: Request, item_id: str, chapter: int | None = None):
     runtime = request.app.state.runtime
     bundle = runtime.library.get(item_id)
+    views = runtime.reading.chapters(item_id)
+    locator = runtime.reading.locator(item_id)
+    current = chapter
+    if current is None:
+        current = locator.chapter_index if locator is not None else 0
+    view = next(
+        (candidate for candidate in views if candidate.chapter.chapter_index == current),
+        views[0] if views else None,
+    )
+    position = next(
+        (index for index, candidate in enumerate(views) if candidate is view), 0
+    )
+    scroll_ratio = (
+        locator.scroll_ratio
+        if view is not None
+        and locator is not None
+        and locator.chapter_index == view.chapter.chapter_index
+        else 0.0
+    )
     return _render(
         request,
         "read.html",
         {
             "bundle": bundle,
-            "chapters": runtime.reading.chapters(item_id),
+            "chapters": views,
+            "view": view,
+            "scroll_ratio": scroll_ratio,
+            "previous_chapter": views[position - 1].chapter.chapter_index if position > 0 else None,
+            "next_chapter": (
+                views[position + 1].chapter.chapter_index if position + 1 < len(views) else None
+            ),
             "active_nav": "library",
         },
     )
@@ -443,6 +566,20 @@ def edit_item(
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
+@html_router.post("/items/{item_id}/tags/add", include_in_schema=False)
+def add_tag(request: Request, item_id: str, tag: Annotated[str, Form()]):
+    runtime = request.app.state.runtime
+    runtime.library.add_tag(item_id, tag)
+    return RedirectResponse(f"/items/{item_id}", status_code=303)
+
+
+@html_router.post("/items/{item_id}/tags/delete", include_in_schema=False)
+def delete_tag(request: Request, item_id: str, tag: Annotated[str, Form()]):
+    runtime = request.app.state.runtime
+    runtime.library.remove_tag(item_id, tag)
+    return RedirectResponse(f"/items/{item_id}", status_code=303)
+
+
 @html_router.post("/items/{item_id}/delete", include_in_schema=False)
 def delete_item(request: Request, item_id: str):
     runtime = request.app.state.runtime
@@ -461,6 +598,17 @@ def set_item_state(request: Request, item_id: str, state: Annotated[str, Form()]
 def retry_item(request: Request, item_id: str):
     runtime = request.app.state.runtime
     runtime.processing.retry(item_id)
+    return RedirectResponse(f"/items/{item_id}", status_code=303)
+
+
+@html_router.post("/items/{item_id}/reprocess", include_in_schema=False)
+def reprocess_item(
+    request: Request,
+    item_id: str,
+    from_stage: Annotated[str, Form()] = "organizing",
+):
+    runtime = request.app.state.runtime
+    runtime.processing.reprocess(item_id, from_stage)
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
@@ -638,6 +786,12 @@ def search_page(
 api_router = APIRouter(prefix="/api")
 
 
+@api_router.get("/export")
+def api_export(request: Request, ids: Annotated[list[str] | None, Query()] = None):
+    runtime = request.app.state.runtime
+    return _export_response(runtime, ids)
+
+
 @api_router.get("/health")
 def health(request: Request):
     runtime = request.app.state.runtime
@@ -769,11 +923,15 @@ def api_get_item(request: Request, item_id: str):
 def api_patch_item(request: Request, item_id: str, payload: ItemPatchRequest):
     runtime = request.app.state.runtime
     fields = payload.model_fields_set
-    bundle = runtime.library.update_metadata(
-        item_id,
-        title=payload.title if "title" in fields else None,
-        author=payload.author if "author" in fields else None,
-    )
+    bundle = runtime.library.get(item_id)
+    if "title" in fields or "author" in fields:
+        bundle = runtime.library.update_metadata(
+            item_id,
+            title=payload.title if "title" in fields else None,
+            author=payload.author if "author" in fields else None,
+        )
+    if "tags" in fields:
+        bundle = runtime.library.replace_tags(item_id, payload.tags or [])
     return runtime.library.payload(bundle)
 
 
@@ -781,6 +939,30 @@ def api_patch_item(request: Request, item_id: str, payload: ItemPatchRequest):
 def api_delete_item(request: Request, item_id: str):
     request.app.state.runtime.library.delete(item_id)
     return Response(status_code=204)
+
+
+@api_router.post("/items/{item_id}/tags")
+def api_add_tag(request: Request, item_id: str, payload: TagRequest):
+    runtime = request.app.state.runtime
+    bundle = runtime.library.add_tag(item_id, payload.tag)
+    return runtime.library.payload(bundle)
+
+
+@api_router.delete("/items/{item_id}/tags/{tag:path}")
+def api_delete_tag(request: Request, item_id: str, tag: str):
+    runtime = request.app.state.runtime
+    bundle = runtime.library.remove_tag(item_id, tag)
+    return runtime.library.payload(bundle)
+
+
+@api_router.get("/tags")
+def api_tags(request: Request):
+    runtime = request.app.state.runtime
+    return {
+        "tags": [
+            {"name": name, "count": count} for name, count in runtime.library.tag_counts()
+        ]
+    }
 
 
 @api_router.get("/items/{item_id}/audio")
@@ -806,14 +988,63 @@ def api_transcript(request: Request, item_id: str):
     }
 
 
+@api_router.get("/items/{item_id}/book/chapters/{chapter_index}")
+def api_book_chapter(request: Request, item_id: str, chapter_index: int):
+    runtime = request.app.state.runtime
+    view = runtime.reading.chapter(item_id, chapter_index)
+    return {
+        "item_id": item_id,
+        "chapter_index": view.chapter.chapter_index,
+        "title": view.chapter.title,
+        "html": view.chapter.html,
+        "text": view.chapter.text,
+        "paragraphs": [paragraph.text for paragraph in view.paragraphs],
+    }
+
+
+@api_router.get("/items/{item_id}/cover")
+def api_cover(request: Request, item_id: str):
+    runtime = request.app.state.runtime
+    bundle = runtime.library.get(item_id)
+    artifact = bundle.cover_artifact
+    if artifact is None:
+        raise NotFoundError("Cover not found")
+    path = runtime.package.artifact_path(item_id, artifact.path)
+    if not path.is_file():
+        raise NotFoundError("Cover not found")
+    headers = {
+        "ETag": f'"{artifact.sha256}"',
+        "Cache-Control": "private",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return FileResponse(path, media_type=artifact.mime, headers=headers)
+
+
 @api_router.put("/items/{item_id}/progress")
 def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     runtime = request.app.state.runtime
-    bundle = runtime.playback.update_progress(
-        item_id,
-        position_sec=payload.position_sec,
-        consumption_state=payload.consumption_state,
-    )
+    bundle: Any = None
+    if payload.book_locator is not None:
+        runtime.reading.save_progress(
+            item_id,
+            BookLocator(
+                chapter_index=payload.book_locator.chapter_index,
+                paragraph_index=payload.book_locator.paragraph_index,
+                scroll_ratio=payload.book_locator.scroll_ratio,
+            ),
+            consumption_state=payload.consumption_state,
+        )
+        bundle = runtime.library.get(item_id)
+    if payload.position_sec is not None:
+        bundle = runtime.playback.update_progress(
+            item_id,
+            position_sec=payload.position_sec,
+            consumption_state=payload.consumption_state,
+        )
+    if bundle is None:
+        raise ValidationError(
+            "Missing progress position", details={"code": "progress.missing"}
+        )
     return {"ok": True, "item": runtime.library.payload(bundle)}
 
 
@@ -823,6 +1054,14 @@ def api_retry(request: Request, item_id: str):
     runtime.processing.retry(item_id)
     bundle = runtime.library.get(item_id)
     return runtime.library.payload(bundle)
+
+
+@api_router.post("/items/{item_id}/reprocess", status_code=202)
+def api_reprocess(request: Request, item_id: str, payload: ReprocessRequest):
+    runtime = request.app.state.runtime
+    run = runtime.processing.reprocess(item_id, payload.from_stage)
+    bundle = runtime.library.get(item_id)
+    return {"run_id": run.id, "item": runtime.library.payload(bundle)}
 
 
 @api_router.post("/items/{item_id}/cancel")
@@ -991,6 +1230,8 @@ def install_middleware(app) -> None:
             )
 
         response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
         if path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"
         else:

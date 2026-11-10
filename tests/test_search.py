@@ -161,6 +161,7 @@ def test_search_filters_combine_like_library(host):
         source_type="video_url",
         platform="youtube",
         consumption_state="in_progress",
+        position=1.0,
         tags=["记忆"],
         summary="",
     )
@@ -203,6 +204,7 @@ def test_search_and_library_filter_ui_share_semantics(host):
         source_type="video_url",
         platform="youtube",
         consumption_state="in_progress",
+        position=1.0,
         tags=["记忆"],
     )
     beta = seed_item(
@@ -411,7 +413,7 @@ def test_book_search_result_links_to_paragraph_anchor(host):
 
     payload = host.client.get("/api/search", params={"q": "bookword"}).json()
     url = payload["results"][0]["evidence"][0]["url"]
-    assert url == f"/items/{item.item.id}/read#paragraph-0-0"
+    assert url == f"/items/{item.item.id}/read?chapter=0#paragraph-0-0"
     page = host.client.get(url.split("#", 1)[0])
     assert page.status_code == 200
     assert 'id="paragraph-0-0"' in page.text

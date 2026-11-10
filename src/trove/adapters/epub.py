@@ -11,12 +11,20 @@ from urllib.parse import unquote
 import nh3
 from lxml import etree, html
 
+from trove.domain.books import meaningful_title
 from trove.errors import ProcessingError, ValidationError
-from trove.ports import BookChapterData, BookResult, StageContext
+from trove.ports import BookChapterData, BookCoverData, BookResult, StageContext
 
 MAX_UNCOMPRESSED_BYTES = 500 * 1024 * 1024
 MAX_ENTRY_BYTES = 64 * 1024 * 1024
 FONT_SUFFIXES = {".ttf", ".otf", ".woff", ".woff2", ".ttc"}
+COVER_EXTENSIONS = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 ALLOWED_TAGS = {
     "p",
     "h1",
@@ -52,7 +60,7 @@ def validate_epub(path: Path) -> EpubMetadata:
     try:
         with zipfile.ZipFile(path) as archive:
             _check_zip_sizes(archive)
-            metadata, _, _, _, _, _ = _inspect(archive)
+            metadata, _, _, _, _, _, _ = _inspect(archive)
             return metadata
     except zipfile.BadZipFile as exc:
         raise ValidationError("Not a valid EPUB file", details={"code": "epub.invalid"}) from exc
@@ -72,7 +80,8 @@ class EpubExtractor:
         try:
             with zipfile.ZipFile(book_path) as archive:
                 _check_zip_sizes(archive)
-                metadata, manifest, spine, nav_titles, opf_path, _ = _inspect(archive)
+                metadata, manifest, spine, nav_titles, opf_path, _, opf = _inspect(archive)
+                cover = _extract_cover(archive, manifest, opf, opf_path)
                 chapters: list[BookChapterData] = []
                 for idref in spine:
                     context.check_cancelled()
@@ -99,6 +108,7 @@ class EpubExtractor:
                     author=metadata.author,
                     language=metadata.language,
                     chapters=chapters,
+                    cover=cover,
                 )
         except zipfile.BadZipFile as exc:
             raise ProcessingError("epub.invalid", "Not a valid EPUB file") from exc
@@ -146,7 +156,49 @@ def _inspect(archive: zipfile.ZipFile):
     manifest = _manifest(opf)
     spine, toc_id = _spine(opf)
     nav_titles = _nav_titles(archive, manifest, toc_id, opf_path)
-    return metadata, manifest, spine, nav_titles, opf_path, toc_id
+    return metadata, manifest, spine, nav_titles, opf_path, toc_id, opf
+
+
+def _extract_cover(
+    archive: zipfile.ZipFile,
+    manifest: dict[str, tuple[str, str, str]],
+    opf,
+    opf_path: str,
+) -> BookCoverData | None:
+    cover_id = _cover_id(opf)
+    item = manifest.get(cover_id) if cover_id else None
+    if item is None:
+        item = next(
+            (
+                candidate
+                for candidate in manifest.values()
+                if "cover-image" in candidate[2].split()
+            ),
+            None,
+        )
+    if item is None:
+        return None
+    href, media_type, _ = item
+    entry_name = _resolve_href(opf_path, href)
+    try:
+        data = archive.read(entry_name)
+    except KeyError:
+        return None
+    extension = Path(entry_name).suffix.lower()
+    if extension not in COVER_EXTENSIONS:
+        return None
+    mime = media_type if media_type.startswith("image/") else COVER_EXTENSIONS[extension]
+    return BookCoverData(data=data, extension=extension, mime=mime)
+
+
+def _cover_id(opf) -> str | None:
+    metadata = _first(opf, ".//*[local-name()='metadata']")
+    if metadata is None:
+        return None
+    for meta in metadata.xpath(".//*[local-name()='meta']"):
+        if (meta.get("name") or "").lower() == "cover":
+            return (meta.get("content") or "").strip() or None
+    return None
 
 
 def _check_drm(archive: zipfile.ZipFile, names: set[str]) -> None:
@@ -168,7 +220,7 @@ def _check_drm(archive: zipfile.ZipFile, names: set[str]) -> None:
 
 def _metadata(opf) -> EpubMetadata:
     metadata = _first(opf, ".//*[local-name()='metadata']")
-    title = _first_text(metadata, "title") or "Untitled book"
+    title = meaningful_title(_first_text(metadata, "title")) or ""
     author = _first_text(metadata, "creator")
     language = _first_text(metadata, "language")
     return EpubMetadata(title=title, author=author, language=language)
@@ -323,24 +375,26 @@ def _extract_chapter(
     paragraph_nodes = body.xpath(
         ".//p | .//h1 | .//h2 | .//h3 | .//h4 | .//h5 | .//h6 | .//blockquote | .//li"
     )
-    paragraphs = [_clean_text(element.text_content()) for element in paragraph_nodes]
-    paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+    paragraphs: list[str] = []
+    for element in paragraph_nodes:
+        paragraphs.extend(_paragraph_texts(element))
     if not paragraphs:
-        text = _clean_text(body.text_content())
-        if not text:
+        paragraphs = _paragraph_texts(body)
+        if not paragraphs:
             return None
-        paragraphs = [line for line in text.splitlines() if line.strip()]
     text = "\n".join(paragraphs)
     if not text:
         return None
-    heading = title
+    heading = meaningful_title(title)
     if not heading:
         for tag in ("h1", "h2", "h3"):
             elements = body.xpath(f".//{tag}")
             if elements:
-                heading = _clean_text(elements[0].text_content())
-                break
-    heading = heading or f"Chapter {chapter_index + 1}"
+                heading = meaningful_title(_clean_text(elements[0].text_content()))
+                if heading:
+                    break
+    if not heading:
+        heading = _title_from_paragraphs(paragraphs, chapter_index)
     cleaned = nh3.clean(
         html.tostring(body, encoding="unicode", method="html"),
         tags=ALLOWED_TAGS,
@@ -353,6 +407,21 @@ def _extract_chapter(
         text=text,
         paragraphs=paragraphs,
     )
+
+
+def _paragraph_texts(element) -> list[str]:
+    for br in element.xpath(".//br | .//*[local-name()='br']"):
+        br.tail = "\n" + (br.tail or "")
+    raw = element.text_content()
+    return [text for text in (_clean_text(part) for part in raw.split("\n")) if text]
+
+
+def _title_from_paragraphs(paragraphs: list[str], chapter_index: int) -> str:
+    for paragraph in paragraphs:
+        candidate = meaningful_title(paragraph)
+        if candidate:
+            return candidate if len(candidate) <= 50 else candidate[:49].rstrip() + "…"
+    return f"Chapter {chapter_index + 1}"
 
 
 def _resolve_href(base_path: str, href: str) -> str:

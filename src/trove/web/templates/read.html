@@ -1,7 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ bundle.item.title }} · 阅读{% endblock %}
 {% block main %}
-<article class="reader-page">
+<article class="reader-page"
+         data-reader
+         data-reader-item-id="{{ bundle.item.id }}"
+         data-reader-chapter="{{ view.chapter.chapter_index if view else 0 }}"
+         data-reader-scroll="{{ scroll_ratio }}">
   <nav class="breadcrumbs" aria-label="面包屑">
     <a href="/items/{{ bundle.item.id }}" hx-get="/items/{{ bundle.item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">← 详情</a>
   </nav>
@@ -10,20 +14,36 @@
     <h1>{{ bundle.item.title }}</h1>
     <p class="subtitle">{{ bundle.item.author or "未知作者" }}</p>
   </header>
-  {% if chapters %}
+  {% if chapters and view %}
   <nav class="reader-toc" aria-label="章节">
-    {% for view in chapters %}
-    <a href="#chapter-{{ view.chapter.chapter_index }}">{{ view.chapter.title }}</a>
+    {% for candidate in chapters %}
+    <a class="{% if candidate.chapter.chapter_index == view.chapter.chapter_index %}active{% endif %}"
+       href="/items/{{ bundle.item.id }}/read?chapter={{ candidate.chapter.chapter_index }}"
+       hx-get="/items/{{ bundle.item.id }}/read?chapter={{ candidate.chapter.chapter_index }}"
+       hx-target="#main" hx-select="#main" hx-push-url="true">{{ candidate.chapter.title }}</a>
     {% endfor %}
   </nav>
-  {% for view in chapters %}
   <section class="book-chapter" id="chapter-{{ view.chapter.chapter_index }}">
     <h2>{{ view.chapter.title }}</h2>
     {% for paragraph in view.paragraphs %}
     <p class="paragraph" id="paragraph-{{ view.chapter.chapter_index }}-{{ paragraph.paragraph_index }}">{{ paragraph.text }}</p>
     {% endfor %}
   </section>
-  {% endfor %}
+  <nav class="reader-chapter-nav" aria-label="翻章">
+    {% if previous_chapter is not none %}
+    <a class="secondary" role="button"
+       href="/items/{{ bundle.item.id }}/read?chapter={{ previous_chapter }}"
+       hx-get="/items/{{ bundle.item.id }}/read?chapter={{ previous_chapter }}"
+       hx-target="#main" hx-select="#main" hx-push-url="true">← 上一章</a>
+    {% else %}<span></span>{% endif %}
+    <span class="reader-position">{{ view.chapter.chapter_index + 1 }} / {{ chapters|length }}</span>
+    {% if next_chapter is not none %}
+    <a class="secondary" role="button"
+       href="/items/{{ bundle.item.id }}/read?chapter={{ next_chapter }}"
+       hx-get="/items/{{ bundle.item.id }}/read?chapter={{ next_chapter }}"
+       hx-target="#main" hx-select="#main" hx-push-url="true">下一章 →</a>
+    {% else %}<span></span>{% endif %}
+  </nav>
   {% else %}
   <p class="muted">这本书还没有可读文本。</p>
   {% endif %}
