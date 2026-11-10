@@ -11,8 +11,11 @@ from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
 from trove.adapters.safe_http import HttpResponse, SafeHttpError
 from trove.composition import Ports
+from trove.content_package import SourceDocument
+from trove.domain.items import SourceType
 from trove.errors import ProcessingCancelled, ProcessingError
 from trove.ports import (
+    DOWNLOAD_MEDIA_FILENAME,
     AudioResult,
     BookResult,
     DownloadResult,
@@ -59,7 +62,7 @@ class FakeDownloader:
         self.block = threading.Event()
         self.blocked = False
 
-    def download(self, source: dict, context: StageContext) -> DownloadResult:
+    def download(self, source: SourceDocument, context: StageContext) -> DownloadResult:
         self.calls.append(source)
         self.started.set()
         if self.blocked:
@@ -69,11 +72,11 @@ class FakeDownloader:
                     raise ProcessingCancelled("cancelled")
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake download failure")
-        destination = context.work_dir / "download.wav"
+        destination = context.work_dir / DOWNLOAD_MEDIA_FILENAME
         shutil.copyfile(self.fixture, destination)
         title = (
-            source.get("title")
-            if source.get("source_type") == "podcast_episode"
+            source.title
+            if source.source_type == SourceType.PODCAST_EPISODE
             else "Fixture Video"
         )
         return DownloadResult(

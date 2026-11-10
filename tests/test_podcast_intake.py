@@ -60,10 +60,12 @@ def test_add_podcast_episode_creates_item_and_audio(host):
     assert payload["platform"] == "podcast"
     assert payload["title"].startswith("Episode 1")
     assert (host.config.library_dir / item_id / "audio.m4a").is_file()
-    source = host.runtime.library.source_document(item_id)
-    assert source["feed"]["episode_guid"] == "episode-001"
-    assert source["feed"]["enclosure_url"] == "https://example.com/media/episode-001.mp3"
-    assert source["source_key"] == "https://example.com/podcast#episode-001"
+    source = host.runtime.package.read_source(item_id)
+    assert source is not None
+    assert source.feed is not None
+    assert source.feed.episode_guid == "episode-001"
+    assert source.feed.enclosure_url == "https://example.com/media/episode-001.mp3"
+    assert source.source_key == "https://example.com/podcast#episode-001"
 
 
 def test_duplicate_episode_is_deduplicated(host):
@@ -203,8 +205,9 @@ def test_episode_without_guid_uses_enclosure_url(host):
     assert response.status_code == 201, response.text
     item_id = response.json()["item"]["id"]
     host.wait_for_item(item_id)
-    source = host.runtime.library.source_document(item_id)
-    assert source["source_key"] == f"https://example.com/podcast#{enclosure}"
+    source = host.runtime.package.read_source(item_id)
+    assert source is not None
+    assert source.source_key == f"https://example.com/podcast#{enclosure}"
     again = host.client.post(
         "/api/items",
         json={

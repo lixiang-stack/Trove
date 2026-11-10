@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import sys
@@ -11,8 +12,15 @@ from trove.adapters.feed import download_episode
 from trove.adapters.process import run_command
 from trove.adapters.safe_http import SafeHttpClient, SafeHttpError
 from trove.config import Config
+from trove.content_package import SourceDocument
+from trove.domain.items import SourceType
 from trove.errors import ProcessingError
-from trove.ports import DownloadResult, FeedEpisode, StageContext
+from trove.ports import (
+    DOWNLOAD_MEDIA_FILENAME,
+    DownloadResult,
+    FeedEpisode,
+    StageContext,
+)
 
 
 class DefaultDownloader:
@@ -20,9 +28,8 @@ class DefaultDownloader:
         self.config = config
         self.http = http
 
-    def download(self, source: dict[str, Any], context: StageContext) -> DownloadResult:
-        source_type = str(source.get("source_type"))
-        if source_type == "podcast_episode":
+    def download(self, source: SourceDocument, context: StageContext) -> DownloadResult:
+        if source.source_type == SourceType.PODCAST_EPISODE:
             return self._download_podcast(source, context)
         return self._download_video(source, context)
 
@@ -30,11 +37,11 @@ class DefaultDownloader:
     # yt-dlp
     # ------------------------------------------------------------------
     def _download_video(
-        self, source: dict[str, Any], context: StageContext
+        self, source: SourceDocument, context: StageContext
     ) -> DownloadResult:
         if shutil.which(sys.executable) is None:
             raise ProcessingError("download.tool_missing", "yt-dlp is missing")
-        url = str(source.get("source_url_canonical") or source.get("source_url_raw") or "")
+        url = source.source_url_canonical or source.source_url_raw or ""
         if not url:
             raise ProcessingError("download.unsupported", "Video URL is missing")
         template = context.work_dir / "download.%(ext)s"
@@ -66,8 +73,10 @@ class DefaultDownloader:
             raise _classify_download_error(result.stderr)
         metadata = _last_json(result.stdout)
         path = _downloaded_file(context.work_dir)
+        destination = context.work_dir / DOWNLOAD_MEDIA_FILENAME
+        os.replace(path, destination)
         return DownloadResult(
-            path=path,
+            path=destination,
             title=_string(metadata.get("title")),
             author=_string(metadata.get("uploader") or metadata.get("channel")),
             published_at=_upload_date(metadata.get("upload_date")),
@@ -79,23 +88,22 @@ class DefaultDownloader:
     # Podcast enclosure
     # ------------------------------------------------------------------
     def _download_podcast(
-        self, source: dict[str, Any], context: StageContext
+        self, source: SourceDocument, context: StageContext
     ) -> DownloadResult:
-        feed = source.get("feed") or {}
-        enclosure_url = feed.get("enclosure_url")
-        if not enclosure_url:
+        feed = source.feed
+        if feed is None or not feed.enclosure_url:
             raise ProcessingError("download.unsupported", "Podcast episode is missing an enclosure")
         episode = FeedEpisode(
-            guid=feed.get("episode_guid"),
-            title=str(source.get("title") or "Untitled episode"),
-            author=source.get("author"),
-            published_at=source.get("published_at"),
-            duration_sec=source.get("duration_sec"),
-            enclosure_url=str(enclosure_url),
-            enclosure_type=feed.get("enclosure_type"),
-            enclosure_size=feed.get("enclosure_size"),
+            guid=feed.episode_guid,
+            title=source.title,
+            author=source.author,
+            published_at=source.published_at,
+            duration_sec=source.duration_sec,
+            enclosure_url=feed.enclosure_url,
+            enclosure_type=feed.enclosure_type,
+            enclosure_size=feed.enclosure_size,
         )
-        destination = context.work_dir / "download.media"
+        destination = context.work_dir / DOWNLOAD_MEDIA_FILENAME
         try:
             download_episode(
                 self.http,
@@ -111,7 +119,7 @@ class DefaultDownloader:
             author=episode.author,
             published_at=episode.published_at,
             duration_sec=episode.duration_sec,
-            language=source.get("language"),
+            language=source.language,
         )
 
 
@@ -119,7 +127,9 @@ def _downloaded_file(work_dir: Path) -> Path:
     candidates = [
         path
         for path in work_dir.iterdir()
-        if path.is_file() and path.name.startswith("download.") and not path.name.endswith(".tmp")
+        if path.is_file()
+        and path.name.startswith("download.")
+        and not path.name.endswith((".tmp", ".part"))
     ]
     if not candidates:
         raise ProcessingError("download.parse", "yt-dlp produced no media file")

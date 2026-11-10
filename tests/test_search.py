@@ -4,6 +4,14 @@ import json
 
 from sqlalchemy import text
 
+from trove.content_package import (
+    BookChapterDocument,
+    BookDocument,
+    TranscriptDocument,
+)
+from trove.content_package import (
+    TranscriptSegment as TranscriptSegmentDocument,
+)
 from trove.db.models import BookChapter, BookParagraph, TranscriptSegment
 
 from .conftest import seed_item
@@ -249,30 +257,31 @@ def test_search_and_library_filter_ui_share_semantics(host):
 
 def test_index_reads_content_package_and_rebuilds_without_db_text(host):
     item = seed_item(host, title="Package Source")
-    host.runtime.package.write_json(
+    host.runtime.package.write_transcript(
         item.item.id,
-        "transcript.json",
-        {
-            "language": "zh",
-            "segments": [
-                {"seq": 0, "start_ms": 0, "end_ms": 1000, "text": "包内独有词组"},
+        TranscriptDocument(
+            language="zh",
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=0, start_ms=0, end_ms=1000, text="包内独有词组"
+                ),
             ],
-        },
+        ),
     )
-    host.runtime.package.write_json(
+    host.runtime.package.write_book(
         item.item.id,
-        "book.json",
-        {
-            "title": "Package Source",
-            "chapters": [
-                {
-                    "chapter_index": 0,
-                    "title": "第一章",
-                    "text": "包内书页",
-                    "paragraphs": ["包内书页"],
-                }
+        BookDocument(
+            title="Package Source",
+            chapters=[
+                BookChapterDocument(
+                    chapter_index=0,
+                    title="第一章",
+                    html="<p>包内书页</p>",
+                    text="包内书页",
+                    paragraphs=["包内书页"],
+                )
             ],
-        },
+        ),
     )
     host.login()
     _index(host, item.item.id)

@@ -9,12 +9,19 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.config import Config
-from trove.content_package import ContentPackage
+from trove.content_package import ArtifactKind, ContentPackage
 from trove.db.models import Artifact, Item, ItemTag, Tag
 from trove.domain.items import PLATFORM_LABELS, SOURCE_TYPE_LABELS
-from trove.errors import NotFoundError, StorageError
+from trove.errors import NotFoundError
 
-EXPORT_ARTIFACT_KINDS = ("audio", "transcript", "book", "book_json", "ai", "cover")
+EXPORT_ARTIFACT_KINDS = (
+    ArtifactKind.AUDIO,
+    ArtifactKind.TRANSCRIPT,
+    ArtifactKind.BOOK,
+    ArtifactKind.BOOK_JSON,
+    ArtifactKind.AI,
+    ArtifactKind.COVER,
+)
 
 
 class ExportService:
@@ -79,22 +86,10 @@ class ExportService:
         for item in items:
             folder = f"items/{item.id}"
             files: list[str] = []
-            source = self.package.source_path(item.id)
-            if not source.is_file():
-                raise StorageError(f"Content package file is missing: {source.name}")
-            archive.write(source, f"{folder}/source.json")
-            files.append("source.json")
             artifacts = self._artifacts(item.id)
-            for artifact in artifacts:
-                try:
-                    path = self.package.artifact_path(item.id, artifact.path)
-                except FileNotFoundError as exc:
-                    raise StorageError(
-                        f"Content package file is missing: {artifact.path}"
-                    ) from exc
-                if not path.is_file():
-                    raise StorageError(f"Content package file is missing: {artifact.path}")
-                name = Path(artifact.path).as_posix()
+            for path, name in self.package.export_files(
+                item.id, [artifact.path for artifact in artifacts]
+            ):
                 archive.write(path, f"{folder}/{name}")
                 files.append(name)
             sections.append(self._item_markdown(item, files))
