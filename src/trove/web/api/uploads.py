@@ -5,12 +5,12 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Request, UploadFile
 
 from trove.web.deps import runtime
-from trove.web.schemas import FeedPreviewRequest
+from trove.web.schemas import FeedPreviewRequest, FeedPreviewResponse, UploadResponse
 
 router = APIRouter()
 
 
-@router.post("/uploads")
+@router.post("/uploads", response_model=UploadResponse)
 async def api_upload(
     request: Request,
     file: Annotated[UploadFile, File()],
@@ -31,7 +31,7 @@ async def api_upload(
     }
 
 
-@router.post("/feeds/preview")
+@router.post("/feeds/preview", response_model=FeedPreviewResponse)
 def api_feed_preview(request: Request, payload: FeedPreviewRequest):
     feed = runtime(request).intake.preview_feed(payload.url)
     return {
