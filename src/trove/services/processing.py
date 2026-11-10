@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 import traceback
 import uuid
@@ -12,7 +11,12 @@ from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
-from trove.content_package import ContentPackage, guess_mime
+from trove.content_package import (
+    ArtifactKind,
+    ContentPackage,
+    SourceDocument,
+    sha256_file,
+)
 from trove.db.models import (
     Artifact,
     BookChapter,
@@ -47,6 +51,7 @@ from trove.errors import (
 )
 from trove.logging_setup import append_run_log
 from trove.ports import (
+    DOWNLOAD_MEDIA_FILENAME,
     AudioExtractor,
     BookExtractor,
     BookResult,
@@ -55,6 +60,12 @@ from trove.ports import (
     SearchIndex,
     StageContext,
     Transcriber,
+)
+from trove.services.package_documents import (
+    ai_document,
+    book_document,
+    source_document,
+    transcript_document,
 )
 
 INDEX_AFTER_STAGES = frozenset(
@@ -163,6 +174,21 @@ class ProcessingService:
             stages = stages_for(item.source_type)
             source = self.package.read_source(item.id)
 
+        if source is None:
+            append_run_log(
+                self.config,
+                run_id,
+                "content package source.json is missing",
+                level="error",
+            )
+            self._fail(
+                run_id,
+                None,
+                "storage.source_missing",
+                "Content package is missing source.json",
+            )
+            return
+
         work_dir = self.config.cache_dir / "runs" / run_id
         work_dir.mkdir(parents=True, exist_ok=True)
         work_dir.chmod(0o700)
@@ -188,6 +214,11 @@ class ProcessingService:
                     item = session.get(Item, context.item_id)
                     assert item is not None
                     source = self.package.read_source(item.id)
+                    if source is None:
+                        raise ProcessingError(
+                            "storage.source_missing",
+                            "Content package is missing source.json",
+                        )
                     self._execute_stage(stage, session, item, run_id, source, context)
                     session.commit()
             except ProcessingCancelled:
@@ -391,7 +422,7 @@ class ProcessingService:
         session: Session,
         item: Item,
         run_id: str,
-        source: dict[str, Any],
+        source: SourceDocument,
         context: StageContext,
     ) -> None:
         if stage == STAGE_DOWNLOADING:
@@ -410,7 +441,7 @@ class ProcessingService:
             raise ProcessingError("internal.error", f"Unknown stage: {stage}")
 
     def _stage_download(
-        self, session: Session, item: Item, source: dict[str, Any], context: StageContext
+        self, session: Session, item: Item, source: SourceDocument, context: StageContext
     ) -> None:
         result = self.downloader.download(source, context)
         item.title = result.title or item.title
@@ -419,14 +450,15 @@ class ProcessingService:
         item.duration_sec = result.duration_sec or item.duration_sec
         item.language = result.language or item.language
         item.updated_at = utc_ms()
-        self._sync_source(session, item, source)
+        self._sync_source(item, source)
+        context.log(f"downloaded media {result.path.name}")
 
     def _stage_extract_audio(
-        self, session: Session, item: Item, source: dict[str, Any], context: StageContext
+        self, session: Session, item: Item, source: SourceDocument, context: StageContext
     ) -> None:
         if item.source_type in {"video_url", "podcast_episode"}:
-            media_path = _downloaded_media(context.work_dir)
-            if media_path is None:
+            media_path = context.work_dir / DOWNLOAD_MEDIA_FILENAME
+            if not media_path.is_file():
                 raise ProcessingError("download.parse", "Downloaded media file not found")
             force_transcode = True
         else:
@@ -447,18 +479,18 @@ class ProcessingService:
         artifact = self._install_artifact(
             session,
             item,
-            kind="audio",
+            kind=ArtifactKind.AUDIO,
             temp_path=result.path,
-            filename=f"audio{result.extension}",
+            extension=result.extension,
             mime=result.mime,
             duration=result.duration_sec,
         )
         item.duration_sec = result.duration_sec or item.duration_sec
         item.updated_at = utc_ms()
-        self._sync_source(session, item, source)
+        self._sync_source(item, source)
         if item.source_type in {"video_url", "podcast_episode"}:
             media_path.unlink(missing_ok=True)
-        if source.get("uploaded") and item.source_path:
+        if source.uploaded and item.source_path:
             upload_path = Path(item.source_path)
             if upload_path.is_relative_to(self.config.uploads_dir):
                 upload_directory = upload_path.parent
@@ -469,35 +501,13 @@ class ProcessingService:
     def _stage_transcribe(
         self, session: Session, item: Item, context: StageContext
     ) -> None:
-        audio = self._artifact(session, item.id, "audio")
+        audio = self._artifact(session, item.id, ArtifactKind.AUDIO)
         if audio is None:
             raise ProcessingError("asr.failed", "Audio is missing; cannot transcribe")
         audio_path = self.package.artifact_path(item.id, audio.path)
         result = self.transcriber.transcribe(audio_path, context)
-        payload = {
-            "language": result.language or item.language,
-            "model": result.model,
-            "segments": [
-                {
-                    "seq": segment.seq,
-                    "start_ms": segment.start_ms,
-                    "end_ms": segment.end_ms,
-                    "text": segment.text,
-                }
-                for segment in result.segments
-            ],
-        }
-        temp = context.work_dir / "transcript.json"
-        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._install_artifact(
-            session,
-            item,
-            kind="transcript",
-            temp_path=temp,
-            filename="transcript.json",
-            mime="application/json",
-            duration=None,
-        )
+        path = self.package.write_transcript(item.id, transcript_document(result, item))
+        self._record_document(session, item, kind=ArtifactKind.TRANSCRIPT, path=path)
         session.execute(
             text("DELETE FROM transcript_segments WHERE item_id = :item_id"),
             {"item_id": item.id},
@@ -521,52 +531,23 @@ class ProcessingService:
     def _stage_extract_text(
         self, session: Session, item: Item, context: StageContext
     ) -> None:
-        book = self._artifact(session, item.id, "book")
+        book = self._artifact(session, item.id, ArtifactKind.BOOK)
         if book is None:
             raise ProcessingError("epub.invalid", "EPUB file is missing")
         book_path = self.package.artifact_path(item.id, book.path)
         result = self.book_extractor.extract(book_path, context)
         title = self._book_title(result, item)
-        payload = {
-            "title": title,
-            "author": result.author,
-            "language": result.language,
-            "cover": (
-                {"extension": result.cover.extension, "mime": result.cover.mime}
-                if result.cover
-                else None
-            ),
-            "chapters": [
-                {
-                    "chapter_index": chapter.chapter_index,
-                    "title": chapter.title,
-                    "html": chapter.html,
-                    "text": chapter.text,
-                    "paragraphs": chapter.paragraphs,
-                }
-                for chapter in result.chapters
-            ],
-        }
-        temp = context.work_dir / "book.json"
-        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._install_artifact(
-            session,
-            item,
-            kind="book_json",
-            temp_path=temp,
-            filename="book.json",
-            mime="application/json",
-            duration=None,
-        )
+        path = self.package.write_book(item.id, book_document(result, title=title))
+        self._record_document(session, item, kind=ArtifactKind.BOOK_JSON, path=path)
         if result.cover is not None:
             cover_temp = context.work_dir / f"cover{result.cover.extension}"
             cover_temp.write_bytes(result.cover.data)
             self._install_artifact(
                 session,
                 item,
-                kind="cover",
+                kind=ArtifactKind.COVER,
                 temp_path=cover_temp,
-                filename=f"cover{result.cover.extension}",
+                extension=result.cover.extension,
                 mime=result.cover.mime,
                 duration=None,
             )
@@ -602,7 +583,11 @@ class ProcessingService:
         item.language = result.language or item.language
         item.updated_at = utc_ms()
         source = self.package.read_source(item.id)
-        self._sync_source(session, item, source)
+        if source is None:
+            raise ProcessingError(
+                "storage.source_missing", "Content package is missing source.json"
+            )
+        self._sync_source(item, source)
 
     def _stage_organize(
         self, session: Session, item: Item, run_id: str, context: StageContext
@@ -616,27 +601,8 @@ class ProcessingService:
             context=context,
         )
         generated_at = utc_ms()
-        payload = {
-            "summary": result.summary,
-            "tags": result.tags,
-            "model": result.model,
-            "prompt_version": result.prompt_version,
-            "input_tokens": result.input_tokens,
-            "output_tokens": result.output_tokens,
-            "cost_usd": result.cost_usd,
-            "generated_at": generated_at,
-        }
-        temp = context.work_dir / "ai.json"
-        temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._install_artifact(
-            session,
-            item,
-            kind="ai",
-            temp_path=temp,
-            filename="ai.json",
-            mime="application/json",
-            duration=None,
-        )
+        path = self.package.write_ai(item.id, ai_document(result, generated_at))
+        self._record_document(session, item, kind=ArtifactKind.AI, path=path)
         item.summary = result.summary
         item.updated_at = utc_ms()
         from trove.db.models import AiResult
@@ -746,41 +712,81 @@ class ProcessingService:
         session: Session,
         item: Item,
         *,
-        kind: str,
+        kind: ArtifactKind,
         temp_path: Path,
-        filename: str,
+        extension: str,
         mime: str | None,
         duration: float | None,
     ) -> Artifact:
         previous = self._artifact(session, item.id, kind)
-        destination, checksum, size = self.package.install_temp(item.id, temp_path, filename)
-        relative = destination.relative_to(self.package.directory(item.id)).as_posix()
-        if previous is None:
+        installed = self.package.install_artifact(
+            item.id,
+            kind,
+            temp_path,
+            extension=extension,
+            mime=mime,
+            replaces=previous.path if previous is not None else None,
+        )
+        return self._record_artifact(
+            session,
+            item,
+            kind=installed.kind,
+            relative=installed.relative_path,
+            checksum=installed.sha256,
+            size=installed.size,
+            mime=installed.mime,
+            duration=duration,
+        )
+
+    def _record_document(
+        self, session: Session, item: Item, *, kind: ArtifactKind, path: Path
+    ) -> Artifact:
+        return self._record_artifact(
+            session,
+            item,
+            kind=kind,
+            relative=path.name,
+            checksum=sha256_file(path),
+            size=path.stat().st_size,
+            mime="application/json",
+            duration=None,
+        )
+
+    def _record_artifact(
+        self,
+        session: Session,
+        item: Item,
+        *,
+        kind: ArtifactKind,
+        relative: str,
+        checksum: str,
+        size: int,
+        mime: str,
+        duration: float | None,
+    ) -> Artifact:
+        artifact = self._artifact(session, item.id, kind)
+        if artifact is None:
             artifact = Artifact(
                 item_id=item.id,
                 kind=kind,
                 path=relative,
                 sha256=checksum,
                 size=size,
-                mime=mime or guess_mime(filename),
+                mime=mime,
                 duration_sec=duration,
             )
             session.add(artifact)
         else:
-            old_path = previous.path
-            artifact = previous
             artifact.path = relative
             artifact.sha256 = checksum
             artifact.size = size
-            artifact.mime = mime or guess_mime(filename)
+            artifact.mime = mime
             artifact.duration_sec = duration
-            if old_path != relative:
-                (self.package.directory(item.id) / old_path).unlink(missing_ok=True)
         session.flush()
         return artifact
 
     @staticmethod
-    def _artifact(session: Session, item_id: str, kind: str) -> Artifact | None:
+    def _artifact(session: Session, item_id: str, kind: ArtifactKind) -> Artifact | None:
         return session.execute(
             select(Artifact).where(Artifact.item_id == item_id, Artifact.kind == kind)
         ).scalars().first()
@@ -861,18 +867,26 @@ class ProcessingService:
     def _fail(
         self,
         run_id: str,
-        stage: str,
+        stage: str | None,
         code: str,
         message: str,
         details: dict[str, Any] | None = None,
     ) -> None:
         with self.sessions() as session:
-            step = session.execute(
-                select(RunStep)
-                .where(RunStep.run_id == run_id, RunStep.stage == stage, RunStep.state == "running")
-                .order_by(RunStep.attempt.desc())
-                .limit(1)
-            ).scalars().first()
+            step = (
+                session.execute(
+                    select(RunStep)
+                    .where(
+                        RunStep.run_id == run_id,
+                        RunStep.stage == stage,
+                        RunStep.state == "running",
+                    )
+                    .order_by(RunStep.attempt.desc())
+                    .limit(1)
+                ).scalars().first()
+                if stage is not None
+                else None
+            )
             if step is not None:
                 step.state = "failed"
                 step.error_code = code
@@ -933,30 +947,17 @@ class ProcessingService:
             .order_by(Run.created_at.desc(), Run.id.desc())
         ).scalars().first()
 
-    def _sync_source(self, session: Session, item: Item, source: dict[str, Any]) -> None:
-        source.update(
-            {
-                "title": item.title,
-                "author": item.author,
-                "published_at": item.published_at,
-                "fetched_at": item.fetched_at,
-                "language": item.language,
-                "duration_sec": item.duration_sec,
-                "source_path": item.source_path,
-                "source_url_raw": item.source_url_raw,
-                "source_url_canonical": item.source_url_canonical,
-            }
+    def _sync_source(self, item: Item, source: SourceDocument) -> None:
+        self.package.write_source(
+            item.id, source_document(item, base=source)
         )
-        self.package.write_source(item.id, source)
 
     @staticmethod
     def _cleanup_work_dir(work_dir: Path, *, keep_download: bool) -> None:
         if not work_dir.exists():
             return
         for path in work_dir.iterdir():
-            if keep_download and path.name.startswith("download.") and not path.name.endswith(
-                (".tmp", ".part")
-            ):
+            if keep_download and path.name == DOWNLOAD_MEDIA_FILENAME:
                 continue
             if path.is_dir():
                 shutil.rmtree(path, ignore_errors=True)
@@ -970,16 +971,3 @@ class ProcessingService:
         for path in work_dir.iterdir():
             if path.name.endswith((".tmp", ".part")):
                 path.unlink(missing_ok=True)
-
-
-def _downloaded_media(work_dir: Path) -> Path | None:
-    candidates = [
-        path
-        for path in work_dir.iterdir()
-        if path.is_file()
-        and path.name.startswith("download.")
-        and not path.name.endswith((".tmp", ".part"))
-    ]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda path: path.stat().st_size)

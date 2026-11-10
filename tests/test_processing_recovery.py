@@ -39,6 +39,23 @@ def test_retry_resumes_from_failed_stage(host):
 
 
 @pytest.mark.ffmpeg
+def test_retry_from_extracting_audio_finds_the_downloaded_media(host):
+    host.stack.audio_extractor.fail_code = "ffmpeg.failed"
+    item_id, run_id = _add(host, "https://youtu.be/retryfromaudio")
+    failed = host.wait_for_item(item_id)
+    assert failed["run"]["current_stage"] == "extracting_audio"
+    assert (host.config.cache_dir / "runs" / run_id / "download.media").is_file()
+
+    host.stack.audio_extractor.fail_code = None
+    response = host.client.post(f"/api/items/{item_id}/retry")
+    assert response.status_code == 200
+    payload = host.wait_for_item(item_id)
+
+    assert payload["run"]["state"] == "completed"
+    assert len(host.stack.downloader.calls) == 1
+
+
+@pytest.mark.ffmpeg
 def test_retry_does_not_repeat_completed_stages(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id, _ = _add(host, "https://youtu.be/retryfromtranscribe")

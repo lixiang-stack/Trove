@@ -27,6 +27,7 @@ from trove.domain.tags import normalize_tag
 from trove.errors import ConflictError, NotFoundError, TroveError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
+from trove.services.package_documents import source_document
 
 
 def has_consumption_progress(item: Item) -> bool:
@@ -217,7 +218,7 @@ class LibraryService:
         self.package.ensure(item.id)
         try:
             self.package.write_source(
-                item.id, self._source_document(item, extra=extra_source)
+                item.id, source_document(item, extra=extra_source)
             )
         except Exception:
             self.package.remove(item.id)
@@ -364,9 +365,6 @@ class LibraryService:
             )
             return [(name, count) for name, count in rows]
 
-    def source_document(self, item_id: str) -> dict[str, Any]:
-        return self.package.read_source(item_id)
-
     # ------------------------------------------------------------------
     # Mutations
     # ------------------------------------------------------------------
@@ -473,7 +471,12 @@ class LibraryService:
             if author is not None:
                 item.author = author.strip() or None
             item.updated_at = utc_ms()
-            self.package.write_source(item.id, self._updated_source_document(item))
+            self.package.write_source(
+                item.id,
+                source_document(
+                    item, base=self.package.read_source(item.id)
+                ),
+            )
             session.commit()
             bundle = item_bundle(session, item)
         self.search_index.index_item(item_id)
@@ -583,45 +586,6 @@ class LibraryService:
             ],
             "log_tail": tail_run_log(self.config, run.id),
         }
-
-    def _updated_source_document(self, item: Item) -> dict[str, Any]:
-        document = self.package.read_source(item.id)
-        document.update(
-            {
-                "title": item.title,
-                "author": item.author,
-                "published_at": item.published_at,
-                "fetched_at": item.fetched_at,
-                "language": item.language,
-                "duration_sec": item.duration_sec,
-                "source_path": item.source_path,
-                "source_url_raw": item.source_url_raw,
-                "source_url_canonical": item.source_url_canonical,
-            }
-        )
-        return document
-
-    def _source_document(
-        self, item: Item, *, extra: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        document: dict[str, Any] = {
-            "id": item.id,
-            "source_key": item.source_key,
-            "source_type": item.source_type,
-            "platform": item.platform,
-            "source_url_raw": item.source_url_raw,
-            "source_url_canonical": item.source_url_canonical,
-            "source_path": item.source_path,
-            "title": item.title,
-            "author": item.author,
-            "published_at": item.published_at,
-            "fetched_at": item.fetched_at,
-            "language": item.language,
-            "duration_sec": item.duration_sec,
-        }
-        if extra:
-            document.update(extra)
-        return document
 
 
 def _matches_states(bundle: ItemBundle, states: set[str]) -> bool:

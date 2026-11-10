@@ -147,6 +147,7 @@ ERROR_LABELS = {
     ),
     "epub.parse": "EPUB parsing failed",
     "storage.error": "Failed to write the content package",
+    "storage.source_missing": "Source file or package metadata is missing",
     "run.reclaimed": "Host restarted; run requeued",
     "internal.error": "Internal error",
 }
