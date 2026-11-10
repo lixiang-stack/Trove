@@ -31,9 +31,9 @@ class MlxWhisperTranscriber:
         if not model_cached(self.model):
             raise ProcessingError("asr.model_missing", ASR_MODEL_MISSING_HINT)
         if shutil.which(self.ffmpeg) is None:
-            raise ProcessingError("ffmpeg.missing", "缺少 FFmpeg，请先安装")
+            raise ProcessingError("ffmpeg.missing", "FFmpeg is missing; install it first")
         if not audio_path.is_file():
-            raise ProcessingError("asr.failed", "音频文件不存在，无法转写")
+            raise ProcessingError("asr.failed", "Audio file does not exist; cannot transcribe")
 
         token = uuid.uuid4().hex
         prepared = context.work_dir / f".asr-{token}.wav"
@@ -60,7 +60,7 @@ class MlxWhisperTranscriber:
             if converted.returncode != 0 or not prepared.is_file():
                 raise ProcessingError(
                     "asr.failed",
-                    "音频转码失败",
+                    "Audio transcoding failed",
                     details={"stderr": converted.stderr[-2000:]},
                 )
             result = run_command(
@@ -82,13 +82,13 @@ class MlxWhisperTranscriber:
                     raise ProcessingError("asr.model_missing", ASR_MODEL_MISSING_HINT)
                 raise ProcessingError(
                     "asr.failed",
-                    "转写失败",
+                    "Transcription failed",
                     details={"stderr": (result.stderr or result.stdout)[-2000:]},
                 )
             try:
                 payload = json.loads(output.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError) as exc:
-                raise ProcessingError("asr.failed", "转写结果无法读取") from exc
+                raise ProcessingError("asr.failed", "Could not read transcription result") from exc
             return transcript_from_payload(payload, model=self.model)
         finally:
             prepared.unlink(missing_ok=True)

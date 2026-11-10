@@ -86,66 +86,68 @@ STAGES_BY_SOURCE: dict[str, tuple[str, ...]] = {
 }
 
 STAGE_LABELS = {
-    "queued": "排队中",
-    STAGE_DOWNLOADING: "下载中",
-    STAGE_EXTRACTING_AUDIO: "抽取音频",
-    STAGE_EXTRACTING_TEXT: "提取书文本",
-    STAGE_TRANSCRIBING: "转写中",
-    STAGE_ORGANIZING: "整理中",
-    STAGE_INDEXING: "建立索引",
-    "completed": "已完成",
-    "failed": "失败",
-    "cancelled": "已取消",
+    "queued": "Queued",
+    STAGE_DOWNLOADING: "Downloading",
+    STAGE_EXTRACTING_AUDIO: "Extracting audio",
+    STAGE_EXTRACTING_TEXT: "Extracting text",
+    STAGE_TRANSCRIBING: "Transcribing",
+    STAGE_ORGANIZING: "Organizing",
+    STAGE_INDEXING: "Indexing",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled",
 }
 
 SOURCE_TYPE_LABELS: dict[str, str] = {
-    SourceType.VIDEO_URL: "视频",
-    SourceType.PODCAST_EPISODE: "播客",
-    SourceType.LOCAL_AUDIO: "音频",
-    SourceType.LOCAL_VIDEO: "视频",
-    SourceType.EPUB: "书",
+    SourceType.VIDEO_URL: "Video",
+    SourceType.PODCAST_EPISODE: "Podcast",
+    SourceType.LOCAL_AUDIO: "Audio",
+    SourceType.LOCAL_VIDEO: "Video",
+    SourceType.EPUB: "Book",
 }
 
 PLATFORM_LABELS: dict[str, str] = {
     Platform.BILIBILI: "Bilibili",
     Platform.YOUTUBE: "YouTube",
-    Platform.PODCAST: "播客",
-    Platform.LOCAL: "本地",
+    Platform.PODCAST: "Podcast",
+    Platform.LOCAL: "Local",
 }
 
 CONSUMPTION_LABELS: dict[str, str] = {
-    ConsumptionState.UNSTARTED: "未开始",
-    ConsumptionState.IN_PROGRESS: "进行中",
-    ConsumptionState.FINISHED: "已完成",
+    ConsumptionState.UNSTARTED: "Unstarted",
+    ConsumptionState.IN_PROGRESS: "In progress",
+    ConsumptionState.FINISHED: "Finished",
 }
 
-ASR_NOT_INSTALLED_HINT = "转写组件未安装，请运行: uv sync --extra asr"
-ASR_MODEL_MISSING_HINT = "转写模型未下载，请运行: uv run trove setup"
+ASR_NOT_INSTALLED_HINT = "ASR components are not installed; run: uv sync --extra asr"
+ASR_MODEL_MISSING_HINT = "ASR model is not downloaded; run: uv run trove setup"
 
 ERROR_LABELS = {
-    "download.network": "网络错误，下载失败",
-    "download.login_required": "需要登录或 cookies 才能下载",
-    "download.geo_restricted": "内容在当前地区不可用",
-    "download.unsupported": "不支持的视频类型或链接",
-    "download.parse": "无法解析视频信息",
-    "download.tool_missing": "缺少 yt-dlp，请先安装",
-    "download.too_large": "媒体文件超过大小限制",
-    "download.invalid_type": "媒体类型不受支持",
-    "ffmpeg.missing": "缺少 FFmpeg/ffprobe，请先安装",
-    "ffmpeg.failed": "抽取音频失败",
+    "download.network": "Network error; download failed",
+    "download.login_required": "Sign-in or cookies required to download",
+    "download.geo_restricted": "Content is not available in your region",
+    "download.unsupported": "Unsupported video type or URL",
+    "download.parse": "Could not parse video info",
+    "download.tool_missing": "yt-dlp is missing; install it first",
+    "download.too_large": "Media file exceeds the size limit",
+    "download.invalid_type": "Unsupported media type",
+    "ffmpeg.missing": "FFmpeg/ffprobe is missing; install it first",
+    "ffmpeg.failed": "Audio extraction failed",
     "asr.not_configured": ASR_NOT_INSTALLED_HINT,
     "asr.model_missing": ASR_MODEL_MISSING_HINT,
-    "asr.failed": "转写失败",
-    "llm.not_configured": "整理组件尚未配置",
-    "llm.invalid_output": "整理结果格式无效",
-    "llm.limit_exceeded": "超过模型调用或 token 限额",
-    "epub.invalid": "不是有效的 EPUB 文件",
-    "epub.drm": "EPUB 受 DRM 保护，无法导入",
-    "epub.fixed_layout": "仅支持可重排 EPUB，固定版式书无法导入",
-    "epub.parse": "EPUB 解析失败",
-    "storage.error": "写入内容包失败",
-    "run.reclaimed": "Host 重启，已重新排队",
-    "internal.error": "内部错误",
+    "asr.failed": "Transcription failed",
+    "llm.not_configured": "Organization service is not configured",
+    "llm.invalid_output": "Organization output format is invalid",
+    "llm.limit_exceeded": "Model call or token limit exceeded",
+    "epub.invalid": "Not a valid EPUB file",
+    "epub.drm": "EPUB is DRM-protected and cannot be imported",
+    "epub.fixed_layout": (
+        "Only reflowable EPUBs are supported; fixed-layout books cannot be imported"
+    ),
+    "epub.parse": "EPUB parsing failed",
+    "storage.error": "Failed to write the content package",
+    "run.reclaimed": "Host restarted; run requeued",
+    "internal.error": "Internal error",
 }
 
 
@@ -158,5 +160,5 @@ def stages_for(source_type: str) -> tuple[str, ...]:
 
 def error_label(code: str | None) -> str:
     if not code:
-        return "未知错误"
-    return ERROR_LABELS.get(code, f"处理失败（{code}）")
+        return "Unknown error"
+    return ERROR_LABELS.get(code, f"Processing failed ({code})")

@@ -89,8 +89,8 @@ def verify_fts5(engine: Engine) -> None:
             connection.execute(text(f"DROP TABLE {table}"))
     except Exception as exc:  # sqlite3.OperationalError or SQLAlchemy wrapper
         raise RuntimeError(
-            "当前 SQLite 构建缺少 FTS5。请使用 uv 管理的 Python 3.12 重新安装"
-            "（uv python install 3.12），或安装带 FTS5 的 SQLite。"
+            "This SQLite build lacks FTS5. Reinstall the Python 3.12 managed by uv"
+            " (uv python install 3.12), or install SQLite with FTS5."
         ) from exc
 
 

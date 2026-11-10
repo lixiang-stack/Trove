@@ -46,7 +46,7 @@ def run_command(
                 start_new_session=True,
             )
         except FileNotFoundError as exc:
-            raise ProcessingError(error_code, f"缺少命令: {command[0]}") from exc
+            raise ProcessingError(error_code, f"Command not found: {command[0]}") from exc
         started = time.monotonic()
         while process.poll() is None:
             if context.should_cancel():
@@ -54,7 +54,7 @@ def run_command(
                 raise ProcessingCancelled("cancelled")
             if timeout is not None and time.monotonic() - started > timeout:
                 _terminate(process)
-                raise ProcessingError(error_code, "外部命令执行超时")
+                raise ProcessingError(error_code, "External command timed out")
             time.sleep(POLL_INTERVAL)
         stdout_file.seek(0)
         stderr_file.seek(0)

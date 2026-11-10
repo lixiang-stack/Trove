@@ -58,9 +58,12 @@ class UploadStore:
         suffix = Path(filename).suffix.lower()
         suffix_kind = _kind_for_suffix(suffix)
         if suffix_kind is None:
-            raise ValidationError("不支持的文件类型", details={"code": "upload.invalid_type"})
+            raise ValidationError("Unsupported file type", details={"code": "upload.invalid_type"})
         if kind and kind != suffix_kind:
-            raise ValidationError("文件类型与声明不符", details={"code": "upload.invalid_type"})
+            raise ValidationError(
+                "File type does not match the declared type",
+                details={"code": "upload.invalid_type"},
+            )
         detected_kind = suffix_kind
         _check_content_type(detected_kind, content_type)
         limit = {
@@ -82,13 +85,13 @@ class UploadStore:
                     size += len(chunk)
                     if size > limit:
                         raise ValidationError(
-                            f"文件超过大小限制（{limit // (1024 * 1024)} MB）",
+                            f"File exceeds the size limit ({limit // (1024 * 1024)} MB)",
                             details={"code": "upload.too_large"},
                         )
                     digest.update(chunk)
                     handle.write(chunk)
             if size == 0:
-                raise ValidationError("文件为空", details={"code": "upload.empty"})
+                raise ValidationError("File is empty", details={"code": "upload.empty"})
             destination.chmod(0o600)
             record = UploadRecord(
                 upload_id=upload_id,
@@ -108,14 +111,14 @@ class UploadStore:
 
     def load(self, upload_id: str) -> UploadRecord:
         if not re.fullmatch(r"[0-9a-f-]{36}", upload_id or ""):
-            raise NotFoundError("上传不存在")
+            raise NotFoundError("Upload not found")
         path = self.config.uploads_dir / upload_id / "upload.json"
         if not path.exists():
-            raise NotFoundError("上传不存在")
+            raise NotFoundError("Upload not found")
         data = json.loads(path.read_text(encoding="utf-8"))
         record = UploadRecord(**data)
         if not Path(record.path).exists():
-            raise NotFoundError("上传文件已被清理")
+            raise NotFoundError("Uploaded file has been cleaned up")
         return record
 
     def cleanup(self, upload_id: str) -> None:
@@ -164,21 +167,21 @@ class IntakeService:
     # ------------------------------------------------------------------
     def add_host_path(self, raw_path: str) -> tuple[ItemBundle, bool]:
         if not raw_path or not raw_path.strip():
-            raise ValidationError("文件路径不能为空", details={"code": "path.empty"})
+            raise ValidationError("File path cannot be empty", details={"code": "path.empty"})
         path = Path(raw_path).expanduser()
         if not path.is_absolute():
-            raise ValidationError("请输入绝对路径", details={"code": "path.relative"})
+            raise ValidationError("Enter an absolute path", details={"code": "path.relative"})
         try:
             path = path.resolve(strict=True)
         except (OSError, FileNotFoundError) as exc:
-            raise ValidationError("文件不存在", details={"code": "path.not_found"}) from exc
+            raise ValidationError("File not found", details={"code": "path.not_found"}) from exc
         if not path.is_file():
-            raise ValidationError("路径不是文件", details={"code": "path.not_file"})
+            raise ValidationError("Path is not a file", details={"code": "path.not_file"})
         if not path.stat().st_mode & 0o444:
-            raise ValidationError("文件不可读", details={"code": "path.not_readable"})
+            raise ValidationError("File is not readable", details={"code": "path.not_readable"})
         kind = _kind_for_suffix(path.suffix.lower())
         if kind is None:
-            raise ValidationError("不支持的文件类型", details={"code": "upload.invalid_type"})
+            raise ValidationError("Unsupported file type", details={"code": "upload.invalid_type"})
         checksum = sha256_file(path)
         return self._add_local_file(
             kind=kind,
@@ -229,7 +232,9 @@ class IntakeService:
         if existing is not None:
             return existing, True
         if kind == "epub" and size is not None and size > self.config.max_epub_bytes:
-            raise ValidationError("EPUB 超过大小限制", details={"code": "upload.too_large"})
+            raise ValidationError(
+                "EPUB exceeds the size limit", details={"code": "upload.too_large"}
+            )
         bundle, deduplicated = self.library.create_item(
             source_key=checksum,
             source_type=source_type,
@@ -301,7 +306,7 @@ class IntakeService:
         )
         if episode is None:
             raise ValidationError(
-                "feed 中找不到该单集", details={"code": "feed.episode_not_found"}
+                "Episode not found in feed", details={"code": "feed.episode_not_found"}
             )
         source_key = podcast_source_key(canonical_feed, episode.guid, episode.enclosure_url)
         bundle, deduplicated = self.library.create_item(
@@ -343,7 +348,7 @@ def _check_content_type(kind: str, content_type: str | None) -> None:
     normalized = content_type.split(";", 1)[0].strip().lower()
     allowed = ALLOWED_CONTENT_TYPES[kind]
     if not any(normalized == value or normalized.startswith(value) for value in allowed):
-        raise ValidationError("文件 MIME 类型不受支持", details={"code": "upload.invalid_type"})
+        raise ValidationError("Unsupported file MIME type", details={"code": "upload.invalid_type"})
 
 
 def _kind_for_suffix(suffix: str) -> str | None:

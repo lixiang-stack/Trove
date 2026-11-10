@@ -160,4 +160,4 @@ def test_html_add_form_rejects_playlist(api_host):
         data={"url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PL123"},
     )
     assert response.status_code == 422
-    assert "播放列表" in response.text
+    assert "Playlist" in response.text

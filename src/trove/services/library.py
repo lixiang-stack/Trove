@@ -67,10 +67,10 @@ class ItemBundle:
         if state in ACTIVE_RUN_STATES:
             return STAGE_LABELS.get(state, state)
         if state == RunState.FAILED:
-            return "处理失败"
+            return "Failed"
         if state == RunState.CANCELLED:
-            return "已取消"
-        return "已完成"
+            return "Cancelled"
+        return "Completed"
 
 
 def item_bundle(session: Session, item: Item) -> ItemBundle:
@@ -147,7 +147,7 @@ class LibraryService:
             source_url_raw=source_url_raw,
             source_url_canonical=source_url_canonical,
             source_path=source_path,
-            title=title or "未命名内容",
+            title=title or "Untitled content",
             author=author,
             published_at=published_at,
             fetched_at=now,
@@ -179,14 +179,14 @@ class LibraryService:
                 ).scalars().first()
                 if existing is not None:
                     return item_bundle(session, existing), True
-                raise ConflictError("内容已存在") from exc
+                raise ConflictError("Content already exists") from exc
             return item_bundle(session, item), False
 
     def get(self, item_id: str) -> ItemBundle:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             return item_bundle(session, item)
 
     def list_items(
@@ -296,11 +296,11 @@ class LibraryService:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             if title is not None:
                 title = title.strip()
                 if not title:
-                    raise ConflictError("标题不能为空")
+                    raise ConflictError("Title cannot be empty")
                 item.title = title
             if author is not None:
                 item.author = author.strip() or None
@@ -315,7 +315,7 @@ class LibraryService:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             source_path = Path(item.source_path) if item.source_path else None
             session.delete(item)
             session.commit()

@@ -148,7 +148,7 @@ def test_redirect_to_private_address_is_rejected(monkeypatch):
     import trove.adapters.safe_http as module
 
     monkeypatch.setattr(module.httpx, "Client", _FakeClient)
-    with pytest.raises(SafeHttpError, match="私网"):
+    with pytest.raises(SafeHttpError, match="private"):
         SafeHttpClient().get_bytes("https://example.com/feed", max_bytes=1024)
 
 

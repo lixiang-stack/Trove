@@ -48,7 +48,7 @@
   function itemFromDataset(button) {
     return {
       id: button.dataset.itemId,
-      title: button.dataset.title || "未命名内容",
+      title: button.dataset.title || "Untitled content",
       author: button.dataset.author || "",
       audio_url: button.dataset.audioUrl,
       position: Number(button.dataset.position || 0),
@@ -173,7 +173,7 @@
     }
     updateUI();
     if (autoplay) {
-      player.play().catch(() => showError("浏览器阻止了自动播放，请再点一次播放。"));
+      player.play().catch(() => showError("The browser blocked autoplay; press play again."));
     }
   }
 
@@ -197,7 +197,7 @@
       return;
     }
     if (player.paused) {
-      player.play().catch(() => showError("无法播放这个音频。"));
+      player.play().catch(() => showError("Could not play this audio."));
     } else {
       player.pause();
     }
@@ -294,7 +294,7 @@
       updateMediaSessionState();
     });
     player.addEventListener("error", () => {
-      showError("音频加载失败，请稍后重试。");
+      showError("Failed to load audio; try again later.");
     });
   }
 
@@ -410,17 +410,17 @@
         progress.hidden = false;
         progress.value = 0;
       }
-      if (note) note.textContent = "上传中…";
+      if (note) note.textContent = "Uploading…";
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/uploads");
       xhr.upload.addEventListener("progress", (uploadEvent) => {
         if (!uploadEvent.lengthComputable || !progress) return;
         progress.value = Math.round((uploadEvent.loaded / uploadEvent.total) * 100);
-        if (note) note.textContent = `上传中 ${progress.value}%`;
+        if (note) note.textContent = `Uploading ${progress.value}%`;
       });
       xhr.addEventListener("load", async () => {
         if (xhr.status !== 200) {
-          let message = "上传失败";
+          let message = "Upload failed";
           try { message = JSON.parse(xhr.responseText).message || message; } catch (_error) { /* noop */ }
           if (note) note.textContent = message;
           if (progress) progress.hidden = true;
@@ -438,13 +438,13 @@
           window.location.href = `/items/${payload.item.id}`;
           return;
         }
-        let message = "入库失败";
+        let message = "Failed to add to library";
         try { message = (await response.json()).message || message; } catch (_error) { /* noop */ }
         if (note) note.textContent = message;
         if (progress) progress.hidden = true;
       });
       xhr.addEventListener("error", () => {
-        if (note) note.textContent = "网络错误，上传失败";
+        if (note) note.textContent = "Network error; upload failed";
         if (progress) progress.hidden = true;
       });
       xhr.send(data);
