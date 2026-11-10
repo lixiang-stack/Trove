@@ -38,31 +38,53 @@ def _context(browser, host):
 
 
 def _seed_transcript(host, item_id: str) -> None:
+    from trove.content_package import (
+        TranscriptDocument,
+    )
+    from trove.content_package import (
+        TranscriptSegment as TranscriptSegmentDocument,
+    )
     from trove.db.models import TranscriptSegment
 
+    segments = [
+        (
+            0,
+            0,
+            4000,
+            "今天想聊一个我最近反复想到的问题：为什么智能体的瓶颈不是模型，而是记忆。",
+        ),
+        (1, 4000, 9000, "我们总把上下文窗口当成记忆，但上下文是临时的。"),
+    ]
+    host.runtime.package.write_transcript(
+        item_id,
+        TranscriptDocument(
+            language="zh",
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=seq, start_ms=start, end_ms=end, text=text
+                )
+                for seq, start, end, text in segments
+            ],
+        ),
+    )
     with host.runtime.sessions() as session:
         session.add_all(
             [
                 TranscriptSegment(
                     item_id=item_id,
-                    seq=0,
-                    start_ms=0,
-                    end_ms=4000,
-                    text="今天想聊一个我最近反复想到的问题：为什么智能体的瓶颈不是模型，而是记忆。",
-                ),
-                TranscriptSegment(
-                    item_id=item_id,
-                    seq=1,
-                    start_ms=4000,
-                    end_ms=9000,
-                    text="我们总把上下文窗口当成记忆，但上下文是临时的。",
-                ),
+                    seq=seq,
+                    start_ms=start,
+                    end_ms=end,
+                    text=text,
+                )
+                for seq, start, end, text in segments
             ]
         )
         session.commit()
 
 
 def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int = 2):
+    from trove.content_package import BookChapterDocument, BookDocument
     from trove.db.models import BookChapter, BookParagraph
 
     bundle = seed_item(
@@ -73,12 +95,22 @@ def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int
         duration=0.0,
         run_state="completed",
     )
+    chapter_documents = []
     with host.runtime.sessions() as session:
         for chapter_index in range(chapters):
             paragraphs = [
                 f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
                 for index in range(30)
             ]
+            chapter_documents.append(
+                BookChapterDocument(
+                    chapter_index=chapter_index,
+                    title=f"第 {chapter_index + 1} 章",
+                    html="".join(f"<p>{text}</p>" for text in paragraphs),
+                    text="\n".join(paragraphs),
+                    paragraphs=paragraphs,
+                )
+            )
             session.add(
                 BookChapter(
                     item_id=bundle.item.id,
@@ -100,6 +132,9 @@ def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int
                 ]
             )
         session.commit()
+    host.runtime.package.write_book(
+        bundle.item.id, BookDocument(title=title, chapters=chapter_documents)
+    )
     return bundle
 
 
@@ -291,6 +326,23 @@ def test_book_search_result_scrolls_to_paragraph(host, browser):
             )
         )
         session.commit()
+    from trove.content_package import BookChapterDocument, BookDocument
+
+    host.runtime.package.write_book(
+        bundle.item.id,
+        BookDocument(
+            title="书内定位",
+            chapters=[
+                BookChapterDocument(
+                    chapter_index=0,
+                    title="第一章",
+                    html="<p>bookword 段落</p>",
+                    text="bookword 段落",
+                    paragraphs=["bookword 段落"],
+                )
+            ],
+        ),
+    )
     host.runtime.search_index.index_item(bundle.item.id)
     context = _context(browser, host)
     page = context.new_page()

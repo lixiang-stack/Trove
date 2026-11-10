@@ -27,12 +27,13 @@ from trove.ports import (
 )
 from trove.services.auth import AuthService
 from trove.services.export import ExportService
-from trove.services.intake import IntakeService, UploadStore
+from trove.services.intake import IntakeService
 from trove.services.library import LibraryService
 from trove.services.playback import PlaybackService
 from trove.services.processing import ProcessingService
 from trove.services.reading import ReadingService
 from trove.services.search import SearchService
+from trove.services.uploads import UploadStore
 
 
 @dataclass(slots=True)
@@ -82,8 +83,9 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     sessions = create_session_factory(engine)
     package = ContentPackage(config)
     search_index: SearchIndex = FtsSearchIndex(sessions, package)
-    library = LibraryService(config, sessions, package, search_index)
-    search = SearchService(sessions, search_index, library)
+    uploads = UploadStore(config)
+    library = LibraryService(config, sessions, package, search_index, uploads)
+    search = SearchService(sessions, package, search_index, library)
     processing = ProcessingService(
         config,
         sessions,
@@ -94,8 +96,8 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         organizer=ports.organizer,
         book_extractor=ports.book_extractor,
         search_index=search_index,
+        uploads=uploads,
     )
-    uploads = UploadStore(config)
     intake = IntakeService(
         config,
         package,
@@ -106,7 +108,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         uploads,
     )
     playback = PlaybackService(sessions, package, library, search_index)
-    reading = ReadingService(sessions)
+    reading = ReadingService(sessions, package)
     export = ExportService(config, sessions, package)
     auth = AuthService(config)
     return Runtime(

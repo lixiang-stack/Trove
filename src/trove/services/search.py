@@ -5,8 +5,10 @@ from dataclasses import dataclass
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
+from trove.content_package import ContentPackage
 from trove.db.models import Item
 from trove.domain.search import snippet
+from trove.errors import StorageError
 from trove.ports import SearchIndex
 from trove.services.library import ItemBundle, LibraryService, item_bundle
 
@@ -58,10 +60,12 @@ class SearchService:
     def __init__(
         self,
         sessions: sessionmaker[Session],
+        package: ContentPackage,
         search_index: SearchIndex,
         library: LibraryService,
     ) -> None:
         self.sessions = sessions
+        self.package = package
         self.search_index = search_index
         self.library = library
 
@@ -151,22 +155,45 @@ class SearchService:
                 session,
                 "SELECT item_id, count(*) FROM book_paragraphs GROUP BY item_id",
             )
-        statuses = [
-            IndexItemStatus(
-                item_id=item.id,
-                title=item.title,
-                counts=counts.get(item.id, {}),
-                expected={
-                    "title": 1,
-                    "summary": 1 if item.summary else 0,
-                    "tag": tag_counts.get(item.id, 0),
-                    "transcript": transcript_counts.get(item.id, 0),
-                    "book": book_counts.get(item.id, 0),
-                },
+        statuses = []
+        for item in items:
+            transcript_expected, book_expected = self._content_counts(item.id)
+            statuses.append(
+                IndexItemStatus(
+                    item_id=item.id,
+                    title=item.title,
+                    counts=counts.get(item.id, {}),
+                    expected={
+                        "title": 1,
+                        "summary": 1 if item.summary else 0,
+                        "tag": tag_counts.get(item.id, 0),
+                        "transcript": (
+                            transcript_expected
+                            if transcript_expected is not None
+                            else transcript_counts.get(item.id, 0)
+                        ),
+                        "book": (
+                            book_expected
+                            if book_expected is not None
+                            else book_counts.get(item.id, 0)
+                        ),
+                    },
+                )
             )
-            for item in items
-        ]
         return IndexStatus(items=statuses, total_rows=total_rows, orphan_rows=orphan_rows)
+
+    def _content_counts(self, item_id: str) -> tuple[int | None, int | None]:
+        try:
+            transcript = self.package.read_transcript(item_id)
+            book = self.package.read_book(item_id)
+        except StorageError:
+            return None, None
+        return (
+            len(transcript.segments) if transcript is not None else None,
+            sum(len(chapter.paragraphs) for chapter in book.chapters)
+            if book is not None
+            else None,
+        )
 
 
 def _counts_by_item(session: Session, statement: str) -> dict[str, int]:

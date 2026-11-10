@@ -6,71 +6,59 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
-from trove.db.models import BookChapter, BookParagraph, Item
+from trove.content_package import BookChapterDocument, ContentPackage
+from trove.db.models import BookChapter, Item
 from trove.domain.items import ConsumptionState
 from trove.domain.reading import BookLocator, parse_book_locator, serialize_book_locator
 from trove.errors import NotFoundError, ValidationError
 
 
 @dataclass(slots=True)
+class BookParagraphView:
+    paragraph_index: int
+    text: str
+
+
+@dataclass(slots=True)
 class BookChapterView:
-    chapter: BookChapter
-    paragraphs: list[BookParagraph] = field(default_factory=list)
+    chapter: BookChapterDocument
+    paragraphs: list[BookParagraphView] = field(default_factory=list)
 
 
 class ReadingService:
-    def __init__(self, sessions: sessionmaker[Session]) -> None:
+    def __init__(self, sessions: sessionmaker[Session], package: ContentPackage) -> None:
         self.sessions = sessions
+        self.package = package
 
     def chapters(self, item_id: str) -> list[BookChapterView]:
         with self.sessions() as session:
             self._require_item(session, item_id)
-            chapters = list(
-                session.execute(
-                    select(BookChapter)
-                    .where(BookChapter.item_id == item_id)
-                    .order_by(BookChapter.chapter_index)
-                ).scalars()
-            )
-            paragraphs = list(
-                session.execute(
-                    select(BookParagraph)
-                    .where(BookParagraph.item_id == item_id)
-                    .order_by(BookParagraph.chapter_index, BookParagraph.paragraph_index)
-                ).scalars()
-            )
-        grouped: dict[int, list[BookParagraph]] = {}
-        for paragraph in paragraphs:
-            grouped.setdefault(paragraph.chapter_index, []).append(paragraph)
-        return [
-            BookChapterView(chapter=chapter, paragraphs=grouped.get(chapter.chapter_index, []))
-            for chapter in chapters
-        ]
+        document = self.package.read_book(item_id)
+        if document is None:
+            return []
+        return [self._chapter_view(chapter) for chapter in document.chapters]
 
     def chapter(self, item_id: str, chapter_index: int) -> BookChapterView:
         with self.sessions() as session:
             self._require_item(session, item_id)
-            chapter = session.execute(
-                select(BookChapter).where(
-                    BookChapter.item_id == item_id,
-                    BookChapter.chapter_index == chapter_index,
-                )
-            ).scalars().first()
-            if chapter is None:
-                raise NotFoundError(
-                    "Chapter not found", details={"code": "book.chapter_not_found"}
-                )
-            paragraphs = list(
-                session.execute(
-                    select(BookParagraph)
-                    .where(
-                        BookParagraph.item_id == item_id,
-                        BookParagraph.chapter_index == chapter_index,
-                    )
-                    .order_by(BookParagraph.paragraph_index)
-                ).scalars()
-            )
-        return BookChapterView(chapter=chapter, paragraphs=paragraphs)
+        document = self.package.read_book(item_id)
+        if document is not None:
+            for chapter in document.chapters:
+                if chapter.chapter_index == chapter_index:
+                    return self._chapter_view(chapter)
+        raise NotFoundError(
+            "Chapter not found", details={"code": "book.chapter_not_found"}
+        )
+
+    @staticmethod
+    def _chapter_view(chapter: BookChapterDocument) -> BookChapterView:
+        return BookChapterView(
+            chapter=chapter,
+            paragraphs=[
+                BookParagraphView(paragraph_index=index, text=text)
+                for index, text in enumerate(chapter.paragraphs)
+            ],
+        )
 
     def locator(self, item_id: str) -> BookLocator | None:
         with self.sessions() as session:
@@ -94,6 +82,7 @@ class ReadingService:
             )
         with self.sessions() as session:
             item = self._require_item(session, item_id)
+            # The DB is the derived index; use it for the cheap existence check.
             chapter = session.execute(
                 select(BookChapter.id).where(
                     BookChapter.item_id == item_id,

@@ -6,6 +6,7 @@ from .conftest import seed_item
 
 
 def _seed_book(host, *, title: str, chapter: int = 0, locator: str | None = None):
+    from trove.content_package import BookChapterDocument, BookDocument
     from trove.db.models import BookChapter, BookParagraph
 
     bundle = seed_item(
@@ -15,6 +16,21 @@ def _seed_book(host, *, title: str, chapter: int = 0, locator: str | None = None
         with_audio=False,
         duration=0.0,
         run_state="completed",
+    )
+    host.runtime.package.write_book(
+        bundle.item.id,
+        BookDocument(
+            title=title,
+            chapters=[
+                BookChapterDocument(
+                    chapter_index=chapter,
+                    title=f"Chapter {chapter + 1}",
+                    html=f"<p>{title} text</p>",
+                    text=f"{title} text",
+                    paragraphs=[f"{title} text"],
+                )
+            ],
+        ),
     )
     with host.runtime.sessions() as session:
         session.add(
