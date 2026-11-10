@@ -35,12 +35,12 @@ class PlaybackService:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             artifact = session.execute(
                 select(Artifact).where(Artifact.item_id == item_id, Artifact.kind == "audio")
             ).scalars().first()
             if artifact is None:
-                raise NotFoundError("音频尚未生成")
+                raise NotFoundError("Audio has not been generated yet")
             return artifact
 
     def audio_path(self, item_id: str) -> Path:
@@ -48,9 +48,9 @@ class PlaybackService:
         try:
             path = self.package.artifact_path(item_id, artifact.path)
         except FileNotFoundError as exc:
-            raise NotFoundError("音频文件不存在") from exc
+            raise NotFoundError("Audio file not found") from exc
         if not path.is_file():
-            raise NotFoundError("音频文件不存在")
+            raise NotFoundError("Audio file not found")
         return path
 
     def update_progress(
@@ -61,19 +61,21 @@ class PlaybackService:
         consumption_state: str | None = None,
     ) -> ItemBundle:
         if position_sec < 0:
-            raise ValidationError("播放位置不能为负数", details={"code": "progress.invalid"})
+            raise ValidationError(
+                "Playback position cannot be negative", details={"code": "progress.invalid"}
+            )
         if consumption_state is not None and consumption_state not in {
             ConsumptionState.UNSTARTED,
             ConsumptionState.IN_PROGRESS,
             ConsumptionState.FINISHED,
         }:
             raise ValidationError(
-                "Consumption State 无效", details={"code": "progress.invalid_state"}
+                "Invalid consumption state", details={"code": "progress.invalid_state"}
             )
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             duration = item.duration_sec
             position = float(position_sec)
             if duration and duration > 0:
@@ -99,12 +101,12 @@ class PlaybackService:
             ConsumptionState.FINISHED,
         }:
             raise ValidationError(
-                "Consumption State 无效", details={"code": "progress.invalid_state"}
+                "Invalid consumption state", details={"code": "progress.invalid_state"}
             )
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             item.consumption_state = state
             item.updated_at = utc_ms()
             session.commit()
@@ -114,7 +116,7 @@ class PlaybackService:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             segments = list(
                 session.execute(
                     select(TranscriptSegment)
@@ -138,12 +140,12 @@ class PlaybackService:
         keyword = old.strip()
         if not keyword:
             raise ValidationError(
-                "查找关键词不能为空", details={"code": "transcript.keyword_required"}
+                "Search keyword cannot be empty", details={"code": "transcript.keyword_required"}
             )
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             segments = list(
                 session.execute(
                     select(TranscriptSegment)

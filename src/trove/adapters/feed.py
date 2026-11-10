@@ -22,7 +22,7 @@ class PodcastFeedClient:
             raise ValidationError(exc.message, details={"code": exc.code}) from exc
         parsed = feedparser.parse(response.content)
         if parsed.bozo and not parsed.entries:
-            raise ValidationError("feed 解析失败", details={"code": "feed.parse"})
+            raise ValidationError("Feed parsing failed", details={"code": "feed.parse"})
         feed = parsed.feed
         episodes: list[FeedEpisode] = []
         for entry in parsed.entries[:50]:
@@ -32,7 +32,7 @@ class PodcastFeedClient:
             episodes.append(
                 FeedEpisode(
                     guid=_guid(entry),
-                    title=str(entry.get("title") or "未命名单集"),
+                    title=str(entry.get("title") or "Untitled episode"),
                     author=str(entry.get("author") or feed.get("author") or "") or None,
                     published_at=_published(entry),
                     duration_sec=_duration(entry),
@@ -42,7 +42,7 @@ class PodcastFeedClient:
                 )
             )
         return FeedPreview(
-            title=str(feed.get("title") or "播客"),
+            title=str(feed.get("title") or "Podcast"),
             author=str(feed.get("author") or "") or None,
             link=str(feed.get("link") or "") or None,
             episodes=episodes,

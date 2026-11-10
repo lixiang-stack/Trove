@@ -29,10 +29,10 @@ def normalize_tag(raw: str) -> tuple[str, str]:
     display = _WHITESPACE_RE.sub(" ", display)
     display = _TRAILING_PUNCT_RE.sub("", display)
     if not display:
-        raise ValidationError("Tag 不能为空", details={"code": "tag.empty"})
+        raise ValidationError("Tag cannot be empty", details={"code": "tag.empty"})
     if len(display) > TAG_MAX_LENGTH:
         raise ValidationError(
-            f"Tag 不能超过 {TAG_MAX_LENGTH} 个字符", details={"code": "tag.too_long"}
+            f"Tag cannot exceed {TAG_MAX_LENGTH} characters", details={"code": "tag.too_long"}
         )
     normalized = unicodedata.normalize("NFKC", display).casefold()
     normalized = _WHITESPACE_RE.sub(" ", normalized).strip()

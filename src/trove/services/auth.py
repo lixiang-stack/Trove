@@ -36,7 +36,7 @@ class LoginRateLimiter:
             if len(failures) >= self.max_failures:
                 retry_after = max(1, int(self.window_seconds - (self.clock() - failures[0])))
                 raise RateLimitedError(
-                    "登录失败次数过多，请稍后再试", retry_after=retry_after
+                    "Too many failed sign-in attempts; try again later", retry_after=retry_after
                 )
 
     def record_failure(self, client: str) -> None:

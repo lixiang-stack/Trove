@@ -55,11 +55,13 @@ def validate_epub(path: Path) -> EpubMetadata:
             metadata, _, _, _, _, _ = _inspect(archive)
             return metadata
     except zipfile.BadZipFile as exc:
-        raise ValidationError("不是有效的 EPUB 文件", details={"code": "epub.invalid"}) from exc
+        raise ValidationError("Not a valid EPUB file", details={"code": "epub.invalid"}) from exc
     except KeyError as exc:
-        raise ValidationError("EPUB 缺少必要结构", details={"code": "epub.invalid"}) from exc
+        raise ValidationError(
+            "EPUB is missing required structure", details={"code": "epub.invalid"}
+        ) from exc
     except (OSError, etree.XMLSyntaxError) as exc:
-        raise ValidationError("EPUB 解析失败", details={"code": "epub.parse"}) from exc
+        raise ValidationError("EPUB parsing failed", details={"code": "epub.parse"}) from exc
 
 
 class EpubExtractor:
@@ -99,24 +101,26 @@ class EpubExtractor:
                     chapters=chapters,
                 )
         except zipfile.BadZipFile as exc:
-            raise ProcessingError("epub.invalid", "不是有效的 EPUB 文件") from exc
+            raise ProcessingError("epub.invalid", "Not a valid EPUB file") from exc
         except ValidationError as exc:
             code = (exc.details or {}).get("code", "epub.parse")
             raise ProcessingError(str(code), exc.message) from exc
         except KeyError as exc:
-            raise ProcessingError("epub.invalid", "EPUB 缺少必要结构") from exc
+            raise ProcessingError("epub.invalid", "EPUB is missing required structure") from exc
         except (OSError, etree.XMLSyntaxError) as exc:
-            raise ProcessingError("epub.parse", "EPUB 解析失败") from exc
+            raise ProcessingError("epub.parse", "EPUB parsing failed") from exc
 
 
 def _check_zip_sizes(archive: zipfile.ZipFile) -> None:
     total = 0
     for info in archive.infolist():
         if info.file_size > MAX_ENTRY_BYTES:
-            raise ValidationError("EPUB 内单个文件过大", details={"code": "epub.invalid"})
+            raise ValidationError("EPUB entry is too large", details={"code": "epub.invalid"})
         total += info.file_size
         if total > MAX_UNCOMPRESSED_BYTES:
-            raise ValidationError("EPUB 解压后体积过大", details={"code": "epub.invalid"})
+            raise ValidationError(
+                "EPUB is too large when uncompressed", details={"code": "epub.invalid"}
+            )
 
 
 def _inspect(archive: zipfile.ZipFile):
@@ -126,7 +130,7 @@ def _inspect(archive: zipfile.ZipFile):
     if "mimetype" in names:
         mimetype = archive.read("mimetype").decode("ascii", "ignore").strip()
         if mimetype != "application/epub+zip":
-            raise ValidationError("EPUB mimetype 无效", details={"code": "epub.invalid"})
+            raise ValidationError("Invalid EPUB mimetype", details={"code": "epub.invalid"})
     container = etree.fromstring(archive.read("META-INF/container.xml"))
     rootfiles = container.xpath(".//*[local-name()='rootfile']")
     if not rootfiles:
@@ -154,15 +158,17 @@ def _check_drm(archive: zipfile.ZipFile, names: set[str]) -> None:
         uri = reference.get("URI") or ""
         if Path(uri).suffix.lower() not in FONT_SUFFIXES:
             raise ValidationError(
-                "EPUB 受 DRM 保护，无法导入", details={"code": "epub.drm"}
+                "EPUB is DRM-protected and cannot be imported", details={"code": "epub.drm"}
             )
     if not references:
-        raise ValidationError("EPUB 受 DRM 保护，无法导入", details={"code": "epub.drm"})
+        raise ValidationError(
+            "EPUB is DRM-protected and cannot be imported", details={"code": "epub.drm"}
+        )
 
 
 def _metadata(opf) -> EpubMetadata:
     metadata = _first(opf, ".//*[local-name()='metadata']")
-    title = _first_text(metadata, "title") or "未命名书"
+    title = _first_text(metadata, "title") or "Untitled book"
     author = _first_text(metadata, "creator")
     language = _first_text(metadata, "language")
     return EpubMetadata(title=title, author=author, language=language)
@@ -194,7 +200,7 @@ def _check_fixed_layout(opf) -> None:
             prop == "rendition:layout" and content == "pre-paginated"
         ):
             raise ValidationError(
-                "仅支持可重排 EPUB，固定版式书无法导入",
+                "Only reflowable EPUBs are supported; fixed-layout books cannot be imported",
                 details={"code": "epub.fixed_layout"},
             )
 
@@ -334,7 +340,7 @@ def _extract_chapter(
             if elements:
                 heading = _clean_text(elements[0].text_content())
                 break
-    heading = heading or f"第 {chapter_index + 1} 章"
+    heading = heading or f"Chapter {chapter_index + 1}"
     cleaned = nh3.clean(
         html.tostring(body, encoding="unicode", method="html"),
         tags=ALLOWED_TAGS,

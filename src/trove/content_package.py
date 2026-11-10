@@ -38,7 +38,7 @@ class ContentPackage:
         except FileNotFoundError:
             return None
         except (OSError, json.JSONDecodeError) as exc:
-            raise TroveError(f"无法读取内容包 {filename}: {exc}") from exc
+            raise TroveError(f"Could not read content package {filename}: {exc}") from exc
 
     def read_source(self, item_id: str) -> dict[str, Any]:
         data = self.read_json(item_id, "source.json")

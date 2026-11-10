@@ -60,8 +60,8 @@ def test_tag_normalization():
 
 def test_ref_labels():
     assert ref_label("transcript", "3:65000") == "transcript · 01:05"
-    assert ref_label("book", "2:4") == "书 · 2:4"
-    assert ref_label("title", "title") == "标题"
+    assert ref_label("book", "2:4") == "Book · 2:4"
+    assert ref_label("title", "title") == "Title"
 
 
 def test_query_words_keep_phrases_for_snippets():
