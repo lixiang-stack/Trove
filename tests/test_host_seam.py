@@ -44,6 +44,11 @@ def test_fake_pipeline_completes_with_real_files(host):
     transcript = host.client.get(f"/api/items/{item_id}/transcript").json()
     assert len(transcript["segments"]) == 3
     assert "记忆" in transcript["segments"][0]["text"]
+    transcript_json = json.loads(
+        (item_dir / "transcript.json").read_text(encoding="utf-8")
+    )
+    assert transcript_json["language"] == "zh"
+    assert transcript_json["model"] == "fake-whisper"
     # yt-dlp and the network were replaced by fakes.
     assert host.stack.downloader.calls
     assert host.stack.feed_http.urls == []

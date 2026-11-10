@@ -178,6 +178,7 @@ def seed_item(
     source_url_raw: str | None = None,
     source_url_canonical: str | None = None,
     source_path: str | None = None,
+    summary: str | None = None,
     tags: list[str] | None = None,
     consumption_state: str = "unstarted",
     position: float = 0.0,
@@ -228,6 +229,7 @@ def seed_item(
         item.consumption_state = consumption_state
         item.audio_position_sec = position
         item.duration_sec = duration if with_audio else None
+        item.summary = summary
         item.updated_at = utc_ms()
         if run_state:
             run = Run(

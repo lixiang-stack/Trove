@@ -119,6 +119,8 @@ CONSUMPTION_LABELS: dict[str, str] = {
     ConsumptionState.FINISHED: "已完成",
 }
 
+ASR_MODEL_MISSING_HINT = "转写模型未下载，请运行: uv run trove setup"
+
 ERROR_LABELS = {
     "download.network": "网络错误，下载失败",
     "download.login_required": "需要登录或 cookies 才能下载",
@@ -131,6 +133,7 @@ ERROR_LABELS = {
     "ffmpeg.missing": "缺少 FFmpeg/ffprobe，请先安装",
     "ffmpeg.failed": "抽取音频失败",
     "asr.not_configured": "转写组件尚未配置",
+    "asr.model_missing": ASR_MODEL_MISSING_HINT,
     "asr.failed": "转写失败",
     "llm.not_configured": "整理组件尚未配置",
     "llm.invalid_output": "整理结果格式无效",

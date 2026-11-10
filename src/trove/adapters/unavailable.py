@@ -1,20 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from trove.errors import ProcessingError
-from trove.ports import (
-    OrganizationResult,
-    StageContext,
-    TranscriptResult,
-)
-
-
-class UnavailableTranscriber:
-    """The ASR adapter is delivered by ticket 13; fail with an actionable code."""
-
-    def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult:
-        raise ProcessingError("asr.not_configured", "转写组件尚未配置，请稍后重试")
+from trove.ports import OrganizationResult, StageContext
 
 
 class UnavailableOrganizer:

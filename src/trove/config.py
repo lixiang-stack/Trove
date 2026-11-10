@@ -24,6 +24,7 @@ DEFAULT_MAX_AUDIO_BYTES = 500 * MB
 DEFAULT_MAX_EPUB_BYTES = 100 * MB
 DEFAULT_MAX_FEED_BYTES = 10 * MB
 DEFAULT_MAX_PODCAST_MEDIA_BYTES = GB
+DEFAULT_ASR_MODEL = "mlx-community/whisper-large-v3-turbo"
 
 
 class ConfigError(RuntimeError):
@@ -45,6 +46,7 @@ class Config:
     max_feed_bytes: int = DEFAULT_MAX_FEED_BYTES
     max_podcast_media_bytes: int = DEFAULT_MAX_PODCAST_MEDIA_BYTES
     llm_enabled: bool = True
+    asr_model: str = DEFAULT_ASR_MODEL
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
@@ -249,6 +251,7 @@ def load_config(home: Path | str | None = None) -> Config:
             os.environ.get("TROVE_MAX_PODCAST_BYTES", str(DEFAULT_MAX_PODCAST_MEDIA_BYTES))
         ),
         llm_enabled=os.environ.get("TROVE_LLM_ENABLED", "true").lower() not in {"0", "false", "no"},
+        asr_model=os.environ.get("TROVE_ASR_MODEL", DEFAULT_ASR_MODEL),
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},
     )

@@ -118,6 +118,7 @@ class FakeTranscriber:
                 for segment in self.data["segments"]
             ],
             language=self.data.get("language"),
+            model="fake-whisper",
         )
 
 

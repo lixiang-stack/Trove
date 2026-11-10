@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ bundle.item.title }} · 阅读{% endblock %}
+{% block main %}
+<article class="reader-page">
+  <nav class="breadcrumbs" aria-label="面包屑">
+    <a href="/items/{{ bundle.item.id }}" hx-get="/items/{{ bundle.item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">← 详情</a>
+  </nav>
+  <header class="reader-head">
+    <p class="eyebrow">READING</p>
+    <h1>{{ bundle.item.title }}</h1>
+    <p class="subtitle">{{ bundle.item.author or "未知作者" }}</p>
+  </header>
+  {% if chapters %}
+  <nav class="reader-toc" aria-label="章节">
+    {% for view in chapters %}
+    <a href="#chapter-{{ view.chapter.chapter_index }}">{{ view.chapter.title }}</a>
+    {% endfor %}
+  </nav>
+  {% for view in chapters %}
+  <section class="book-chapter" id="chapter-{{ view.chapter.chapter_index }}">
+    <h2>{{ view.chapter.title }}</h2>
+    {% for paragraph in view.paragraphs %}
+    <p class="paragraph" id="paragraph-{{ view.chapter.chapter_index }}-{{ paragraph.paragraph_index }}">{{ paragraph.text }}</p>
+    {% endfor %}
+  </section>
+  {% endfor %}
+  {% else %}
+  <p class="muted">这本书还没有可读文本。</p>
+  {% endif %}
+</article>
+{% endblock %}

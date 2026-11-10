@@ -124,6 +124,166 @@ def test_playback_navigation_inline_and_transcript(host, browser):
     context.close()
 
 
+def test_transcript_in_page_search_filters_and_highlights(host, browser):
+    bundle = seed_item(host, title="Transcript 搜索", duration=20.0, audio_fixture="long.m4a")
+    _seed_transcript(host, bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/listen", wait_until="domcontentloaded")
+    details = page.locator("details.now-transcript")
+    details.locator("summary").click()
+    field = details.locator("[data-transcript-search]")
+    field.fill("智能体")
+    assert details.locator("li.seg:visible").count() == 1
+    assert details.locator("li.seg:visible mark").count() == 1
+    assert "1 段匹配" in details.locator("[data-transcript-count]").inner_text()
+    field.fill("不存在的词")
+    assert details.locator("li.seg:visible").count() == 0
+    assert details.locator("[data-transcript-empty]").is_visible()
+    field.fill("")
+    assert details.locator("li.seg:visible").count() == 2
+    context.close()
+
+
+def test_batch_replace_transcript_from_now_playing(host, browser):
+    bundle = seed_item(host, title="转写修正")
+    _seed_transcript(host, bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/listen", wait_until="domcontentloaded")
+    page.click("details.now-transcript summary")
+    page.click("details.transcript-edit summary")
+    page.fill('.transcript-edit input[name="old"]', "智能体")
+    page.fill('.transcript-edit input[name="new"]', "智能代理")
+    page.click(".transcript-edit button[type=submit]")
+    page.wait_for_url("**/listen?replace=1*")
+    assert "已更新 1 个分段" in page.locator(".transcript-notice").inner_text()
+    page.wait_for_selector("details.now-transcript[open]")
+    assert "智能代理" in page.locator(".now-transcript").inner_text()
+    assert "智能体" not in page.locator(".now-transcript").inner_text()
+    context.close()
+
+
+def test_search_result_opens_now_playing_at_transcript_segment(host, browser):
+    bundle = seed_item(host, title="定位测试", duration=20.0, audio_fixture="long.m4a")
+    _seed_transcript(host, bundle.item.id)
+    host.runtime.search_index.index_item(bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.click(f'[data-play-item][data-item-id="{bundle.item.id}"]')
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && !a.paused && a.currentTime > 0.05; }",
+        timeout=10000,
+    )
+    page.click('.main-nav a[href="/search"]')
+    page.wait_for_url("**/search")
+    page.fill('input[name="q"]', "智能体")
+    page.locator(".search-form button[type=submit]").first.click()
+    page.wait_for_selector(".search-result")
+    link = page.locator(".search-result .result-title").first
+    assert link.get_attribute("href").endswith("/listen#segment-0")
+    link.click()
+    page.wait_for_url("**/listen#segment-0")
+    page.wait_for_selector(".now-playing")
+    assert page.locator("details.now-transcript").get_attribute("open") is not None
+    assert page.locator("#segment-0").is_visible()
+    assert page.evaluate("window.TrovePlayer.state.playing") is True
+    context.close()
+
+
+def test_mobile_search_keeps_player_and_shows_filters(host, browser):
+    bundle = seed_item(host, title="手机搜索", duration=20.0, audio_fixture="long.m4a")
+    _seed_transcript(host, bundle.item.id)
+    host.runtime.search_index.index_item(bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.click(f'[data-play-item][data-item-id="{bundle.item.id}"]')
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && !a.paused && a.currentTime > 0.05; }",
+        timeout=10000,
+    )
+    page.click('.bottom-nav a[href="/search"]')
+    page.wait_for_url("**/search")
+    assert page.locator(".filter-row").first.is_visible()
+    page.fill('input[name="q"]', "智能体")
+    page.locator(".search-form button[type=submit]").first.click()
+    page.wait_for_selector(".search-result")
+    assert page.evaluate("window.TrovePlayer.state.playing") is True
+    box = page.locator('input[name="q"]').bounding_box()
+    assert box is not None and box["width"] > 200
+    context.close()
+
+
+def test_book_search_result_scrolls_to_paragraph(host, browser):
+    from trove.db.models import BookChapter, BookParagraph
+
+    bundle = seed_item(
+        host,
+        title="书内定位",
+        source_type="epub",
+        with_audio=False,
+        run_state=None,
+    )
+    with host.runtime.sessions() as session:
+        session.add(
+            BookChapter(
+                item_id=bundle.item.id,
+                chapter_index=0,
+                title="第一章",
+                html="<p>bookword 段落</p>",
+                text="bookword 段落",
+            )
+        )
+        session.add(
+            BookParagraph(
+                item_id=bundle.item.id,
+                chapter_index=0,
+                paragraph_index=0,
+                text="bookword 段落",
+            )
+        )
+        session.commit()
+    host.runtime.search_index.index_item(bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/search?q=bookword", wait_until="domcontentloaded")
+    page.locator(".search-result .result-title").first.click()
+    page.wait_for_url("**/read#paragraph-0-0")
+    page.wait_for_selector(".paragraph.is-focused")
+    assert page.locator("#paragraph-0-0").is_visible()
+    context.close()
+
+
+def test_search_inside_now_playing_keeps_playback_and_leaves_drawer(host, browser):
+    bundle = seed_item(host, title="B 内搜索", duration=20.0, audio_fixture="long.m4a")
+    _seed_transcript(host, bundle.item.id)
+    host.runtime.search_index.index_item(bundle.item.id)
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/listen", wait_until="domcontentloaded")
+    page.click('[data-player-action="toggle"]')
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && !a.paused && a.currentTime > 0.05; }",
+        timeout=10000,
+    )
+    page.click("details.now-search summary")
+    page.fill(".now-search input[name='q']", "智能体")
+    page.locator(".now-search button[type=submit]").click()
+    page.wait_for_selector(".now-search .search-result")
+    page.locator(".now-search .search-result .result-title").first.click()
+    page.wait_for_url("**/listen#segment-0")
+    page.wait_for_selector(".now-playing")
+    assert page.locator("details.now-search[open]").count() == 0
+    assert page.evaluate("window.TrovePlayer.state.playing") is True
+    context.close()
+
+
 def test_direct_listen_restores_progress_and_mobile_layout(host, browser):
     bundle = seed_item(
         host,

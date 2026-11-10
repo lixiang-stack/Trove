@@ -22,6 +22,10 @@
         <a href="/items/{{ bundle.item.id }}/listen" role="button"
            hx-get="/items/{{ bundle.item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">播放</a>
         {% endif %}
+        {% if bundle.book_artifact %}
+        <a href="/items/{{ bundle.item.id }}/read" role="button"
+           hx-get="/items/{{ bundle.item.id }}/read" hx-target="#main" hx-select="#main" hx-push-url="true">阅读</a>
+        {% endif %}
         <span class="badge badge-{{ bundle.status_category }}">{{ bundle.processing_label }}</span>
         <span class="badge badge-consumption">{{ consumption_labels.get(bundle.item.consumption_state, bundle.item.consumption_state) }}</span>
       </div>
