@@ -19,6 +19,7 @@ from trove.domain.items import (
     SOURCE_TYPE_LABELS,
     STAGE_LABELS,
     ConsumptionState,
+    ContinueKind,
     RunState,
 )
 from trove.domain.reading import parse_book_locator
@@ -111,7 +112,7 @@ class ItemBundle:
 @dataclass(slots=True)
 class ContinueEntry:
     bundle: ItemBundle
-    kind: str
+    kind: ContinueKind
 
 
 def item_bundle(session: Session, item: Item) -> ItemBundle:
@@ -303,7 +304,7 @@ class LibraryService:
             return [
                 ContinueEntry(
                     bundle=item_bundle(session, item),
-                    kind="read" if item.book_locator else "listen",
+                    kind=ContinueKind.READ if item.book_locator else ContinueKind.LISTEN,
                 )
                 for item in items
                 if has_consumption_progress(item)

@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import Any, cast
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -19,14 +19,11 @@ from trove.content_package import (
 )
 from trove.db.models import (
     Artifact,
-    BookChapter,
-    BookParagraph,
     Item,
     ItemTag,
     Run,
     RunStep,
     Tag,
-    TranscriptSegment,
 )
 from trove.domain.books import meaningful_title
 from trove.domain.items import (
@@ -147,12 +144,14 @@ class ProcessingService:
             result = cast(
                 CursorResult[Any],
                 session.execute(
-                    text(
-                        "UPDATE runs SET state = :state, current_stage = :stage, "
-                        "heartbeat_at = :now, started_at = COALESCE(started_at, :now) "
-                        "WHERE id = :run_id AND state = 'queued'"
-                    ),
-                    {"state": stage, "stage": stage, "now": now, "run_id": candidate.id},
+                    update(Run)
+                    .where(Run.id == candidate.id, Run.state == RunState.QUEUED)
+                    .values(
+                        state=stage,
+                        current_stage=stage,
+                        heartbeat_at=now,
+                        started_at=func.coalesce(Run.started_at, now),
+                    )
                 ),
             )
             session.commit()
@@ -349,11 +348,9 @@ class ProcessingService:
                 result = cast(
                     CursorResult[Any],
                     session.execute(
-                        text(
-                            "UPDATE runs SET state = 'cancelled', finished_at = :now "
-                            "WHERE id = :run_id AND state = 'queued'"
-                        ),
-                        {"now": now, "run_id": run_id},
+                        update(Run)
+                        .where(Run.id == run_id, Run.state == RunState.QUEUED)
+                        .values(state=RunState.CANCELLED, finished_at=now)
                     ),
                 )
                 session.commit()
@@ -415,6 +412,29 @@ class ProcessingService:
                 reclaimed += 1
             session.commit()
         return reclaimed
+
+    def heartbeat(self, run_id: str) -> None:
+        with self.sessions() as session:
+            session.execute(
+                update(Run)
+                .where(Run.id == run_id)
+                .values(heartbeat_at=utc_ms())
+            )
+            session.commit()
+
+    def mark_worker_failure(self, run_id: str) -> None:
+        with self.sessions() as session:
+            session.execute(
+                update(Run)
+                .where(Run.id == run_id)
+                .values(
+                    state=RunState.FAILED,
+                    error_code="internal.error",
+                    error_message="worker exited unexpectedly",
+                    finished_at=utc_ms(),
+                )
+            )
+            session.commit()
 
     # ------------------------------------------------------------------
     # Stage execution
@@ -511,22 +531,6 @@ class ProcessingService:
         result = self.transcriber.transcribe(audio_path, context)
         path = self.package.write_transcript(item.id, transcript_document(result, item))
         self._record_document(session, item, kind=ArtifactKind.TRANSCRIPT, path=path)
-        session.execute(
-            text("DELETE FROM transcript_segments WHERE item_id = :item_id"),
-            {"item_id": item.id},
-        )
-        session.add_all(
-            [
-                TranscriptSegment(
-                    item_id=item.id,
-                    seq=segment.seq,
-                    start_ms=segment.start_ms,
-                    end_ms=segment.end_ms,
-                    text=segment.text,
-                )
-                for segment in result.segments
-            ]
-        )
         if result.language:
             item.language = result.language
         item.updated_at = utc_ms()
@@ -558,33 +562,6 @@ class ProcessingService:
         elif previous_cover is not None:
             self.package.remove_artifact(item.id, previous_cover.path)
             session.delete(previous_cover)
-        session.execute(
-            text("DELETE FROM book_chapters WHERE item_id = :item_id"), {"item_id": item.id}
-        )
-        session.execute(
-            text("DELETE FROM book_paragraphs WHERE item_id = :item_id"), {"item_id": item.id}
-        )
-        for chapter in result.chapters:
-            session.add(
-                BookChapter(
-                    item_id=item.id,
-                    chapter_index=chapter.chapter_index,
-                    title=chapter.title,
-                    html=chapter.html,
-                    text=chapter.text,
-                )
-            )
-            session.add_all(
-                [
-                    BookParagraph(
-                        item_id=item.id,
-                        chapter_index=chapter.chapter_index,
-                        paragraph_index=index,
-                        text=paragraph,
-                    )
-                    for index, paragraph in enumerate(chapter.paragraphs)
-                ]
-            )
         item.title = title
         item.author = result.author or item.author
         item.language = result.language or item.language
@@ -672,12 +649,11 @@ class ProcessingService:
         return [
             str(name)
             for name in session.execute(
-                text(
-                    "SELECT tags.name FROM tags JOIN item_tags ON item_tags.tag_id = tags.id "
-                    "GROUP BY tags.id ORDER BY count(*) DESC, tags.normalized_name "
-                    "LIMIT :limit"
-                ),
-                {"limit": MAX_EXISTING_TAGS},
+                select(Tag.name)
+                .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .group_by(Tag.id)
+                .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
+                .limit(MAX_EXISTING_TAGS)
             ).scalars()
         ]
 

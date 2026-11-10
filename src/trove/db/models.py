@@ -138,57 +138,6 @@ class Artifact(Base):
     __table_args__ = (UniqueConstraint("item_id", "kind", name="uq_artifacts_item_kind"),)
 
 
-class TranscriptSegment(Base):
-    __tablename__ = "transcript_segments"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    item_id: Mapped[str] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    seq: Mapped[int] = mapped_column(Integer, nullable=False)
-    start_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    end_ms: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-
-    __table_args__ = (UniqueConstraint("item_id", "seq", name="uq_transcript_item_seq"),)
-
-
-class BookChapter(Base):
-    __tablename__ = "book_chapters"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    item_id: Mapped[str] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    chapter_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    title: Mapped[str] = mapped_column(String(1024), nullable=False)
-    html: Mapped[str] = mapped_column(Text, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("item_id", "chapter_index", name="uq_book_chapters_item_index"),
-    )
-
-
-class BookParagraph(Base):
-    __tablename__ = "book_paragraphs"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    item_id: Mapped[str] = mapped_column(
-        ForeignKey("items.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    chapter_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    paragraph_index: Mapped[int] = mapped_column(Integer, nullable=False)
-    text: Mapped[str] = mapped_column(Text, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint(
-            "item_id", "chapter_index", "paragraph_index", name="uq_book_paragraphs_item_ref"
-        ),
-        Index("ix_book_paragraphs_item_chapter", "item_id", "chapter_index"),
-    )
-
-
 class Tag(Base):
     __tablename__ = "tags"
 
