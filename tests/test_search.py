@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from sqlalchemy import text
 
 from trove.db.models import BookChapter, BookParagraph, TranscriptSegment
@@ -304,6 +306,48 @@ def test_index_rebuild_is_idempotent_and_preserves_results(host, monkeypatch):
 
     assert main(["index", "rebuild"]) == 0
     assert host.client.get("/api/search", params={"q": "重建"}).json() == before
+
+
+def test_cli_search_and_index_status(host, monkeypatch, capsys):
+    item = seed_item(host, title="CLI Search")
+    _add_segments(host, item.item.id, "命令行可以找到的记忆")
+    _index(host, item.item.id)
+    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
+    from trove.cli import main
+
+    assert main(["search", "记忆"]) == 0
+    output = capsys.readouterr().out
+    assert "CLI Search" in output
+    assert "transcript" in output
+
+    assert main(["search", "记忆", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["results"][0]["item"]["id"] == item.item.id
+    assert payload["results"][0]["evidence"][0]["ref"] == "0:0"
+
+    assert main(["index", "status"]) == 0
+    status = capsys.readouterr().out
+    assert "CLI Search" in status
+    assert "✓" in status
+
+    assert main(["index", "status", "--json"]) == 0
+    status_payload = json.loads(capsys.readouterr().out)
+    assert status_payload["items"][0]["stale"] is False
+
+
+def test_cli_index_status_reports_missing_transcript(host, monkeypatch, capsys):
+    item = seed_item(host, title="未索引内容")
+    _add_segments(host, item.item.id, "还没有进入 FTS")
+    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
+    from trove.cli import main
+
+    assert main(["index", "status", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+
+    row = payload["items"][0]
+    assert row["stale"] is True
+    assert "transcript" in row["missing_kinds"]
 
 
 def test_search_query_limits_and_fts_syntax_are_safe(host):

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import importlib.util
+import json
 import os
 import shutil
 import signal
@@ -21,8 +22,9 @@ from trove.db.engine import (
     head_revision,
     upgrade_database,
 )
-from trove.domain.items import ASR_MODEL_MISSING_HINT
+from trove.domain.items import ASR_MODEL_MISSING_HINT, ASR_NOT_INSTALLED_HINT
 from trove.logging_setup import configure_logging
+from trove.web.urls import locate_url
 from trove.worker import ensure_migrated, run_worker
 
 
@@ -47,9 +49,20 @@ def _build_parser() -> argparse.ArgumentParser:
     db_sub = db.add_subparsers(dest="db_command", required=True)
     db_sub.add_parser("upgrade", help="apply migrations")
 
+    search = subparsers.add_parser("search", help="search the library from the terminal")
+    search.add_argument("query")
+    search.add_argument("--json", action="store_true", dest="as_json")
+    search.add_argument("--limit", type=int, default=20)
+    search.add_argument("--type", default="", dest="item_type")
+    search.add_argument("--consumption", default="")
+    search.add_argument("--tag", default="")
+    search.add_argument("--source", default="")
+
     index = subparsers.add_parser("index", help="search index commands")
     index_sub = index.add_subparsers(dest="index_command", required=True)
     index_sub.add_parser("rebuild", help="rebuild the search index")
+    status = index_sub.add_parser("status", help="show search index coverage")
+    status.add_argument("--json", action="store_true", dest="as_json")
 
     subparsers.add_parser("doctor", help="check Host dependencies and layout")
     subparsers.add_parser("setup", help="download the ASR model and check dependencies")
@@ -88,8 +101,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "db":
         return _db(config)
+    if args.command == "search":
+        return _search(config, args)
     if args.command == "index":
-        return _index(config)
+        return _index(config, args)
     if args.command == "doctor":
         return _doctor(config)
     if args.command == "setup":
@@ -190,11 +205,131 @@ def _engine(config):
     return create_engine(f"sqlite:///{config.db_path}")
 
 
-def _index(config) -> int:
+def _search(config, args) -> int:
     runtime = build_runtime(config)
     ensure_migrated(runtime)
-    count = runtime.search_index.rebuild()
-    print(f"搜索索引已重建: {count} 个 Item")
+    try:
+        results = runtime.search.search(
+            args.query,
+            item_type=args.item_type or None,
+            consumption=args.consumption or None,
+            tag=args.tag or None,
+            platform=args.source or None,
+            limit=args.limit,
+        )
+    except ValueError as exc:
+        print(f"查询无效: {exc}", file=sys.stderr)
+        return 2
+    if args.as_json:
+        print(
+            json.dumps(
+                _search_payload(runtime, args.query, results),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print(f"{len(results)} 个 Item 命中「{args.query}」")
+    for result in results:
+        item = result.bundle.item
+        print(f"\n{item.title}")
+        print(f"  {item.source_type} · {item.platform} · {item.author or '未知作者'}")
+        for evidence in result.evidence:
+            print(f"  [{evidence.doc_kind}] {evidence.snippet}")
+            print(
+                "    "
+                + locate_url(
+                    item.id, item.source_type, evidence.doc_kind, evidence.ref
+                )
+            )
+    return 0
+
+
+def _search_payload(runtime, query: str, results) -> dict:
+    return {
+        "query": query,
+        "count": len(results),
+        "results": [
+            {
+                "item": runtime.library.payload(result.bundle),
+                "score": result.score,
+                "evidence": [
+                    {
+                        "doc_kind": evidence.doc_kind,
+                        "ref": evidence.ref,
+                        "text": evidence.text,
+                        "snippet": evidence.snippet,
+                        "score": evidence.score,
+                        "url": locate_url(
+                            result.bundle.item.id,
+                            result.bundle.item.source_type,
+                            evidence.doc_kind,
+                            evidence.ref,
+                        ),
+                    }
+                    for evidence in result.evidence
+                ],
+            }
+            for result in results
+        ],
+    }
+
+
+def _index(config, args) -> int:
+    if args.index_command == "rebuild":
+        runtime = build_runtime(config)
+        ensure_migrated(runtime)
+        count = runtime.search_index.rebuild()
+        print(f"搜索索引已重建: {count} 个 Item")
+        return 0
+    return _index_status(config, args)
+
+
+def _index_status(config, args) -> int:
+    runtime = build_runtime(config)
+    ensure_migrated(runtime)
+    status = runtime.search.index_status()
+    if args.as_json:
+        print(
+            json.dumps(
+                {
+                    "items": [
+                        {
+                            "item_id": item.item_id,
+                            "title": item.title,
+                            "counts": item.counts,
+                            "expected": item.expected,
+                            "missing_kinds": item.missing_kinds,
+                            "stale": bool(item.missing_kinds),
+                        }
+                        for item in status.items
+                    ],
+                    "total_rows": status.total_rows,
+                    "orphan_rows": status.orphan_rows,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    print(
+        f"搜索索引: {len(status.items)} 个 Item · {status.total_rows} 行"
+        f" · {status.orphan_rows} 条孤立行"
+    )
+    for item in status.items:
+        if item.missing_kinds:
+            missing = ", ".join(
+                f"{kind} {item.counts.get(kind, 0)}/{item.expected[kind]}"
+                for kind in item.missing_kinds
+            )
+            print(f"✗ {item.title} · 缺少: {missing}")
+            continue
+        counts = ", ".join(
+            f"{kind}={item.counts.get(kind, 0)}"
+            for kind in ("title", "summary", "tag", "transcript", "book")
+            if item.counts.get(kind)
+        )
+        print(f"✓ {item.title} · {counts or '无索引行'}")
     return 0
 
 
@@ -278,7 +413,7 @@ def _doctor(config) -> int:
 
 def _doctor_asr(config, problems: list[str]) -> None:
     if importlib.util.find_spec("mlx_whisper") is None:
-        problems.append("缺少 mlx-whisper，请运行: uv sync")
+        problems.append(ASR_NOT_INSTALLED_HINT)
         print("mlx-whisper: 缺失")
         return
     print("mlx-whisper: OK")
@@ -297,7 +432,7 @@ def _setup(config) -> int:
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         problems.append("缺少 FFmpeg/ffprobe，请安装: brew install ffmpeg")
     if importlib.util.find_spec("mlx_whisper") is None:
-        problems.append("缺少 mlx-whisper，请运行: uv sync")
+        problems.append(ASR_NOT_INSTALLED_HINT)
     if problems:
         print("需要处理：")
         for problem in problems:
