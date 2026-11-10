@@ -103,26 +103,26 @@ def test_invalid_progress_is_rejected(host):
 
 def test_transcript_and_listen_page(host):
     bundle = seed_item(host, title="Transcript item")
-    with host.runtime.sessions() as session:
-        session.add_all(
-            [
-                TranscriptSegment(
-                    item_id=bundle.item.id,
+    host.runtime.package.write_transcript(
+        bundle.item.id,
+        TranscriptDocument(
+            language="zh",
+            segments=[
+                TranscriptSegmentDocument(
                     seq=0,
                     start_ms=0,
                     end_ms=1000,
                     text="第一段关于记忆的内容。",
                 ),
-                TranscriptSegment(
-                    item_id=bundle.item.id,
+                TranscriptSegmentDocument(
                     seq=1,
                     start_ms=1000,
                     end_ms=2000,
                     text="第二段继续讨论智能体。",
                 ),
-            ]
-        )
-        session.commit()
+            ],
+        ),
+    )
     host.login()
     payload = host.client.get(f"/api/items/{bundle.item.id}/transcript").json()
     assert len(payload["segments"]) == 2
@@ -137,35 +137,41 @@ def test_transcript_and_listen_page(host):
     assert "<script type=\"application/json\" data-player-item>" in page.text
 
 
-def test_batch_replace_updates_segments_package_artifact_and_search(host):
-    bundle = seed_item(host, title="批量替换")
+def test_transcript_api_reads_package_not_db(host):
+    bundle = seed_item(host, title="Package transcript")
     with host.runtime.sessions() as session:
-        session.add_all(
-            [
-                TranscriptSegment(
-                    item_id=bundle.item.id,
-                    seq=0,
-                    start_ms=0,
-                    end_ms=1000,
-                    text="智能体需要记忆。",
-                ),
-                TranscriptSegment(
-                    item_id=bundle.item.id,
-                    seq=1,
-                    start_ms=1000,
-                    end_ms=2000,
-                    text="智能体也需要遗忘。",
-                ),
-                TranscriptSegment(
-                    item_id=bundle.item.id,
-                    seq=2,
-                    start_ms=2000,
-                    end_ms=3000,
-                    text="这段保持不变。",
-                ),
-            ]
+        session.add(
+            TranscriptSegment(
+                item_id=bundle.item.id,
+                seq=0,
+                start_ms=0,
+                end_ms=1000,
+                text="DB only segment",
+            )
         )
         session.commit()
+    host.runtime.package.write_transcript(
+        bundle.item.id,
+        TranscriptDocument(
+            language="zh",
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=0, start_ms=0, end_ms=1000, text="Package only segment"
+                )
+            ],
+        ),
+    )
+    host.login()
+
+    payload = host.client.get(f"/api/items/{bundle.item.id}/transcript").json()
+
+    assert [segment["text"] for segment in payload["segments"]] == [
+        "Package only segment"
+    ]
+
+
+def test_batch_replace_updates_segments_package_artifact_and_search(host):
+    bundle = seed_item(host, title="批量替换")
     package_path = host.runtime.package.write_transcript(
         bundle.item.id,
         TranscriptDocument(
@@ -221,6 +227,18 @@ def test_batch_replace_updates_segments_package_artifact_and_search(host):
     assert package["model"] == "fake-whisper"
     assert package["segments"][0]["text"] == "智能代理需要记忆。"
     with host.runtime.sessions() as session:
+        rows = list(
+            session.execute(
+                select(TranscriptSegment)
+                .where(TranscriptSegment.item_id == bundle.item.id)
+                .order_by(TranscriptSegment.seq)
+            ).scalars()
+        )
+        assert [row.text for row in rows] == [
+            "智能代理需要记忆。",
+            "智能代理也需要遗忘。",
+            "这段保持不变。",
+        ]
         artifact = session.execute(
             select(Artifact).where(
                 Artifact.item_id == bundle.item.id, Artifact.kind == "transcript"
