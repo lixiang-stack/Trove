@@ -5,52 +5,18 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
-from trove.domain.items import ContinueKind
-from trove.domain.reading import parse_book_locator
-from trove.errors import NotFoundError
-from trove.web.deps import render, run_logs, runtime
-from trove.web.templating import duration
+from trove.web.deps import continue_entries, render, run_logs, runtime
 
 router = APIRouter()
 
 
 @router.get("/continue", include_in_schema=False)
 def continue_page(request: Request):
-    app_runtime = runtime(request)
-    entries = []
-    for entry in app_runtime.library.continue_items():
-        item = entry.bundle.item
-        if entry.kind == ContinueKind.READ:
-            locator = parse_book_locator(item.book_locator)
-            progress = "继续阅读"
-            if locator is not None:
-                try:
-                    app_runtime.reading.chapter(item.id, locator.chapter_index)
-                except NotFoundError:
-                    pass
-                else:
-                    progress = f"第 {locator.chapter_index + 1} 章"
-        else:
-            progress = (
-                f"{duration(item.audio_position_sec)} / {duration(item.duration_sec)}"
-            )
-        entries.append(
-            {
-                "bundle": entry.bundle,
-                "kind": entry.kind,
-                "progress": progress,
-                "url": (
-                    f"/items/{item.id}/read"
-                    if entry.kind == ContinueKind.READ
-                    else f"/items/{item.id}/listen"
-                ),
-            }
-        )
     return render(
         request,
         "continue.html",
         {
-            "entries": entries,
+            "entries": continue_entries(runtime(request)),
             "active_nav": "continue",
         },
     )

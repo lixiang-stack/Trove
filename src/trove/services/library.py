@@ -30,6 +30,9 @@ from trove.ports import SearchIndex
 from trove.services.package_documents import source_document
 from trove.services.uploads import UploadStore
 
+HOME_PLACEHOLDER = "~"
+LOCAL_SOURCE_PLACEHOLDER = "<local-source>"
+
 
 def has_consumption_progress(item: Item) -> bool:
     if item.audio_position_sec > 0:
@@ -514,7 +517,6 @@ class LibraryService:
             "platform_label": PLATFORM_LABELS.get(item.platform, item.platform),
             "source_url_raw": item.source_url_raw,
             "source_url_canonical": item.source_url_canonical,
-            "source_path": item.source_path,
             "title": item.title,
             "author": item.author,
             "published_at": item.published_at,
@@ -541,6 +543,21 @@ class LibraryService:
             "has_cover": bundle.cover_artifact is not None,
             "audio_url": f"/api/items/{item.id}/audio" if bundle.audio_artifact else None,
             "cover_url": f"/api/items/{item.id}/cover" if bundle.cover_artifact else None,
+            "artifacts": [
+                {
+                    "kind": artifact.kind,
+                    "sha256": artifact.sha256,
+                    "size": artifact.size,
+                    "mime": artifact.mime,
+                    "duration_sec": artifact.duration_sec,
+                    "url": (
+                        f"/api/items/{item.id}/{artifact.kind}"
+                        if artifact.kind in {"audio", "cover"}
+                        else None
+                    ),
+                }
+                for artifact in sorted(bundle.artifacts, key=lambda row: row.kind)
+            ],
             "ai": (
                 {
                     "summary": bundle.ai_result.summary,
@@ -569,7 +586,9 @@ class LibraryService:
             "label": STAGE_LABELS.get(run.state, run.state),
             "current_stage": run.current_stage,
             "error_code": run.error_code,
-            "error_message": run.error_message,
+            "error_message": self._public_text(
+                run.error_message, source_path=bundle.item.source_path
+            ),
             "cancel_requested": run.cancel_requested_at is not None,
             "created_at": run.created_at,
             "started_at": run.started_at,
@@ -581,14 +600,28 @@ class LibraryService:
                     "state": step.state,
                     "attempt": step.attempt,
                     "error_code": step.error_code,
-                    "error_message": step.error_message,
+                    "error_message": self._public_text(
+                        step.error_message, source_path=bundle.item.source_path
+                    ),
                     "started_at": step.started_at,
                     "finished_at": step.finished_at,
                 }
                 for step in bundle.steps
             ],
-            "log_tail": tail_run_log(self.config, run.id),
+            "log_tail": [
+                self._public_text(line, source_path=bundle.item.source_path)
+                for line in tail_run_log(self.config, run.id)
+            ],
         }
+
+    def _public_text(
+        self, value: str | None, *, source_path: str | None = None
+    ) -> str | None:
+        if value is None:
+            return None
+        if source_path:
+            value = value.replace(source_path, LOCAL_SOURCE_PLACEHOLDER)
+        return value.replace(str(self.config.home), HOME_PLACEHOLDER)
 
 
 def _matches_states(bundle: ItemBundle, states: set[str]) -> bool:

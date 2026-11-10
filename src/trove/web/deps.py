@@ -9,10 +9,16 @@ from fastapi.responses import FileResponse, HTMLResponse
 from starlette.background import BackgroundTask
 
 from trove.composition import Runtime
-from trove.domain.items import CONSUMPTION_LABELS, PLATFORM_LABELS, SOURCE_TYPE_LABELS
-from trove.errors import TroveError
+from trove.domain.items import (
+    CONSUMPTION_LABELS,
+    PLATFORM_LABELS,
+    SOURCE_TYPE_LABELS,
+    ContinueKind,
+)
+from trove.domain.reading import parse_book_locator
+from trove.errors import NotFoundError, TroveError
 from trove.logging_setup import tail_run_log
-from trove.web.templating import templates
+from trove.web.templating import duration, templates
 
 
 def runtime(request: Request) -> Runtime:
@@ -34,6 +40,39 @@ def run_logs(runtime: Runtime, bundle) -> dict[str, list[str]]:
     if bundle.run is None:
         return {}
     return {bundle.run.id: tail_run_log(runtime.config, bundle.run.id)}
+
+
+def continue_entries(app_runtime: Runtime) -> list[dict[str, Any]]:
+    entries = []
+    for entry in app_runtime.library.continue_items():
+        item = entry.bundle.item
+        if entry.kind == ContinueKind.READ:
+            locator = parse_book_locator(item.book_locator)
+            progress = "继续阅读"
+            if locator is not None:
+                try:
+                    app_runtime.reading.chapter(item.id, locator.chapter_index)
+                except NotFoundError:
+                    pass
+                else:
+                    progress = f"第 {locator.chapter_index + 1} 章"
+        else:
+            progress = (
+                f"{duration(item.audio_position_sec)} / {duration(item.duration_sec)}"
+            )
+        entries.append(
+            {
+                "bundle": entry.bundle,
+                "kind": entry.kind,
+                "progress": progress,
+                "url": (
+                    f"/items/{item.id}/read"
+                    if entry.kind == ContinueKind.READ
+                    else f"/items/{item.id}/listen"
+                ),
+            }
+        )
+    return entries
 
 
 def error_page(request: Request, error: TroveError) -> HTMLResponse:
