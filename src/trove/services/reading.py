@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import BookChapterDocument, ContentPackage
-from trove.db.models import BookChapter, Item
+from trove.db.models import Item
 from trove.domain.items import ConsumptionState
 from trove.domain.reading import BookLocator, parse_book_locator, serialize_book_locator
 from trove.errors import NotFoundError, ValidationError
@@ -82,13 +81,19 @@ class ReadingService:
             )
         with self.sessions() as session:
             item = self._require_item(session, item_id)
-            # The DB is the derived index; use it for the cheap existence check.
-            chapter = session.execute(
-                select(BookChapter.id).where(
-                    BookChapter.item_id == item_id,
-                    BookChapter.chapter_index == locator.chapter_index,
+            document = self.package.read_book(item_id)
+            chapter = (
+                next(
+                    (
+                        candidate
+                        for candidate in document.chapters
+                        if candidate.chapter_index == locator.chapter_index
+                    ),
+                    None,
                 )
-            ).first()
+                if document is not None
+                else None
+            )
             if chapter is None:
                 raise ValidationError(
                     "Chapter not found", details={"code": "book.chapter_not_found"}
