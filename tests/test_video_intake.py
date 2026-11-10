@@ -134,6 +134,7 @@ def test_download_failure_is_reported_without_touching_library(host):
     assert host.client.get(f"/api/items/{first_id}").status_code == 200
 
 
+@pytest.mark.ffmpeg
 def test_detail_shows_source_metadata(host):
     host.login()
     response = host.client.post(

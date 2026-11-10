@@ -15,6 +15,7 @@ def _add_url(host, url="https://www.youtube.com/watch?v=dQw4w9WgXcQ") -> str:
     return response.json()["item"]["id"]
 
 
+@pytest.mark.ffmpeg
 def test_fake_stages_advance_in_order(host):
     item_id = _add_url(host)
     payload = host.wait_for_item(item_id)
@@ -97,6 +98,7 @@ def test_status_polling_stops_after_terminal(api_host):
     assert "hx-trigger" not in terminal.text
 
 
+@pytest.mark.ffmpeg
 def test_transcript_stays_searchable_when_organizing_fails(host):
     host.stack.organizer.fail_code = "llm.not_configured"
     item_id = _add_url(host)
@@ -112,6 +114,7 @@ def test_transcript_stays_searchable_when_organizing_fails(host):
     assert "Fixture Video" in page.text
 
 
+@pytest.mark.ffmpeg
 def test_artifact_stays_readable_after_later_stage_failure(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id = _add_url(host)
@@ -126,6 +129,7 @@ def test_artifact_stays_readable_after_later_stage_failure(host):
     assert audio.headers["etag"]
 
 
+@pytest.mark.ffmpeg
 def test_atomic_artifact_install_does_not_expose_partial_files(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id = _add_url(host)

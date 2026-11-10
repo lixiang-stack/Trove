@@ -48,6 +48,7 @@ addopts = "-q -m 'not network and not slow'"
 markers = [
   "network: hits real external services",
   "browser: requires a Playwright browser",
+  "ffmpeg: requires real FFmpeg/ffprobe integration",
   "slow: manual integration test with a downloaded model",
 ]
 filterwarnings = ["ignore::DeprecationWarning:starlette.*"]

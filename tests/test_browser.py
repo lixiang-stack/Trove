@@ -343,6 +343,7 @@ def test_empty_library_mobile_has_add_call_to_action(host, browser):
     context.close()
 
 
+@pytest.mark.ffmpeg
 def test_status_updates_and_polling_stops(host_factory, browser):
     host = host_factory(start_worker=False, home_name="browser-status")
     host.login()
@@ -377,6 +378,7 @@ def test_status_updates_and_polling_stops(host_factory, browser):
     context.close()
 
 
+@pytest.mark.ffmpeg
 def test_login_page_and_upload_flow(host, browser):
     context = browser.new_context(viewport={"width": 390, "height": 844})
     page = context.new_page()
