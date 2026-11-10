@@ -12,6 +12,7 @@ from typing import BinaryIO
 
 from trove.config import Config
 from trove.errors import NotFoundError, ValidationError
+from trove.ports import AudioExtractor, BookExtractor
 
 AUDIO_SUFFIXES = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".opus", ".wma", ".aiff"}
 VIDEO_SUFFIXES = {".mp4", ".mov", ".mkv", ".webm", ".m4v", ".avi"}
@@ -35,8 +36,15 @@ class UploadRecord:
 
 
 class UploadStore:
-    def __init__(self, config: Config) -> None:
+    def __init__(
+        self,
+        config: Config,
+        book_extractor: BookExtractor,
+        audio_extractor: AudioExtractor,
+    ) -> None:
         self.config = config
+        self.book_extractor = book_extractor
+        self.audio_extractor = audio_extractor
 
     def save_stream(
         self,
@@ -85,6 +93,10 @@ class UploadStore:
             if size == 0:
                 raise ValidationError("File is empty", details={"code": "upload.empty"})
             destination.chmod(0o600)
+            if detected_kind == "epub":
+                self.book_extractor.validate(destination)
+            else:
+                self.audio_extractor.probe(destination, kind=detected_kind)
             record = UploadRecord(
                 upload_id=upload_id,
                 filename=filename,
@@ -107,10 +119,17 @@ class UploadStore:
         path = self.config.uploads_dir / upload_id / "upload.json"
         if not path.exists():
             raise NotFoundError("Upload not found")
-        data = json.loads(path.read_text(encoding="utf-8"))
-        record = UploadRecord(**data)
-        if not Path(record.path).exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            record = UploadRecord(**data)
+        except (OSError, json.JSONDecodeError, TypeError):
+            raise NotFoundError("Upload not found") from None
+        uploaded = Path(record.path).resolve()
+        if not uploaded.is_relative_to(self.config.uploads_dir.resolve()):
+            raise NotFoundError("Upload not found")
+        if not uploaded.is_file():
             raise NotFoundError("Uploaded file has been cleaned up")
+        record.path = str(uploaded)
         return record
 
     def cleanup(self, upload_id: str) -> None:

@@ -500,6 +500,49 @@ def test_search_input_is_usable(host, browser):
     context.close()
 
 
+def test_pwa_service_worker_caches_only_shell_assets(host, browser):
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => navigator.serviceWorker && navigator.serviceWorker.ready",
+        timeout=15000,
+    )
+    scope = page.evaluate(
+        "async () => (await navigator.serviceWorker.ready).scope"
+    )
+    assert scope == f"{host.base_url}/"
+    page.wait_for_function(
+        "async () => (await caches.keys()).some((key) => key.includes('trove-shell'))",
+        timeout=15000,
+    )
+
+    page.evaluate("fetch('/api/health').then((response) => response.status)")
+    cached = page.evaluate(
+        """async () => {
+            const paths = [];
+            for (const name of await caches.keys()) {
+                const cache = await caches.open(name);
+                for (const request of await cache.keys()) {
+                    paths.push(new URL(request.url).pathname);
+                }
+            }
+            return paths;
+        }"""
+    )
+    assert cached
+    assert all(path.startswith("/static/") for path in cached)
+    assert not any(path.startswith("/api") or path == "/library" for path in cached)
+
+    context.set_offline(True)
+    offline = page.evaluate(
+        "() => fetch('/api/health').then(() => 'ok').catch(() => 'failed')"
+    )
+    assert offline == "failed"
+    context.set_offline(False)
+    context.close()
+
+
 def test_light_theme_is_forced_in_dark_system(host, browser):
     bundle = seed_item(host, title="深色系统下的可读性", author="作者")
     host.login()

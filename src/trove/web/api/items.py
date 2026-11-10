@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -9,17 +9,25 @@ from trove.domain.reading import BookLocator
 from trove.errors import ValidationError
 from trove.web.deps import runtime
 from trove.web.schemas import (
+    BookChapterResponse,
     ItemCreateRequest,
+    ItemCreateResponse,
+    ItemListResponse,
     ItemPatchRequest,
+    ItemSchema,
     ProgressRequest,
+    ProgressResponse,
     ReprocessRequest,
+    ReprocessResponse,
+    TagListResponse,
     TagRequest,
+    TranscriptResponse,
 )
 
 router = APIRouter()
 
 
-@router.get("/items")
+@router.get("/items", response_model=ItemListResponse)
 def api_list_items(
     request: Request,
     sort: str = "recent_added",
@@ -28,6 +36,8 @@ def api_list_items(
     consumption: str = "",
     tag: str = "",
     source: str = "",
+    limit: Annotated[int | None, Query(ge=1, le=200)] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     app_runtime = runtime(request)
     if sort not in {"recent_added", "recent_consumed"}:
@@ -41,13 +51,19 @@ def api_list_items(
         platform=source or None,
         tag=tag or None,
     )
+    total = len(bundles)
+    end = offset + limit if limit is not None else None
+    page = bundles[offset:end]
     return {
-        "items": [app_runtime.library.payload(bundle) for bundle in bundles],
-        "count": len(bundles),
+        "items": [app_runtime.library.payload(bundle) for bundle in page],
+        "count": len(page),
+        "total": total,
+        "limit": limit,
+        "offset": offset,
     }
 
 
-@router.post("/items")
+@router.post("/items", response_model=ItemCreateResponse)
 def api_create_item(request: Request, payload: ItemCreateRequest):
     app_runtime = runtime(request)
     if payload.kind == "url":
@@ -76,13 +92,13 @@ def api_create_item(request: Request, payload: ItemCreateRequest):
     )
 
 
-@router.get("/items/{item_id}")
+@router.get("/items/{item_id}", response_model=ItemSchema)
 def api_get_item(request: Request, item_id: str):
     app_runtime = runtime(request)
     return app_runtime.library.payload(app_runtime.library.get(item_id))
 
 
-@router.patch("/items/{item_id}")
+@router.patch("/items/{item_id}", response_model=ItemSchema)
 def api_patch_item(request: Request, item_id: str, payload: ItemPatchRequest):
     app_runtime = runtime(request)
     fields = payload.model_fields_set
@@ -104,21 +120,21 @@ def api_delete_item(request: Request, item_id: str):
     return Response(status_code=204)
 
 
-@router.post("/items/{item_id}/tags")
+@router.post("/items/{item_id}/tags", response_model=ItemSchema)
 def api_add_tag(request: Request, item_id: str, payload: TagRequest):
     app_runtime = runtime(request)
     bundle = app_runtime.library.add_tag(item_id, payload.tag)
     return app_runtime.library.payload(bundle)
 
 
-@router.delete("/items/{item_id}/tags/{tag:path}")
+@router.delete("/items/{item_id}/tags/{tag:path}", response_model=ItemSchema)
 def api_delete_tag(request: Request, item_id: str, tag: str):
     app_runtime = runtime(request)
     bundle = app_runtime.library.remove_tag(item_id, tag)
     return app_runtime.library.payload(bundle)
 
 
-@router.get("/tags")
+@router.get("/tags", response_model=TagListResponse)
 def api_tags(request: Request):
     app_runtime = runtime(request)
     return {
@@ -129,7 +145,7 @@ def api_tags(request: Request):
     }
 
 
-@router.get("/items/{item_id}/transcript")
+@router.get("/items/{item_id}/transcript", response_model=TranscriptResponse)
 def api_transcript(request: Request, item_id: str):
     app_runtime = runtime(request)
     return {
@@ -138,7 +154,10 @@ def api_transcript(request: Request, item_id: str):
     }
 
 
-@router.get("/items/{item_id}/book/chapters/{chapter_index}")
+@router.get(
+    "/items/{item_id}/book/chapters/{chapter_index}",
+    response_model=BookChapterResponse,
+)
 def api_book_chapter(request: Request, item_id: str, chapter_index: int):
     view = runtime(request).reading.chapter(item_id, chapter_index)
     return {
@@ -151,7 +170,7 @@ def api_book_chapter(request: Request, item_id: str, chapter_index: int):
     }
 
 
-@router.put("/items/{item_id}/progress")
+@router.put("/items/{item_id}/progress", response_model=ProgressResponse)
 def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     app_runtime = runtime(request)
     bundle: Any = None
@@ -179,7 +198,7 @@ def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     return {"ok": True, "item": app_runtime.library.payload(bundle)}
 
 
-@router.post("/items/{item_id}/retry")
+@router.post("/items/{item_id}/retry", response_model=ItemSchema)
 def api_retry(request: Request, item_id: str):
     app_runtime = runtime(request)
     app_runtime.processing.retry(item_id)
@@ -187,7 +206,9 @@ def api_retry(request: Request, item_id: str):
     return app_runtime.library.payload(bundle)
 
 
-@router.post("/items/{item_id}/reprocess", status_code=202)
+@router.post(
+    "/items/{item_id}/reprocess", status_code=202, response_model=ReprocessResponse
+)
 def api_reprocess(request: Request, item_id: str, payload: ReprocessRequest):
     app_runtime = runtime(request)
     run = app_runtime.processing.reprocess(item_id, payload.from_stage)
@@ -195,7 +216,7 @@ def api_reprocess(request: Request, item_id: str, payload: ReprocessRequest):
     return {"run_id": run.id, "item": app_runtime.library.payload(bundle)}
 
 
-@router.post("/items/{item_id}/cancel")
+@router.post("/items/{item_id}/cancel", response_model=ItemSchema)
 def api_cancel_item(request: Request, item_id: str):
     app_runtime = runtime(request)
     app_runtime.processing.cancel_item(item_id)
