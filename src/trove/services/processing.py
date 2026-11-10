@@ -24,6 +24,7 @@ from trove.db.models import (
     Tag,
     TranscriptSegment,
 )
+from trove.domain.books import meaningful_title
 from trove.domain.items import (
     ACTIVE_RUN_STATES,
     STAGE_DOWNLOADING,
@@ -35,11 +36,20 @@ from trove.domain.items import (
     RunState,
     stages_for,
 )
-from trove.errors import ConflictError, ProcessingCancelled, ProcessingError, TroveError
+from trove.domain.organization import MAX_EXISTING_TAGS
+from trove.errors import (
+    ConflictError,
+    NotFoundError,
+    ProcessingCancelled,
+    ProcessingError,
+    TroveError,
+    ValidationError,
+)
 from trove.logging_setup import append_run_log
 from trove.ports import (
     AudioExtractor,
     BookExtractor,
+    BookResult,
     Downloader,
     Organizer,
     SearchIndex,
@@ -50,6 +60,7 @@ from trove.ports import (
 INDEX_AFTER_STAGES = frozenset(
     {STAGE_DOWNLOADING, STAGE_TRANSCRIBING, STAGE_EXTRACTING_TEXT, STAGE_ORGANIZING}
 )
+REPROCESSABLE_STAGES = frozenset({STAGE_ORGANIZING, STAGE_INDEXING})
 
 
 class ProcessingService:
@@ -240,6 +251,56 @@ class ProcessingService:
             run.finished_at = None
             session.commit()
             append_run_log(self.config, run.id, "run queued for retry")
+            return run
+
+    def reprocess(self, item_id: str, from_stage: str) -> Run:
+        if from_stage not in REPROCESSABLE_STAGES:
+            raise ValidationError(
+                "Only organizing or indexing can be rerun",
+                details={"code": "reprocess.invalid_stage"},
+            )
+        with self.sessions() as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                raise NotFoundError("Content not found")
+            active = session.execute(
+                select(Run).where(
+                    Run.item_id == item_id,
+                    Run.state.in_(tuple(ACTIVE_RUN_STATES)),
+                )
+            ).scalars().first()
+            if active is not None:
+                return active
+            stages = stages_for(item.source_type)
+            if from_stage not in stages:
+                raise ValidationError(
+                    "Stage does not apply to this content type",
+                    details={"code": "reprocess.invalid_stage"},
+                )
+            now = utc_ms()
+            run = Run(
+                id=str(uuid.uuid4()),
+                item_id=item_id,
+                state=RunState.QUEUED,
+                created_at=now,
+            )
+            session.add(run)
+            session.flush()
+            for stage in stages:
+                if stage == from_stage:
+                    break
+                session.add(
+                    RunStep(
+                        run_id=run.id,
+                        stage=stage,
+                        state="completed",
+                        attempt=1,
+                        started_at=now,
+                        finished_at=now,
+                    )
+                )
+            session.commit()
+            append_run_log(self.config, run.id, f"run queued for {from_stage} reprocess")
             return run
 
     def cancel(self, run_id: str) -> Run:
@@ -465,10 +526,16 @@ class ProcessingService:
             raise ProcessingError("epub.invalid", "EPUB file is missing")
         book_path = self.package.artifact_path(item.id, book.path)
         result = self.book_extractor.extract(book_path, context)
+        title = self._book_title(result, item)
         payload = {
-            "title": result.title,
+            "title": title,
             "author": result.author,
             "language": result.language,
+            "cover": (
+                {"extension": result.cover.extension, "mime": result.cover.mime}
+                if result.cover
+                else None
+            ),
             "chapters": [
                 {
                     "chapter_index": chapter.chapter_index,
@@ -491,6 +558,18 @@ class ProcessingService:
             mime="application/json",
             duration=None,
         )
+        if result.cover is not None:
+            cover_temp = context.work_dir / f"cover{result.cover.extension}"
+            cover_temp.write_bytes(result.cover.data)
+            self._install_artifact(
+                session,
+                item,
+                kind="cover",
+                temp_path=cover_temp,
+                filename=f"cover{result.cover.extension}",
+                mime=result.cover.mime,
+                duration=None,
+            )
         session.execute(
             text("DELETE FROM book_chapters WHERE item_id = :item_id"), {"item_id": item.id}
         )
@@ -518,7 +597,7 @@ class ProcessingService:
                     for index, paragraph in enumerate(chapter.paragraphs)
                 ]
             )
-        item.title = result.title or item.title
+        item.title = title
         item.author = result.author or item.author
         item.language = result.language or item.language
         item.updated_at = utc_ms()
@@ -529,21 +608,14 @@ class ProcessingService:
         self, session: Session, item: Item, run_id: str, context: StageContext
     ) -> None:
         source_text = self._item_text(session, item)
-        existing_tags = list(
-            session.execute(
-                text(
-                    "SELECT tags.name FROM tags JOIN item_tags ON item_tags.tag_id = tags.id "
-                    "WHERE item_tags.item_id = :item_id"
-                ),
-                {"item_id": item.id},
-            ).scalars()
-        )
+        existing_tags = self._tag_vocabulary(session)
         result = self.organizer.organize(
             text=source_text,
             title=item.title,
-            existing_tags=[str(tag) for tag in existing_tags],
+            existing_tags=existing_tags,
             context=context,
         )
+        generated_at = utc_ms()
         payload = {
             "summary": result.summary,
             "tags": result.tags,
@@ -552,6 +624,7 @@ class ProcessingService:
             "input_tokens": result.input_tokens,
             "output_tokens": result.output_tokens,
             "cost_usd": result.cost_usd,
+            "generated_at": generated_at,
         }
         temp = context.work_dir / "ai.json"
         temp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -578,7 +651,7 @@ class ProcessingService:
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 cost_usd=result.cost_usd,
-                created_at=utc_ms(),
+                created_at=generated_at,
             )
         )
         self._replace_ai_tags(session, item.id, result.tags)
@@ -593,6 +666,17 @@ class ProcessingService:
                 f"search index refresh failed: {traceback.format_exc()}",
                 level="warning",
             )
+
+    def _book_title(self, result: BookResult, item: Item) -> str:
+        for candidate in (result.title, item.title):
+            title = meaningful_title(candidate)
+            if title:
+                return title
+        for chapter in result.chapters:
+            title = meaningful_title(chapter.title)
+            if title:
+                return title
+        return "Untitled book"
 
     def _item_text(self, session: Session, item: Item) -> str:
         rows = session.execute(
@@ -611,14 +695,28 @@ class ProcessingService:
         ).scalars()
         return "\n".join(str(row) for row in rows)
 
+    def _tag_vocabulary(self, session: Session) -> list[str]:
+        return [
+            str(name)
+            for name in session.execute(
+                text(
+                    "SELECT tags.name FROM tags JOIN item_tags ON item_tags.tag_id = tags.id "
+                    "GROUP BY tags.id ORDER BY count(*) DESC, tags.normalized_name "
+                    "LIMIT :limit"
+                ),
+                {"limit": MAX_EXISTING_TAGS},
+            ).scalars()
+        ]
+
     def _replace_ai_tags(self, session: Session, item_id: str, tags: list[str]) -> None:
         from trove.domain.tags import normalize_tag
 
-        existing = {
-            row.tag_id
-            for row in session.execute(
-                select(ItemTag).where(ItemTag.item_id == item_id, ItemTag.source == "ai")
-            ).scalars()
+        attached = {
+            row.tag_id: row
+            for row in session.execute(select(ItemTag).where(ItemTag.item_id == item_id)).scalars()
+        }
+        existing_ai = {
+            tag_id for tag_id, row in attached.items() if row.source == "ai"
         }
         keep: set[int] = set()
         for raw in tags:
@@ -634,13 +732,11 @@ class ProcessingService:
                 session.add(tag)
                 session.flush()
             if tag.id not in keep:
-                if tag.id not in existing:
+                if tag.id not in attached:
                     session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="ai"))
                 keep.add(tag.id)
-        for tag_id in existing - keep:
-            row = session.get(ItemTag, (item_id, tag_id))
-            if row is not None and row.source == "ai":
-                session.delete(row)
+        for tag_id in existing_ai - keep:
+            session.delete(attached[tag_id])
 
     # ------------------------------------------------------------------
     # Artifact helpers

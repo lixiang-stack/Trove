@@ -144,7 +144,7 @@
       }
     });
     const mini = $("#mini-player");
-    if (mini) mini.hidden = false;
+    if (mini) mini.hidden = !player.src;
   }
 
   function loadItem(item, { autoplay = false } = {}) {
@@ -344,7 +344,9 @@
       ? "/search"
       : path.startsWith("/add")
         ? "/add"
-        : "/library";
+        : path.startsWith("/continue")
+          ? "/continue"
+          : "/library";
     $all(".main-nav a, .bottom-nav a").forEach((link) => {
       link.classList.toggle("active", link.getAttribute("href") === active);
     });
@@ -359,12 +361,7 @@
       if (item) loadItem(item);
       return;
     }
-    const persisted = persistedItem();
-    if (persisted && persisted.audio_url) {
-      state.item = persisted;
-      state.speed = Number(persisted.speed || 1);
-      updateUI();
-    }
+    if (state.item) updateUI();
   }
 
   function init() {

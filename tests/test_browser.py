@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from .conftest import seed_item
@@ -58,6 +60,47 @@ def _seed_transcript(host, item_id: str) -> None:
             ]
         )
         session.commit()
+
+
+def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int = 2):
+    from trove.db.models import BookChapter, BookParagraph
+
+    bundle = seed_item(
+        host,
+        title=title,
+        source_type="epub",
+        with_audio=False,
+        duration=0.0,
+        run_state="completed",
+    )
+    with host.runtime.sessions() as session:
+        for chapter_index in range(chapters):
+            paragraphs = [
+                f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
+                for index in range(30)
+            ]
+            session.add(
+                BookChapter(
+                    item_id=bundle.item.id,
+                    chapter_index=chapter_index,
+                    title=f"第 {chapter_index + 1} 章",
+                    html="".join(f"<p>{text}</p>" for text in paragraphs),
+                    text="\n".join(paragraphs),
+                )
+            )
+            session.add_all(
+                [
+                    BookParagraph(
+                        item_id=bundle.item.id,
+                        chapter_index=chapter_index,
+                        paragraph_index=index,
+                        text=text,
+                    )
+                    for index, text in enumerate(paragraphs)
+                ]
+            )
+        session.commit()
+    return bundle
 
 
 def test_playback_navigation_inline_and_transcript(host, browser):
@@ -253,7 +296,7 @@ def test_book_search_result_scrolls_to_paragraph(host, browser):
     page = context.new_page()
     page.goto(f"{host.base_url}/search?q=bookword", wait_until="domcontentloaded")
     page.locator(".search-result .result-title").first.click()
-    page.wait_for_url("**/read#paragraph-0-0")
+    page.wait_for_url("**/read?chapter=0#paragraph-0-0")
     page.wait_for_selector(".paragraph.is-focused")
     assert page.locator("#paragraph-0-0").is_visible()
     context.close()
@@ -749,3 +792,151 @@ def test_all_pages_pass_contrast_audit_in_light_and_dark(host, browser):
         failures = _contrast_failures(page)
         assert failures == [], f"{color_scheme} contrast failures on /login: {failures}"
         context.close()
+
+
+def test_library_has_no_mini_player_without_a_selection(host, browser):
+    bundle = seed_item(host, title="未播放内容", duration=20.0, audio_fixture="long.m4a")
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    assert page.locator("#mini-player").is_visible() is False
+    page.evaluate(
+        """(item) => window.localStorage.setItem("trove.lastItem", JSON.stringify(item))""",
+        {
+            "id": bundle.item.id,
+            "title": bundle.item.title,
+            "audio_url": f"/api/items/{bundle.item.id}/audio",
+            "position": 5,
+            "duration": 20,
+            "listen_url": f"/items/{bundle.item.id}/listen",
+        },
+    )
+    page.goto(f"{host.base_url}/search", wait_until="domcontentloaded")
+    assert page.locator("#mini-player").is_visible() is False
+    context.close()
+
+
+def test_reader_chapter_navigation_and_scroll_progress_restore(host, browser):
+    bundle = _seed_book_with_chapters(host, title="阅读进度书")
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/read", wait_until="domcontentloaded")
+    assert "第 1 章第 1 段" in page.locator(".book-chapter").inner_text()
+    page.click(".reader-toc a[href$='chapter=1']")
+    page.wait_for_url("**/read?chapter=1")
+    assert "第 2 章第 1 段" in page.locator(".book-chapter").inner_text()
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    wait_until(
+        lambda: (
+            host.item(bundle.item.id)["book_locator"] is not None
+            and json.loads(host.item(bundle.item.id)["book_locator"])["scroll_ratio"] > 0
+        ),
+        timeout=8,
+    )
+    locator = host.item(bundle.item.id)["book_locator"]
+    assert json.loads(locator)["chapter_index"] == 1
+    assert json.loads(locator)["scroll_ratio"] > 0
+
+    page.goto(f"{host.base_url}/items/{bundle.item.id}/read", wait_until="domcontentloaded")
+    assert "第 2 章第 1 段" in page.locator(".book-chapter").inner_text()
+    page.wait_for_function("() => window.scrollY > 100", timeout=8000)
+    context.close()
+
+
+def test_continue_one_click_resumes_audio_and_book(host, browser):
+    audio = seed_item(
+        host,
+        title="继续听",
+        consumption_state="in_progress",
+        position=5.0,
+        duration=20.0,
+        audio_fixture="long.m4a",
+    )
+    book = _seed_book_with_chapters(host, title="继续读")
+    with host.runtime.sessions() as session:
+        from sqlalchemy import text
+
+        session.execute(
+            text(
+                "UPDATE items SET book_locator = :locator, consumption_state = 'in_progress' "
+                "WHERE id = :item_id"
+            ),
+            {
+                "locator": '{"chapter_index":1,"paragraph_index":0,"scroll_ratio":0.2}',
+                "item_id": book.item.id,
+            },
+        )
+        session.commit()
+    context = _context(browser, host)
+    page = context.new_page()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{host.base_url}/continue", wait_until="domcontentloaded")
+    assert page.locator(f".continue-card[href='/items/{audio.item.id}/listen']").is_visible()
+    assert page.locator(f".continue-card[href='/items/{book.item.id}/read']").is_visible()
+    page.click(f"a[href='/items/{book.item.id}/read']")
+    page.wait_for_url(f"**/items/{book.item.id}/read")
+    assert "第 2 章第 1 段" in page.locator(".book-chapter").inner_text()
+
+    page.goto(f"{host.base_url}/continue", wait_until="domcontentloaded")
+    page.click(f"a[href='/items/{audio.item.id}/listen']")
+    page.wait_for_url(f"**/items/{audio.item.id}/listen")
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && a.readyState >= 1 && a.currentTime >= 4.5; }",
+        timeout=10000,
+    )
+    context.close()
+
+
+def test_add_page_submit_buttons_align_per_row(host, browser):
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/add", wait_until="domcontentloaded")
+    buttons = page.locator(".add-grid form button[type='submit']")
+    assert buttons.count() == 4
+    for first, second in ((0, 1), (2, 3)):
+        top_a = buttons.nth(first).bounding_box()["y"]
+        top_b = buttons.nth(second).bounding_box()["y"]
+        assert abs(top_a - top_b) < 2, (top_a, top_b)
+    context.close()
+
+
+def test_export_selection_requires_a_checked_item(host, browser):
+    first = seed_item(host, title="Export A")
+    second = seed_item(host, title="Export B")
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    submit = page.locator("[data-export-submit]")
+    assert submit.is_disabled()
+    add_link = page.locator('.library-actions a[href="/add"]')
+    submit_box = submit.bounding_box()
+    add_box = add_link.bounding_box()
+    assert abs(submit_box["y"] - add_box["y"]) < 2
+    page.click("[data-export-select-all]")
+    assert not submit.is_disabled()
+    assert page.locator(f'[data-export-check][value="{first.item.id}"]').is_checked()
+    assert page.locator(f'[data-export-check][value="{second.item.id}"]').is_checked()
+    page.locator(f'[data-export-check][value="{first.item.id}"]').uncheck()
+    assert not submit.is_disabled()
+    page.locator(f'[data-export-check][value="{second.item.id}"]').uncheck()
+    assert submit.is_disabled()
+    context.close()
+
+
+def test_tag_edit_updates_library_and_search(host, browser):
+    bundle = seed_item(host, title="Tag 编辑页", tags=["初始"])
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/items/{bundle.item.id}", wait_until="domcontentloaded")
+    page.fill(".tag-add-form input[name='tag']", "手动加标签")
+    page.click(".tag-add-form button[type='submit']")
+    page.wait_for_url(f"**/items/{bundle.item.id}")
+    tag = page.locator(".tag-row .tag", has_text="手动加标签")
+    assert tag.is_visible()
+    assert tag.locator(".tag-source").count() == 0
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    assert "手动加标签" in page.locator(".queue-item").inner_text()
+    page.goto(f"{host.base_url}/search?q=手动加标签", wait_until="domcontentloaded")
+    assert page.locator(".search-result").first.is_visible()
+    context.close()

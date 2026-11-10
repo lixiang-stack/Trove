@@ -38,6 +38,27 @@ def test_library_orders_by_recent_added(host):
     )[0] in {first.item.id, second.item.id, third.item.id}
 
 
+def test_consumption_state_without_progress_displays_as_unstarted(host):
+    bundle = seed_item(
+        host,
+        title="Stale progress state",
+        consumption_state="in_progress",
+        position=0.0,
+    )
+    host.login()
+    payload = host.item(bundle.item.id)
+    assert payload["consumption_state"] == "unstarted"
+    assert payload["consumption_label"] == "Unstarted"
+    page = host.client.get("/library")
+    assert "Stale progress state" in page.text
+    assert "consumption state-in_progress" not in page.text
+    assert "consumption state-unstarted" in page.text
+    unstarted = host.client.get("/library", params={"consumption": "unstarted"})
+    assert "Stale progress state" in unstarted.text
+    in_progress = host.client.get("/library", params={"consumption": "in_progress"})
+    assert "Stale progress state" not in in_progress.text
+
+
 def test_library_orders_by_recent_consumed(host):
     first = seed_item(
         host,
@@ -57,8 +78,8 @@ def test_library_orders_by_recent_consumed(host):
         from trove.db.models import Item
 
         now = utc_ms()
-        session.get(Item, first.item.id).updated_at = now - 1000
-        session.get(Item, second.item.id).updated_at = now - 500
+        session.get(Item, first.item.id).last_consumed_at = now - 1000
+        session.get(Item, second.item.id).last_consumed_at = now - 500
         session.commit()
     host.login()
     assert _order(host.client.get("/library?sort=recent_consumed").text)[:2] == [

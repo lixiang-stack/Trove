@@ -97,7 +97,10 @@
 {% macro item_row(bundle, loop_index) -%}
 {% set item = bundle.item %}
 <article class="queue-item" data-item-id="{{ item.id }}">
-  <div class="queue-index">{{ "%02d"|format(loop_index) }}</div>
+  <div class="queue-index">
+    <input class="export-check" type="checkbox" name="ids" value="{{ item.id }}" form="export-form" data-export-check aria-label="选择 {{ item.title }}">
+    <span>{{ "%02d"|format(loop_index) }}</span>
+  </div>
   <a class="cover cover-{{ item.id|cover_tone }}" href="/items/{{ item.id }}/listen"
      hx-get="/items/{{ item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true" aria-hidden="true" tabindex="-1">
     <span>{{ item.title[:1] }}</span>
@@ -111,7 +114,7 @@
     </span>
     <span class="queue-state">
       {{ status_badge(bundle, 'row') }}
-      <span class="consumption state-{{ item.consumption_state }}">{{ consumption_labels.get(item.consumption_state, item.consumption_state) }}</span>
+      <span class="consumption state-{{ bundle.consumption_state }}">{{ bundle.consumption_label }}</span>
       {% if item.duration_sec %}<span class="duration">{{ item.duration_sec|duration }}</span>{% endif %}
     </span>
     {% if item.duration_sec and item.audio_position_sec and item.audio_position_sec > 0 %}

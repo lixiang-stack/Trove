@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Continue · 拾藏{% endblock %}
+{% block main %}
+<section class="continue-page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">PICK UP AGAIN</p>
+      <h1>Continue</h1>
+      <p class="subtitle">最近的听读进度，一键回到上次位置。</p>
+    </div>
+  </header>
+
+  {% if entries %}
+  <section class="continue-list" aria-label="继续收听和阅读">
+    {% for entry in entries %}
+    {% set item = entry.bundle.item %}
+    <a class="continue-card" href="{{ entry.url }}"
+       hx-get="{{ entry.url }}" hx-target="#main" hx-select="#main" hx-push-url="true">
+      <div class="cover cover-{{ item.id|cover_tone }}">
+        {% if entry.bundle.cover_artifact %}
+        <img src="/api/items/{{ item.id }}/cover" alt="" loading="lazy">
+        {% else %}
+        <span>{{ item.title[:1] }}</span>
+        {% endif %}
+      </div>
+      <div class="continue-body">
+        <span class="eyebrow">{{ "READING" if entry.kind == "read" else "LISTENING" }}</span>
+        <strong class="continue-title">{{ item.title }}</strong>
+        <span class="continue-meta">{{ item.author or "未知作者" }} · {{ entry.progress }}</span>
+      </div>
+      <span class="continue-cta">{{ "继续读 →" if entry.kind == "read" else "继续听 →" }}</span>
+    </a>
+    {% endfor %}
+  </section>
+  {% else %}
+  <section class="empty-state">
+    <div class="empty-mark">↻</div>
+    <h2>还没有进行中的内容</h2>
+    <p>开始听一段音频或读一本书，进度会自动出现在这里。</p>
+    <a href="/library" role="button" class="secondary" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">返回 Library</a>
+    <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加内容</a>
+  </section>
+  {% endif %}
+</section>
+{% endblock %}
