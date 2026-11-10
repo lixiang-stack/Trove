@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from trove.db.models import Run
 from trove.worker import WorkerThread
 
 
@@ -50,6 +51,28 @@ def test_stage_failure_is_terminal_and_readable(host):
     api = host.client.get(f"/api/runs/{run['id']}").json()
     assert api["run"]["error_code"] == "download.login_required"
     assert api["run"]["log_tail"]
+
+
+def test_missing_source_json_fails_the_run(api_host):
+    bundle, _ = api_host.runtime.library.create_item(
+        source_key="missing-source-json",
+        source_type="local_audio",
+        platform="local",
+        title="Missing source",
+    )
+    (api_host.config.library_dir / bundle.item.id / "source.json").unlink()
+    run = api_host.runtime.processing.create_run(bundle.item.id)
+    assert api_host.runtime.processing.claim_next() == run.id
+
+    api_host.runtime.processing.process(run.id)
+
+    with api_host.runtime.sessions() as session:
+        row = session.get(Run, run.id)
+        assert row is not None
+        assert row.state == "failed"
+        assert row.error_code == "storage.source_missing"
+        assert row.current_stage is None
+        assert row.finished_at is not None
 
 
 def test_two_workers_claim_only_one_run(api_host):

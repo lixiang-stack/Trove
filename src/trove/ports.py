@@ -3,7 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from trove.content_package import SourceDocument
 
 __all__ = [
     "AudioExtractor",
@@ -12,6 +15,7 @@ __all__ = [
     "BookCoverData",
     "BookExtractor",
     "BookResult",
+    "DOWNLOAD_MEDIA_FILENAME",
     "DownloadResult",
     "Downloader",
     "FeedClient",
@@ -27,6 +31,9 @@ __all__ = [
     "TranscriptResult",
     "TranscriptSegmentData",
 ]
+
+
+DOWNLOAD_MEDIA_FILENAME = "download.media"
 
 
 @dataclass(slots=True)
@@ -150,7 +157,9 @@ class SearchResult:
 
 
 class Downloader(Protocol):
-    def download(self, source: dict[str, Any], context: StageContext) -> DownloadResult: ...
+    def download(
+        self, source: SourceDocument, context: StageContext
+    ) -> DownloadResult: ...
 
 
 class FeedClient(Protocol):

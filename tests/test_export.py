@@ -4,7 +4,12 @@ import io
 import zipfile
 
 from trove.clock import utc_ms
-from trove.content_package import sha256_file
+from trove.content_package import (
+    AiDocument,
+    TranscriptDocument,
+    TranscriptSegment,
+    sha256_file,
+)
 
 from .conftest import seed_item
 from .fakes import FIXTURES
@@ -39,15 +44,14 @@ def _seed_video(host):
     with host.runtime.sessions() as session:
         from trove.db.models import Artifact
 
-        transcript = host.runtime.package.write_json(
+        transcript = host.runtime.package.write_transcript(
             item_id,
-            "transcript.json",
-            {
-                "language": "zh",
-                "segments": [
-                    {"seq": 0, "start_ms": 0, "end_ms": 1000, "text": "导出测试"}
+            TranscriptDocument(
+                language="zh",
+                segments=[
+                    TranscriptSegment(seq=0, start_ms=0, end_ms=1000, text="导出测试")
                 ],
-            },
+            ),
         )
         session.add(
             Artifact(
@@ -59,19 +63,18 @@ def _seed_video(host):
                 mime="application/json",
             )
         )
-        ai = host.runtime.package.write_json(
+        ai = host.runtime.package.write_ai(
             item_id,
-            "ai.json",
-            {
-                "summary": "视频摘要",
-                "tags": ["导出"],
-                "model": "fake",
-                "prompt_version": "v1",
-                "input_tokens": 1,
-                "output_tokens": 1,
-                "cost_usd": 0.0,
-                "generated_at": utc_ms(),
-            },
+            AiDocument(
+                summary="视频摘要",
+                tags=["导出"],
+                model="fake",
+                prompt_version="v1",
+                input_tokens=1,
+                output_tokens=1,
+                cost_usd=0.0,
+                generated_at=utc_ms(),
+            ),
         )
         session.add(
             Artifact(

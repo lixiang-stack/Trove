@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from dataclasses import replace
 from typing import Any
@@ -11,6 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from trove.content_package import ContentPackage
 from trove.db.models import Item
 from trove.domain.search import build_match_query, norm_text, normalize_text
+from trove.errors import StorageError
 from trove.ports import SearchHit, SearchResult
 
 KIND_WEIGHT = {"title": 3.0, "summary": 2.0, "tag": 2.0, "transcript": 1.0, "book": 1.0}
@@ -177,47 +177,36 @@ class FtsSearchIndex:
 
 
     def _package_transcript(self, item_id: str) -> list[tuple[str, str, str]] | None:
-        data = self._read_package_json(item_id, "transcript.json")
-        if data is None:
+        try:
+            document = self.package.read_transcript(item_id)
+        except StorageError:
+            return None
+        if document is None:
             return None
         documents: list[tuple[str, str, str]] = []
-        for segment in data.get("segments") or []:
-            if not isinstance(segment, dict):
+        for segment in document.segments:
+            text = segment.text.strip()
+            if not text:
                 continue
-            text = str(segment.get("text") or "").strip()
-            seq = segment.get("seq")
-            start_ms = segment.get("start_ms")
-            if not text or not isinstance(seq, int) or not isinstance(start_ms, int):
-                continue
-            documents.append((text, "transcript", f"{seq}:{start_ms}"))
+            documents.append((text, "transcript", f"{segment.seq}:{segment.start_ms}"))
         return documents or None
 
     def _package_book(self, item_id: str) -> list[tuple[str, str, str]] | None:
-        data = self._read_package_json(item_id, "book.json")
-        if data is None:
+        try:
+            document = self.package.read_book(item_id)
+        except StorageError:
+            return None
+        if document is None:
             return None
         documents: list[tuple[str, str, str]] = []
-        for chapter in data.get("chapters") or []:
-            if not isinstance(chapter, dict):
-                continue
-            chapter_index = chapter.get("chapter_index")
-            if not isinstance(chapter_index, int):
-                continue
-            for paragraph_index, paragraph in enumerate(chapter.get("paragraphs") or []):
-                text = str(paragraph or "").strip()
+        for chapter in document.chapters:
+            for paragraph_index, paragraph in enumerate(chapter.paragraphs):
+                text = paragraph.strip()
                 if text:
                     documents.append(
-                        (text, "book", f"{chapter_index}:{paragraph_index}")
+                        (text, "book", f"{chapter.chapter_index}:{paragraph_index}")
                     )
         return documents or None
-
-    def _read_package_json(self, item_id: str, filename: str) -> dict[str, Any] | None:
-        path = self.package.directory(item_id) / filename
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        return data if isinstance(data, dict) else None
 
 
 def _add_hit(hits: dict[tuple[str, str, str], SearchHit], hit: SearchHit) -> None:
