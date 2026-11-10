@@ -16,7 +16,7 @@ _LATIN_RE = re.compile(r"[0-9a-z]+(?:[._+-][0-9a-z]+)*")
 MAX_QUERY_LENGTH = 200
 
 
-def _is_cjk(char: str) -> bool:
+def is_cjk(char: str) -> bool:
     code = ord(char)
     return any(start <= code <= end for start, end in _CJK_RANGES)
 
@@ -32,9 +32,9 @@ def _scan(normalized: str):
     position = 0
     while position < len(normalized):
         char = normalized[position]
-        if _is_cjk(char):
+        if is_cjk(char):
             start = position
-            while position < len(normalized) and _is_cjk(normalized[position]):
+            while position < len(normalized) and is_cjk(normalized[position]):
                 position += 1
             yield "cjk", normalized[start:position]
             continue

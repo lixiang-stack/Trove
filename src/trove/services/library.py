@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import ColumnElement, case, false, func, or_, select
+from sqlalchemy import ColumnElement, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage
-from trove.db.models import Artifact, Item, ItemTag, Run, RunStep, Tag
+from trove.db.models import AiResult, Artifact, Item, ItemTag, Run, RunStep, Tag
 from trove.domain.items import (
     ACTIVE_RUN_STATES,
     CONSUMPTION_LABELS,
@@ -22,10 +22,30 @@ from trove.domain.items import (
     ConsumptionState,
     RunState,
 )
+from trove.domain.reading import parse_book_locator
 from trove.domain.tags import normalize_tag
 from trove.errors import ConflictError, NotFoundError, TroveError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
+
+
+def has_consumption_progress(item: Item) -> bool:
+    if item.audio_position_sec > 0:
+        return True
+    locator = parse_book_locator(item.book_locator)
+    return locator is not None and (
+        locator.chapter_index > 0
+        or (locator.paragraph_index or 0) > 0
+        or locator.scroll_ratio > 0.001
+    )
+
+
+def effective_consumption_state(item: Item) -> str:
+    if item.consumption_state == ConsumptionState.IN_PROGRESS and not has_consumption_progress(
+        item
+    ):
+        return ConsumptionState.UNSTARTED
+    return item.consumption_state
 
 
 @dataclass(slots=True)
@@ -35,6 +55,16 @@ class ItemBundle:
     run: Run | None
     steps: list[RunStep]
     artifacts: list[Artifact]
+    ai_result: AiResult | None = None
+    tag_sources: dict[int, str] = field(default_factory=dict)
+
+    @property
+    def consumption_state(self) -> str:
+        return effective_consumption_state(self.item)
+
+    @property
+    def consumption_label(self) -> str:
+        return CONSUMPTION_LABELS.get(self.consumption_state, self.consumption_state)
 
     @property
     def audio_artifact(self) -> Artifact | None:
@@ -43,6 +73,10 @@ class ItemBundle:
     @property
     def book_artifact(self) -> Artifact | None:
         return next((artifact for artifact in self.artifacts if artifact.kind == "book"), None)
+
+    @property
+    def cover_artifact(self) -> Artifact | None:
+        return next((artifact for artifact in self.artifacts if artifact.kind == "cover"), None)
 
     @property
     def run_state(self) -> str:
@@ -73,6 +107,12 @@ class ItemBundle:
         return "Completed"
 
 
+@dataclass(slots=True)
+class ContinueEntry:
+    bundle: ItemBundle
+    kind: str
+
+
 def item_bundle(session: Session, item: Item) -> ItemBundle:
     run = session.execute(
         select(Run).where(Run.item_id == item.id).order_by(Run.created_at.desc(), Run.id.desc())
@@ -86,18 +126,33 @@ def item_bundle(session: Session, item: Item) -> ItemBundle:
                 .order_by(RunStep.started_at, RunStep.id)
             ).scalars()
         )
-    tags = list(
+    tag_rows = list(
         session.execute(
-            select(Tag)
-            .join(ItemTag, ItemTag.tag_id == Tag.id)
+            select(ItemTag)
+            .join(Tag, Tag.id == ItemTag.tag_id)
             .where(ItemTag.item_id == item.id)
             .order_by(Tag.normalized_name)
         ).scalars()
     )
+    tags = [row.tag for row in tag_rows]
+    tag_sources = {row.tag_id: row.source for row in tag_rows}
     artifacts = list(
         session.execute(select(Artifact).where(Artifact.item_id == item.id)).scalars()
     )
-    return ItemBundle(item=item, tags=tags, run=run, steps=steps, artifacts=artifacts)
+    ai_result = session.execute(
+        select(AiResult)
+        .where(AiResult.item_id == item.id)
+        .order_by(AiResult.created_at.desc(), AiResult.id.desc())
+    ).scalars().first()
+    return ItemBundle(
+        item=item,
+        tags=tags,
+        run=run,
+        steps=steps,
+        artifacts=artifacts,
+        ai_result=ai_result,
+        tag_sources=tag_sources,
+    )
 
 
 class LibraryService:
@@ -203,20 +258,11 @@ class LibraryService:
         with self.sessions() as session:
             statement = select(Item)
             for condition in self._filter_conditions(
-                item_type=item_type, consumption=consumption, platform=platform, tag=tag
+                item_type=item_type, platform=platform, tag=tag
             ):
                 statement = statement.where(condition)
             if sort == "recent_consumed":
-                activity = case(
-                    (
-                        or_(
-                            Item.consumption_state != ConsumptionState.UNSTARTED,
-                            Item.audio_position_sec > 0,
-                        ),
-                        Item.updated_at,
-                    ),
-                    else_=Item.created_at,
-                )
+                activity = func.coalesce(Item.last_consumed_at, Item.created_at)
                 statement = statement.order_by(activity.desc(), Item.id.desc())
             else:
                 statement = statement.order_by(Item.created_at.desc(), Item.id.desc())
@@ -224,9 +270,41 @@ class LibraryService:
                 statement = statement.limit(limit)
             items = session.scalars(statement).all()
             bundles = [item_bundle(session, item) for item in items]
+        if consumption:
+            bundles = [
+                bundle for bundle in bundles if bundle.consumption_state == consumption
+            ]
         if not states:
             return bundles
         return [bundle for bundle in bundles if _matches_states(bundle, states)]
+
+    def continue_items(self, *, limit: int = 20) -> list[ContinueEntry]:
+        with self.sessions() as session:
+            items = list(
+                session.execute(
+                    select(Item)
+                    .where(
+                        Item.consumption_state != ConsumptionState.FINISHED,
+                        or_(
+                            Item.audio_position_sec > 0,
+                            Item.book_locator.is_not(None),
+                        ),
+                    )
+                    .order_by(
+                        func.coalesce(Item.last_consumed_at, Item.updated_at).desc(),
+                        Item.id.desc(),
+                    )
+                    .limit(limit)
+                ).scalars()
+            )
+            return [
+                ContinueEntry(
+                    bundle=item_bundle(session, item),
+                    kind="read" if item.book_locator else "listen",
+                )
+                for item in items
+                if has_consumption_progress(item)
+            ]
 
     def filtered_item_ids(
         self,
@@ -237,26 +315,28 @@ class LibraryService:
         tag: str | None = None,
     ) -> set[str]:
         with self.sessions() as session:
-            statement = select(Item.id)
+            statement = select(Item)
             for condition in self._filter_conditions(
-                item_type=item_type, consumption=consumption, platform=platform, tag=tag
+                item_type=item_type, platform=platform, tag=tag
             ):
                 statement = statement.where(condition)
-            return {str(item_id) for item_id in session.execute(statement).scalars()}
+            items = session.scalars(statement).all()
+        return {
+            item.id
+            for item in items
+            if consumption is None or effective_consumption_state(item) == consumption
+        }
 
     @staticmethod
     def _filter_conditions(
         *,
         item_type: str | None = None,
-        consumption: str | None = None,
         platform: str | None = None,
         tag: str | None = None,
     ) -> list[ColumnElement[bool]]:
         conditions: list[ColumnElement[bool]] = []
         if item_type:
             conditions.append(Item.source_type == item_type)
-        if consumption:
-            conditions.append(Item.consumption_state == consumption)
         if platform:
             conditions.append(Item.platform == platform)
         if tag:
@@ -290,6 +370,94 @@ class LibraryService:
     # ------------------------------------------------------------------
     # Mutations
     # ------------------------------------------------------------------
+    def add_tag(self, item_id: str, raw: str) -> ItemBundle:
+        display, normalized = normalize_tag(raw)
+        with self.sessions() as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                raise NotFoundError("Content not found")
+            tag = session.execute(
+                select(Tag).where(Tag.normalized_name == normalized)
+            ).scalars().first()
+            if tag is None:
+                tag = Tag(name=display, normalized_name=normalized)
+                session.add(tag)
+                session.flush()
+            row = session.get(ItemTag, (item_id, tag.id))
+            if row is None:
+                session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="user"))
+            else:
+                row.source = "user"
+            item.updated_at = utc_ms()
+            session.commit()
+            bundle = item_bundle(session, item)
+        self.search_index.index_item(item_id)
+        return bundle
+
+    def replace_tags(self, item_id: str, raw_tags: list[str]) -> ItemBundle:
+        normalized_tags: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for raw in raw_tags:
+            display, normalized = normalize_tag(raw)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            normalized_tags.append((display, normalized))
+        with self.sessions() as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                raise NotFoundError("Content not found")
+            attached = {
+                row.tag_id: row
+                for row in session.execute(
+                    select(ItemTag).where(ItemTag.item_id == item_id)
+                ).scalars()
+            }
+            keep: set[int] = set()
+            for display, normalized in normalized_tags:
+                tag = session.execute(
+                    select(Tag).where(Tag.normalized_name == normalized)
+                ).scalars().first()
+                if tag is None:
+                    tag = Tag(name=display, normalized_name=normalized)
+                    session.add(tag)
+                    session.flush()
+                row = attached.get(tag.id)
+                if row is None:
+                    session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="user"))
+                else:
+                    row.source = "user"
+                keep.add(tag.id)
+            for tag_id, row in attached.items():
+                if tag_id not in keep:
+                    session.delete(row)
+            item.updated_at = utc_ms()
+            session.commit()
+            bundle = item_bundle(session, item)
+        self.search_index.index_item(item_id)
+        return bundle
+
+    def remove_tag(self, item_id: str, raw: str) -> ItemBundle:
+        _, normalized = normalize_tag(raw)
+        with self.sessions() as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                raise NotFoundError("Content not found")
+            tag = session.execute(
+                select(Tag).where(Tag.normalized_name == normalized)
+            ).scalars().first()
+            row = (
+                session.get(ItemTag, (item_id, tag.id)) if tag is not None else None
+            )
+            if row is None:
+                raise NotFoundError("Tag not found", details={"code": "tag.not_found"})
+            session.delete(row)
+            item.updated_at = utc_ms()
+            session.commit()
+            bundle = item_bundle(session, item)
+        self.search_index.index_item(item_id)
+        return bundle
+
     def update_metadata(
         self, item_id: str, *, title: str | None, author: str | None
     ) -> ItemBundle:
@@ -349,10 +517,12 @@ class LibraryService:
             "duration_sec": item.duration_sec,
             "summary": item.summary,
             "tags": tags,
-            "consumption_state": item.consumption_state,
-            "consumption_label": CONSUMPTION_LABELS.get(
-                item.consumption_state, item.consumption_state
-            ),
+            "tag_items": [
+                {"name": tag.name, "source": bundle.tag_sources.get(tag.id, "ai")}
+                for tag in bundle.tags
+            ],
+            "consumption_state": bundle.consumption_state,
+            "consumption_label": bundle.consumption_label,
             "audio_position_sec": item.audio_position_sec,
             "book_locator": item.book_locator,
             "created_at": item.created_at,
@@ -362,7 +532,22 @@ class LibraryService:
             "status_category": bundle.status_category,
             "has_audio": bundle.audio_artifact is not None,
             "has_book": bundle.book_artifact is not None,
+            "has_cover": bundle.cover_artifact is not None,
             "audio_url": f"/api/items/{item.id}/audio" if bundle.audio_artifact else None,
+            "cover_url": f"/api/items/{item.id}/cover" if bundle.cover_artifact else None,
+            "ai": (
+                {
+                    "summary": bundle.ai_result.summary,
+                    "model": bundle.ai_result.model,
+                    "prompt_version": bundle.ai_result.prompt_version,
+                    "input_tokens": bundle.ai_result.input_tokens,
+                    "output_tokens": bundle.ai_result.output_tokens,
+                    "cost_usd": bundle.ai_result.cost_usd,
+                    "generated_at": bundle.ai_result.created_at,
+                }
+                if bundle.ai_result is not None
+                else None
+            ),
         }
         if include_run:
             payload["run"] = self.run_payload(bundle)
@@ -453,6 +638,6 @@ def _matches_states(bundle: ItemBundle, states: set[str]) -> bool:
             ConsumptionState.UNSTARTED,
             ConsumptionState.IN_PROGRESS,
             ConsumptionState.FINISHED,
-        } and bundle.item.consumption_state == state:
+        } and bundle.consumption_state == state:
             return True
     return False

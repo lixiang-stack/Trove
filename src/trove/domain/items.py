@@ -139,6 +139,7 @@ ERROR_LABELS = {
     "llm.not_configured": "Organization service is not configured",
     "llm.invalid_output": "Organization output format is invalid",
     "llm.limit_exceeded": "Model call or token limit exceeded",
+    "llm.failed": "Organization request failed",
     "epub.invalid": "Not a valid EPUB file",
     "epub.drm": "EPUB is DRM-protected and cannot be imported",
     "epub.fixed_layout": (

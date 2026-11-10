@@ -230,6 +230,9 @@ def seed_item(
         item.audio_position_sec = position
         item.duration_sec = duration if with_audio else None
         item.summary = summary
+        item.last_consumed_at = (
+            utc_ms() if consumption_state != "unstarted" or position > 0 else None
+        )
         item.updated_at = utc_ms()
         if run_state:
             run = Run(

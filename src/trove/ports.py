@@ -9,6 +9,7 @@ __all__ = [
     "AudioExtractor",
     "AudioResult",
     "BookChapterData",
+    "BookCoverData",
     "BookExtractor",
     "BookResult",
     "DownloadResult",
@@ -117,11 +118,19 @@ class BookChapterData:
 
 
 @dataclass(slots=True)
+class BookCoverData:
+    data: bytes
+    extension: str
+    mime: str
+
+
+@dataclass(slots=True)
 class BookResult:
     title: str
     author: str | None
     language: str | None
     chapters: list[BookChapterData]
+    cover: BookCoverData | None = None
 
 
 @dataclass(slots=True)

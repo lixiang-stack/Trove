@@ -43,7 +43,7 @@
     </div>
     <div class="now-state">
       <span>播放位置会每 5 秒自动保存</span>
-      <span class="badge badge-consumption">{{ consumption_labels.get(bundle.item.consumption_state, bundle.item.consumption_state) }}</span>
+      <span class="badge badge-consumption">{{ bundle.consumption_label }}</span>
     </div>
     <div class="now-source">
       <a href="{{ bundle.item.source_url_raw or '#' }}" target="_blank" rel="noreferrer noopener">{{ bundle.item.source_url_raw or bundle.item.source_path or "本地内容" }}</a>

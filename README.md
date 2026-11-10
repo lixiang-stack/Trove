@@ -24,6 +24,36 @@ uv run trove worker
 
 Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 
+## Configuration
+
+Application secrets live in `~/Trove/.env`; Trove creates the file with `0600` permissions on first run. The DeepSeek API key is stored separately in `~/.config/trove`.
+
+### DeepSeek API key
+
+Trove reads the key only from `~/.config/trove/llm_api_key`. The file contains only the raw key, with no `NAME=` prefix:
+
+```bash
+install -d -m 700 ~/.config/trove
+${EDITOR:-vi} ~/.config/trove/llm_api_key
+chmod 600 ~/.config/trove/llm_api_key
+```
+
+File contents:
+
+```text
+sk-your-key
+```
+
+The key file is read on each organizing run, so editing it does not require a restart. With the built-in worker, restarting `uv run trove serve` is enough after deploying a new version of Trove.
+
+Without a key, processing still produces and keeps the audio and transcript, but the `organizing` stage fails with `llm.not_configured`. Set the key and retry the Processing Run from the Item page to finish organization. Transcript and book text are sent to DeepSeek in chunks while organizing; audio and source files stay on the Mac.
+
+To disable organization entirely, set the environment variable for the process instead of adding a key:
+
+```bash
+TROVE_LLM_ENABLED=false uv run trove serve
+```
+
 ## Test
 
 ```bash

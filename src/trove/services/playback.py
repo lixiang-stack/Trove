@@ -81,6 +81,7 @@ class PlaybackService:
             if duration and duration > 0:
                 position = min(position, duration)
             item.audio_position_sec = position
+            item.last_consumed_at = utc_ms()
             if consumption_state is not None:
                 item.consumption_state = consumption_state
             elif duration and duration > 0:
@@ -108,6 +109,7 @@ class PlaybackService:
             if item is None:
                 raise NotFoundError("Content not found")
             item.consumption_state = state
+            item.last_consumed_at = utc_ms()
             item.updated_at = utc_ms()
             session.commit()
         return self.library.get(item_id)

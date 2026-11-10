@@ -45,6 +45,11 @@ class ConflictError(TroveError):
     code = "item.conflict"
 
 
+class StorageError(TroveError):
+    status_code = 500
+    code = "storage.error"
+
+
 class RateLimitedError(TroveError):
     status_code = 429
     code = "auth.rate_limited"
