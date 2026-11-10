@@ -27,11 +27,11 @@ Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 ## Test
 
 ```bash
-./scripts/check.sh --fast   # 实现阶段：ruff + mypy + 非浏览器测试
+./scripts/check.sh --fast   # 实现/CI：ruff + mypy + 非浏览器、非 FFmpeg 测试
 ./scripts/check.sh          # 提交/推送前：完整 pytest + 文档检查
 ```
 
-Network tests are excluded by default: `uv run pytest -m network`.
+`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host. Network tests are excluded by default: `uv run pytest -m network`.
 
 Diagnose search and index coverage from the terminal:
 

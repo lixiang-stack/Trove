@@ -13,6 +13,7 @@ def test_host_seam_can_login_and_read_pages(host):
     assert host.client.get("/api/health").status_code == 200
 
 
+@pytest.mark.ffmpeg
 def test_fake_pipeline_completes_with_real_files(host):
     host.login()
     response = host.client.post(
@@ -75,6 +76,7 @@ def test_epub_fixture_is_parsed(host):
     assert (host.config.library_dir / item_id / "book.json").is_file()
 
 
+@pytest.mark.ffmpeg
 def test_ffmpeg_extracts_a_real_audio_artifact(host):
     host.login()
     response = host.client.post(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from trove.db.models import Run, RunStep
@@ -18,6 +19,7 @@ def _steps(host, item_id: str) -> list[dict]:
     return host.item(item_id)["run"]["steps"]
 
 
+@pytest.mark.ffmpeg
 def test_retry_resumes_from_failed_stage(host):
     host.stack.downloader.fail_code = "download.network"
     item_id, run_id = _add(host, "https://youtu.be/retryfromdownload")
@@ -36,6 +38,7 @@ def test_retry_resumes_from_failed_stage(host):
     assert len(host.stack.downloader.calls) == 2
 
 
+@pytest.mark.ffmpeg
 def test_retry_does_not_repeat_completed_stages(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id, _ = _add(host, "https://youtu.be/retryfromtranscribe")
@@ -68,6 +71,7 @@ def test_cancel_queued_run_worker_never_claims(host, host_factory):
     assert queued_host.item(item_id)["run"]["state"] == "cancelled"
 
 
+@pytest.mark.ffmpeg
 def test_cancel_running_stage_stops_and_keeps_audio(host):
     host.stack.transcriber.fail_code = None
     host.stack.transcriber.blocked = True
@@ -82,6 +86,7 @@ def test_cancel_running_stage_stops_and_keeps_audio(host):
     assert host.item(item_id)["run"]["current_stage"] == "transcribing"
 
 
+@pytest.mark.ffmpeg
 def test_restart_reclaims_running_run_and_resumes(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id, run_id = _add(host, "https://youtu.be/restarttest")
@@ -154,6 +159,7 @@ def test_repeated_retry_and_cancel_are_idempotent(api_host):
         assert len(session.execute(select(Run)).scalars().all()) == 1
 
 
+@pytest.mark.ffmpeg
 def test_failure_reason_is_visible_in_html(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id, _ = _add(host, "https://youtu.be/visiblefailure")
