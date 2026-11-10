@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -28,6 +27,7 @@ from trove.errors import ConflictError, NotFoundError, TroveError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
 from trove.services.package_documents import source_document
+from trove.services.uploads import UploadStore
 
 
 def has_consumption_progress(item: Item) -> bool:
@@ -163,11 +163,13 @@ class LibraryService:
         sessions: sessionmaker[Session],
         package: ContentPackage,
         search_index: SearchIndex,
+        uploads: UploadStore,
     ) -> None:
         self.config = config
         self.sessions = sessions
         self.package = package
         self.search_index = search_index
+        self.uploads = uploads
 
     # ------------------------------------------------------------------
     # Create and read
@@ -492,8 +494,8 @@ class LibraryService:
             session.commit()
         self.search_index.delete_item(item_id)
         self.package.remove(item_id)
-        if source_path is not None and source_path.is_relative_to(self.config.uploads_dir):
-            shutil.rmtree(source_path.parent, ignore_errors=True)
+        if source_path is not None:
+            self.uploads.discard_for_path(source_path)
 
 
     # ------------------------------------------------------------------
