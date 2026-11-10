@@ -85,7 +85,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     search_index: SearchIndex = FtsSearchIndex(sessions, package)
     uploads = UploadStore(config)
     library = LibraryService(config, sessions, package, search_index, uploads)
-    search = SearchService(sessions, package, search_index, library)
+    search = SearchService(sessions, search_index, library)
     processing = ProcessingService(
         config,
         sessions,

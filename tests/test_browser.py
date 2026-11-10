@@ -44,7 +44,6 @@ def _seed_transcript(host, item_id: str) -> None:
     from trove.content_package import (
         TranscriptSegment as TranscriptSegmentDocument,
     )
-    from trove.db.models import TranscriptSegment
 
     segments = [
         (
@@ -67,25 +66,10 @@ def _seed_transcript(host, item_id: str) -> None:
             ],
         ),
     )
-    with host.runtime.sessions() as session:
-        session.add_all(
-            [
-                TranscriptSegment(
-                    item_id=item_id,
-                    seq=seq,
-                    start_ms=start,
-                    end_ms=end,
-                    text=text,
-                )
-                for seq, start, end, text in segments
-            ]
-        )
-        session.commit()
 
 
 def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int = 2):
     from trove.content_package import BookChapterDocument, BookDocument
-    from trove.db.models import BookChapter, BookParagraph
 
     bundle = seed_item(
         host,
@@ -96,42 +80,20 @@ def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int
         run_state="completed",
     )
     chapter_documents = []
-    with host.runtime.sessions() as session:
-        for chapter_index in range(chapters):
-            paragraphs = [
-                f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
-                for index in range(30)
-            ]
-            chapter_documents.append(
-                BookChapterDocument(
-                    chapter_index=chapter_index,
-                    title=f"第 {chapter_index + 1} 章",
-                    html="".join(f"<p>{text}</p>" for text in paragraphs),
-                    text="\n".join(paragraphs),
-                    paragraphs=paragraphs,
-                )
+    for chapter_index in range(chapters):
+        paragraphs = [
+            f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
+            for index in range(30)
+        ]
+        chapter_documents.append(
+            BookChapterDocument(
+                chapter_index=chapter_index,
+                title=f"第 {chapter_index + 1} 章",
+                html="".join(f"<p>{text}</p>" for text in paragraphs),
+                text="\n".join(paragraphs),
+                paragraphs=paragraphs,
             )
-            session.add(
-                BookChapter(
-                    item_id=bundle.item.id,
-                    chapter_index=chapter_index,
-                    title=f"第 {chapter_index + 1} 章",
-                    html="".join(f"<p>{text}</p>" for text in paragraphs),
-                    text="\n".join(paragraphs),
-                )
-            )
-            session.add_all(
-                [
-                    BookParagraph(
-                        item_id=bundle.item.id,
-                        chapter_index=chapter_index,
-                        paragraph_index=index,
-                        text=text,
-                    )
-                    for index, text in enumerate(paragraphs)
-                ]
-            )
-        session.commit()
+        )
     host.runtime.package.write_book(
         bundle.item.id, BookDocument(title=title, chapters=chapter_documents)
     )
@@ -298,8 +260,6 @@ def test_mobile_search_keeps_player_and_shows_filters(host, browser):
 
 
 def test_book_search_result_scrolls_to_paragraph(host, browser):
-    from trove.db.models import BookChapter, BookParagraph
-
     bundle = seed_item(
         host,
         title="书内定位",
@@ -307,25 +267,6 @@ def test_book_search_result_scrolls_to_paragraph(host, browser):
         with_audio=False,
         run_state=None,
     )
-    with host.runtime.sessions() as session:
-        session.add(
-            BookChapter(
-                item_id=bundle.item.id,
-                chapter_index=0,
-                title="第一章",
-                html="<p>bookword 段落</p>",
-                text="bookword 段落",
-            )
-        )
-        session.add(
-            BookParagraph(
-                item_id=bundle.item.id,
-                chapter_index=0,
-                paragraph_index=0,
-                text="bookword 段落",
-            )
-        )
-        session.commit()
     from trove.content_package import BookChapterDocument, BookDocument
 
     host.runtime.package.write_book(

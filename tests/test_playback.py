@@ -11,7 +11,7 @@ from trove.content_package import (
 from trove.content_package import (
     TranscriptSegment as TranscriptSegmentDocument,
 )
-from trove.db.models import Artifact, TranscriptSegment
+from trove.db.models import Artifact
 
 from .conftest import seed_item
 
@@ -137,40 +137,7 @@ def test_transcript_and_listen_page(host):
     assert "<script type=\"application/json\" data-player-item>" in page.text
 
 
-def test_transcript_api_reads_package_not_db(host):
-    bundle = seed_item(host, title="Package transcript")
-    with host.runtime.sessions() as session:
-        session.add(
-            TranscriptSegment(
-                item_id=bundle.item.id,
-                seq=0,
-                start_ms=0,
-                end_ms=1000,
-                text="DB only segment",
-            )
-        )
-        session.commit()
-    host.runtime.package.write_transcript(
-        bundle.item.id,
-        TranscriptDocument(
-            language="zh",
-            segments=[
-                TranscriptSegmentDocument(
-                    seq=0, start_ms=0, end_ms=1000, text="Package only segment"
-                )
-            ],
-        ),
-    )
-    host.login()
-
-    payload = host.client.get(f"/api/items/{bundle.item.id}/transcript").json()
-
-    assert [segment["text"] for segment in payload["segments"]] == [
-        "Package only segment"
-    ]
-
-
-def test_batch_replace_updates_segments_package_artifact_and_search(host):
+def test_batch_replace_updates_package_artifact_and_search(host):
     bundle = seed_item(host, title="批量替换")
     package_path = host.runtime.package.write_transcript(
         bundle.item.id,
@@ -227,18 +194,6 @@ def test_batch_replace_updates_segments_package_artifact_and_search(host):
     assert package["model"] == "fake-whisper"
     assert package["segments"][0]["text"] == "智能代理需要记忆。"
     with host.runtime.sessions() as session:
-        rows = list(
-            session.execute(
-                select(TranscriptSegment)
-                .where(TranscriptSegment.item_id == bundle.item.id)
-                .order_by(TranscriptSegment.seq)
-            ).scalars()
-        )
-        assert [row.text for row in rows] == [
-            "智能代理需要记忆。",
-            "智能代理也需要遗忘。",
-            "这段保持不变。",
-        ]
         artifact = session.execute(
             select(Artifact).where(
                 Artifact.item_id == bundle.item.id, Artifact.kind == "transcript"
@@ -255,17 +210,16 @@ def test_batch_replace_updates_segments_package_artifact_and_search(host):
 
 def test_batch_replace_rejects_empty_keyword_and_reports_no_match(host):
     bundle = seed_item(host, title="替换边界")
-    with host.runtime.sessions() as session:
-        session.add(
-            TranscriptSegment(
-                item_id=bundle.item.id,
-                seq=0,
-                start_ms=0,
-                end_ms=1000,
-                text="一段转写。",
-            )
-        )
-        session.commit()
+    host.runtime.package.write_transcript(
+        bundle.item.id,
+        TranscriptDocument(
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=0, start_ms=0, end_ms=1000, text="一段转写。"
+                )
+            ],
+        ),
+    )
     host.login()
 
     empty = host.client.post(

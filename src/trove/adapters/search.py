@@ -1,17 +1,28 @@
+"""SQLite FTS5 search adapter.
+
+FTS5 has no SQLAlchemy expression construct, so its raw SQL lives only in
+this module. Services call the SearchIndex port and never see the schema.
+"""
+
 from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import replace
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.content_package import ContentPackage
 from trove.db.models import Item
 from trove.domain.search import build_match_query, norm_text, normalize_text
 from trove.errors import StorageError
-from trove.ports import SearchHit, SearchResult
+from trove.ports import (
+    IndexItemStatus,
+    IndexStatus,
+    SearchHit,
+    SearchResult,
+)
 
 KIND_WEIGHT = {"title": 3.0, "summary": 2.0, "tag": 2.0, "transcript": 1.0, "book": 1.0}
 LIKE_SCORE = 1.0
@@ -44,6 +55,63 @@ class FtsSearchIndex:
         for item_id in item_ids:
             self.index_item(str(item_id))
         return len(item_ids)
+
+    def status(self) -> IndexStatus:
+        with self.sessions() as session:
+            items = list(
+                session.execute(
+                    select(Item).order_by(Item.created_at.desc(), Item.id.desc())
+                ).scalars()
+            )
+            item_ids = {item.id for item in items}
+            counts: dict[str, dict[str, int]] = {}
+            total_rows = 0
+            orphan_rows = 0
+            for item_id, doc_kind, count in session.execute(
+                text(
+                    "SELECT item_id, doc_kind, count(*) FROM search_fts "
+                    "GROUP BY item_id, doc_kind"
+                )
+            ):
+                total_rows += int(count)
+                if item_id in item_ids:
+                    counts.setdefault(str(item_id), {})[str(doc_kind)] = int(count)
+                else:
+                    orphan_rows += int(count)
+            tag_counts = _counts_by_item(
+                session, "SELECT item_id, count(*) FROM item_tags GROUP BY item_id"
+            )
+        statuses = []
+        for item in items:
+            transcript_expected, book_expected = self._content_counts(item.id)
+            statuses.append(
+                IndexItemStatus(
+                    item_id=item.id,
+                    title=item.title,
+                    counts=counts.get(item.id, {}),
+                    expected={
+                        "title": 1,
+                        "summary": 1 if item.summary else 0,
+                        "tag": tag_counts.get(item.id, 0),
+                        "transcript": transcript_expected,
+                        "book": book_expected,
+                    },
+                )
+            )
+        return IndexStatus(items=statuses, total_rows=total_rows, orphan_rows=orphan_rows)
+
+    def _content_counts(self, item_id: str) -> tuple[int, int]:
+        try:
+            transcript = self.package.read_transcript(item_id)
+            book = self.package.read_book(item_id)
+        except StorageError:
+            return 0, 0
+        return (
+            len(transcript.segments) if transcript is not None else 0,
+            sum(len(chapter.paragraphs) for chapter in book.chapters)
+            if book is not None
+            else 0,
+        )
 
     def search(self, query: str, *, limit: int = 50) -> list[SearchResult]:
         match, like_terms = build_match_query(query)
@@ -125,33 +193,11 @@ class FtsSearchIndex:
         for name in tags:
             documents.append((str(name), "tag", str(name)))
         transcript = self._package_transcript(item_id)
-        if transcript is None:
-            segments = session.execute(
-                text(
-                    "SELECT seq, start_ms, text FROM transcript_segments "
-                    "WHERE item_id = :item_id ORDER BY seq"
-                ),
-                {"item_id": item_id},
-            )
-            transcript = [
-                (str(segment_text), "transcript", f"{seq}:{start_ms}")
-                for seq, start_ms, segment_text in segments
-            ]
-        documents.extend(transcript)
+        if transcript is not None:
+            documents.extend(transcript)
         book = self._package_book(item_id)
-        if book is None:
-            paragraphs = session.execute(
-                text(
-                    "SELECT chapter_index, paragraph_index, text FROM book_paragraphs "
-                    "WHERE item_id = :item_id ORDER BY chapter_index, paragraph_index"
-                ),
-                {"item_id": item_id},
-            )
-            book = [
-                (str(paragraph_text), "book", f"{chapter_index}:{paragraph_index}")
-                for chapter_index, paragraph_index, paragraph_text in paragraphs
-            ]
-        documents.extend(book)
+        if book is not None:
+            documents.extend(book)
         rows: list[dict[str, Any]] = []
         for value, ref_kind, ref in documents:
             tokens = norm_text(value)
@@ -219,6 +265,12 @@ def _add_hit(hits: dict[tuple[str, str, str], SearchHit], hit: SearchHit) -> Non
 def _matches_all(value: str, terms: list[str]) -> bool:
     normalized = normalize_text(value)
     return all(term in normalized for term in terms)
+
+
+def _counts_by_item(session: Session, statement: str) -> dict[str, int]:
+    return {
+        str(item_id): int(count) for item_id, count in session.execute(text(statement))
+    }
 
 
 def _group_hits(hits: list[SearchHit], limit: int) -> list[SearchResult]:
