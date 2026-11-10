@@ -13,7 +13,7 @@ from typing import BinaryIO
 from sqlalchemy import select
 
 from trove.config import Config
-from trove.content_package import ContentPackage, sha256_file
+from trove.content_package import ArtifactKind, ContentPackage, sha256_file
 from trove.db.models import Artifact, Item
 from trove.domain.items import Platform, SourceType
 from trove.domain.urls import (
@@ -246,21 +246,26 @@ class IntakeService:
         if deduplicated:
             return bundle, True
         if kind == "epub":
-            self._copy_book(bundle.item.id, source_path, checksum)
+            self._copy_book(bundle.item.id, source_path)
         self.processing.create_run(bundle.item.id)
         return self.library.get(bundle.item.id), False
 
-    def _copy_book(self, item_id: str, source: Path, checksum: str) -> None:
-        destination, actual_checksum, size = self.package.copy_in(item_id, source, "book.epub")
+    def _copy_book(self, item_id: str, source: Path) -> None:
+        installed = self.package.copy_artifact(
+            item_id,
+            ArtifactKind.BOOK,
+            source,
+            mime="application/epub+zip",
+        )
         with self.library.sessions() as session:
             session.add(
                 Artifact(
                     item_id=item_id,
-                    kind="book",
-                    path=destination.name,
-                    sha256=actual_checksum or checksum,
-                    size=size,
-                    mime="application/epub+zip",
+                    kind=installed.kind,
+                    path=installed.relative_path,
+                    sha256=installed.sha256,
+                    size=installed.size,
+                    mime=installed.mime,
                 )
             )
             session.commit()

@@ -4,7 +4,13 @@ import json
 
 from sqlalchemy import select
 
-from trove.content_package import sha256_file
+from trove.content_package import (
+    TranscriptDocument,
+    sha256_file,
+)
+from trove.content_package import (
+    TranscriptSegment as TranscriptSegmentDocument,
+)
 from trove.db.models import Artifact, TranscriptSegment
 
 from .conftest import seed_item
@@ -160,18 +166,23 @@ def test_batch_replace_updates_segments_package_artifact_and_search(host):
             ]
         )
         session.commit()
-    package_path = host.runtime.package.write_json(
+    package_path = host.runtime.package.write_transcript(
         bundle.item.id,
-        "transcript.json",
-        {
-            "language": "zh",
-            "model": "fake-whisper",
-            "segments": [
-                {"seq": 0, "start_ms": 0, "end_ms": 1000, "text": "智能体需要记忆。"},
-                {"seq": 1, "start_ms": 1000, "end_ms": 2000, "text": "智能体也需要遗忘。"},
-                {"seq": 2, "start_ms": 2000, "end_ms": 3000, "text": "这段保持不变。"},
+        TranscriptDocument(
+            language="zh",
+            model="fake-whisper",
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=0, start_ms=0, end_ms=1000, text="智能体需要记忆。"
+                ),
+                TranscriptSegmentDocument(
+                    seq=1, start_ms=1000, end_ms=2000, text="智能体也需要遗忘。"
+                ),
+                TranscriptSegmentDocument(
+                    seq=2, start_ms=2000, end_ms=3000, text="这段保持不变。"
+                ),
             ],
-        },
+        ),
     )
     old_sha = sha256_file(package_path)
     with host.runtime.sessions() as session:

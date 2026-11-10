@@ -7,7 +7,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from trove.clock import utc_ms
-from trove.content_package import ContentPackage, sha256_file
+from trove.content_package import (
+    ContentPackage,
+    TranscriptDocument,
+    sha256_file,
+)
+from trove.content_package import (
+    TranscriptSegment as TranscriptSegmentDocument,
+)
 from trove.db.models import Artifact, Item, TranscriptSegment
 from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
@@ -160,19 +167,18 @@ class PlaybackService:
                 return 0, None
             for segment in changed:
                 segment.text = segment.text.replace(keyword, new)
-            existing = self.package.read_json(item_id, "transcript.json")
-            payload = dict(existing) if isinstance(existing, dict) else {}
-            payload["language"] = payload.get("language") or item.language
-            payload["segments"] = [
-                {
-                    "seq": segment.seq,
-                    "start_ms": segment.start_ms,
-                    "end_ms": segment.end_ms,
-                    "text": segment.text,
-                }
+            document = self.package.read_transcript(item_id) or TranscriptDocument()
+            document.language = document.language or item.language
+            document.segments = [
+                TranscriptSegmentDocument(
+                    seq=segment.seq,
+                    start_ms=segment.start_ms,
+                    end_ms=segment.end_ms,
+                    text=segment.text,
+                )
                 for segment in segments
             ]
-            path = self.package.write_json(item_id, "transcript.json", payload)
+            path = self.package.write_transcript(item_id, document)
             artifact = session.execute(
                 select(Artifact).where(
                     Artifact.item_id == item_id, Artifact.kind == "transcript"
