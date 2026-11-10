@@ -6,13 +6,13 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.adapters.asr import MlxWhisperTranscriber
+from trove.adapters.deepseek import DeepSeekOrganizer
 from trove.adapters.downloader import DefaultDownloader
 from trove.adapters.epub import EpubExtractor
 from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
 from trove.adapters.safe_http import SafeHttpClient
 from trove.adapters.search import FtsSearchIndex
-from trove.adapters.unavailable import UnavailableOrganizer
 from trove.config import Config
 from trove.content_package import ContentPackage
 from trove.db.engine import create_engine_for, create_session_factory
@@ -26,6 +26,7 @@ from trove.ports import (
     Transcriber,
 )
 from trove.services.auth import AuthService
+from trove.services.export import ExportService
 from trove.services.intake import IntakeService, UploadStore
 from trove.services.library import LibraryService
 from trove.services.playback import PlaybackService
@@ -57,6 +58,7 @@ class Runtime:
     processing: ProcessingService
     intake: IntakeService
     playback: PlaybackService
+    export: ExportService
     auth: AuthService
     uploads: UploadStore
     ports: Ports
@@ -69,7 +71,7 @@ def default_ports(config: Config) -> Ports:
         feed_client=PodcastFeedClient(http, max_bytes=config.max_feed_bytes),
         audio_extractor=FfmpegAudioExtractor(),
         transcriber=MlxWhisperTranscriber(config.asr_model),
-        organizer=UnavailableOrganizer(config.llm_enabled),
+        organizer=DeepSeekOrganizer(config),
         book_extractor=EpubExtractor(),
     )
 
@@ -105,6 +107,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     )
     playback = PlaybackService(sessions, package, library, search_index)
     reading = ReadingService(sessions)
+    export = ExportService(config, sessions, package)
     auth = AuthService(config)
     return Runtime(
         config=config,
@@ -118,6 +121,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         processing=processing,
         intake=intake,
         playback=playback,
+        export=export,
         auth=auth,
         uploads=uploads,
         ports=ports,

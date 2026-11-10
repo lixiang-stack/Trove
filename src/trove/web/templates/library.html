@@ -9,6 +9,11 @@
     <p class="subtitle">{{ items|length }} 条内容{% if inbox %} · Inbox{% endif %}</p>
   </div>
   <div class="library-actions">
+    <form id="export-form" method="get" action="/export" class="inline-form">
+      <input type="hidden" name="ids" value="">
+      <button type="button" class="secondary" data-export-select-all>全选</button>
+      <button type="submit" class="secondary" data-export-submit disabled>导出选中</button>
+    </form>
     <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加内容</a>
   </div>
 </section>

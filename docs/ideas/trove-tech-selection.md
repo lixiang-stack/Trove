@@ -252,7 +252,7 @@ queued
 - **上传**：流式落临时文件，边写边算 SHA-256；限制大小（默认视频 4GB/音频 500MB/EPUB 100MB，可配）；扩展名/MIME 白名单 + ffprobe/EPUB 结构校验；失败清理。
 - **文件服务**：只按数据库中的 artifact 路径返回；`FileResponse` 支持 Range/ETag；`ETag=sha256`；`Accept-Ranges: bytes`；`X-Content-Type-Options: nosniff`；`Cache-Control: private`。Starlette 必须 ≥0.49.1（CVE-2025-62727 Range DoS）。
 - **HTML 注入**：Jinja2 自动转义；EPUB 章节 `nh3` 白名单净化；CSP `default-src 'self'`，禁止远程脚本/图片；不把用户文本标记为 safe。
-- **密钥**：`DEEPSEEK_API_KEY` 放 `~/Trove/.env`（0600）；session secret 随机生成；日志不打印 Cookie/Key。
+- **密钥**：DeepSeek key 只从 `~/.config/trove/llm_api_key`（0600，文件内容为纯 key）读取；session secret 随机生成；日志不打印 Cookie/Key。
 - **不暴露开放下载器**：没有任意 URL 代理接口；播客只抓取 feed 里的 enclosure，且类型/大小受限。
 
 ### 3.6 部署与运维

@@ -40,6 +40,7 @@ class Item(Base):
         nullable=False, default=0.0, server_default="0"
     )
     book_locator: Mapped[str | None] = mapped_column(Text)
+    last_consumed_at: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -56,6 +57,7 @@ class Item(Base):
     __table_args__ = (
         Index("ix_items_created_at", "created_at"),
         Index("ix_items_updated_at", "updated_at"),
+        Index("ix_items_last_consumed_at", "last_consumed_at"),
         Index("ix_items_consumption_state", "consumption_state"),
     )
 

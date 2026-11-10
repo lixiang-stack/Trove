@@ -8,15 +8,28 @@
   </nav>
 
   <header class="detail-head">
-    <div class="detail-cover cover-{{ bundle.item.id|cover_tone }}"><span>{{ bundle.item.title[:1] }}</span></div>
+    <div class="detail-cover cover-{{ bundle.item.id|cover_tone }}">{% if bundle.cover_artifact %}<img src="/api/items/{{ bundle.item.id }}/cover" alt="" loading="lazy">{% else %}<span>{{ bundle.item.title[:1] }}</span>{% endif %}</div>
     <div class="detail-title">
       <p class="eyebrow">{{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }}</p>
       <h1>{{ bundle.item.title }}</h1>
       <p class="subtitle">{{ bundle.item.author or "未知作者" }}{% if bundle.item.published_at %} · {{ bundle.item.published_at }}{% endif %}</p>
       <div class="tag-row">
-        {% for tag in bundle.tags %}<span class="tag">{{ tag.name }}</span>{% endfor %}
+        {% for tag in bundle.tags %}
+        <span class="tag tag-{{ bundle.tag_sources.get(tag.id, 'ai') }}">
+          {{ tag.name }}
+          {% if bundle.tag_sources.get(tag.id) == 'ai' %}<span class="tag-source">AI</span>{% endif %}
+          <form method="post" action="/items/{{ bundle.item.id }}/tags/delete" class="tag-delete">
+            <input type="hidden" name="tag" value="{{ tag.name }}">
+            <button type="submit" aria-label="删除 Tag {{ tag.name }}" title="删除 Tag">×</button>
+          </form>
+        </span>
+        {% endfor %}
         {% if not bundle.tags %}<span class="muted">尚无 Tag</span>{% endif %}
       </div>
+      <form method="post" action="/items/{{ bundle.item.id }}/tags/add" class="inline-form tag-add-form">
+        <input name="tag" placeholder="添加 Tag" maxlength="64" required autocomplete="off">
+        <button type="submit" class="secondary">添加</button>
+      </form>
       <div class="detail-actions">
         {% if bundle.audio_artifact %}
         <a href="/items/{{ bundle.item.id }}/listen" role="button"
@@ -27,7 +40,8 @@
            hx-get="/items/{{ bundle.item.id }}/read" hx-target="#main" hx-select="#main" hx-push-url="true">阅读</a>
         {% endif %}
         <span class="badge badge-{{ bundle.status_category }}">{{ bundle.processing_label }}</span>
-        <span class="badge badge-consumption">{{ consumption_labels.get(bundle.item.consumption_state, bundle.item.consumption_state) }}</span>
+        <span class="badge badge-consumption">{{ bundle.consumption_label }}</span>
+        <a href="/export?ids={{ bundle.item.id }}" role="button" class="secondary">导出此 Item</a>
       </div>
     </div>
   </header>
@@ -46,7 +60,18 @@
         <dt>抓取时间</dt><dd>{{ bundle.item.fetched_at|datetime }}</dd>
         <dt>时长</dt><dd>{{ bundle.item.duration_sec|duration if bundle.item.duration_sec else "—" }}</dd>
         <dt>摘要</dt><dd>{{ bundle.item.summary or "—" }}</dd>
+        {% if bundle.ai_result %}
+        <dt>AI 模型</dt><dd>{{ bundle.ai_result.model }} · prompt {{ bundle.ai_result.prompt_version }}</dd>
+        <dt>Token</dt><dd>{{ bundle.ai_result.input_tokens }} in / {{ bundle.ai_result.output_tokens }} out · ${{ "%.6f"|format(bundle.ai_result.cost_usd) }}</dd>
+        <dt>整理时间</dt><dd>{{ bundle.ai_result.created_at|datetime }}</dd>
+        {% endif %}
       </dl>
+      {% if bundle.ai_result or bundle.audio_artifact or bundle.book_artifact %}
+      <form method="post" action="/items/{{ bundle.item.id }}/reprocess" class="inline-form">
+        <input type="hidden" name="from_stage" value="organizing">
+        <button type="submit" class="secondary">重新整理（不重新下载/转写）</button>
+      </form>
+      {% endif %}
     </section>
 
     <section>
@@ -65,7 +90,7 @@
       </form>
 
       <h2 class="danger-title">删除</h2>
-      <form method="post" action="/items/{{ bundle.item.id }}/delete" onsubmit="return confirm('只删除库内派生文件和索引，不删除你的原始文件。确定删除？');">
+      <form method="post" action="/items/{{ bundle.item.id }}/delete" data-confirm="只删除库内派生文件和索引，不删除你的原始文件。确定删除？">
         <button type="submit" class="contrast">删除 Item</button>
       </form>
     </section>
