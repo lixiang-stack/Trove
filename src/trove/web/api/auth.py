@@ -5,13 +5,13 @@ from fastapi.responses import JSONResponse
 
 from trove.services.auth import SESSION_COOKIE
 from trove.web.deps import runtime
-from trove.web.schemas import LoginRequest
+from trove.web.schemas import LoginRequest, OkResponse
 from trove.web.security import set_session_cookie
 
 router = APIRouter()
 
 
-@router.post("/auth/login")
+@router.post("/auth/login", response_model=OkResponse)
 def api_login(request: Request, payload: LoginRequest):
     app_runtime = runtime(request)
     client = request.client.host if request.client else "unknown"
@@ -25,7 +25,7 @@ def api_login(request: Request, payload: LoginRequest):
     return response
 
 
-@router.post("/auth/logout")
+@router.post("/auth/logout", response_model=OkResponse)
 def api_logout(request: Request):
     runtime(request).auth.logout()
     response = JSONResponse({"ok": True})

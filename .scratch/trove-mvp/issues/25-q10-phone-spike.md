@@ -38,3 +38,9 @@ Q10 是 MVP 的核心产品门控：手机浏览器能否承担主要听设备�
 
 - 实现 native 播放器、离线播放、Up Next、睡眠定时；不做。
 - 公网访问/多用户；不做。
+
+## Comments
+
+2026-11-10 — Added the raw-observation template at `.scratch/trove-mvp/q10-log.md`
+(environment, seven daily rows, failure cases, pass/fail decision). No device data
+has been fabricated; the week-long phone spike remains human work.
