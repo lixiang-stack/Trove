@@ -97,6 +97,21 @@ def test_status_polling_stops_after_terminal(api_host):
     assert "hx-trigger" not in terminal.text
 
 
+def test_transcript_stays_searchable_when_organizing_fails(host):
+    host.stack.organizer.fail_code = "llm.not_configured"
+    item_id = _add_url(host)
+    payload = host.wait_for_item(item_id)
+    assert payload["run"]["state"] == "failed"
+    assert payload["run"]["current_stage"] == "organizing"
+
+    api = host.client.get("/api/search", params={"q": "记忆"}).json()
+    page = host.client.get("/search", params={"q": "记忆"})
+
+    assert api["count"] == 1
+    assert api["results"][0]["item"]["id"] == item_id
+    assert "Fixture Video" in page.text
+
+
 def test_artifact_stays_readable_after_later_stage_failure(host):
     host.stack.transcriber.fail_code = "asr.failed"
     item_id = _add_url(host)

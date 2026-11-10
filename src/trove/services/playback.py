@@ -7,10 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
 from trove.clock import utc_ms
-from trove.content_package import ContentPackage
+from trove.content_package import ContentPackage, sha256_file
 from trove.db.models import Artifact, Item, TranscriptSegment
 from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
+from trove.ports import SearchIndex
 from trove.services.library import ItemBundle, LibraryService
 
 AUTO_START_MAX_SECONDS = 5.0
@@ -19,11 +20,16 @@ AUTO_FINISH_RATIO = 0.95
 
 class PlaybackService:
     def __init__(
-        self, sessions: sessionmaker, package: ContentPackage, library: LibraryService
+        self,
+        sessions: sessionmaker,
+        package: ContentPackage,
+        library: LibraryService,
+        search_index: SearchIndex,
     ) -> None:
         self.sessions = sessions
         self.package = package
         self.library = library
+        self.search_index = search_index
 
     def audio_artifact(self, item_id: str) -> Artifact:
         with self.sessions() as session:
@@ -125,3 +131,54 @@ class PlaybackService:
                 }
                 for segment in segments
             ]
+
+    def replace_transcript_text(
+        self, item_id: str, *, old: str, new: str
+    ) -> tuple[int, int | None]:
+        keyword = old.strip()
+        if not keyword:
+            raise ValidationError(
+                "查找关键词不能为空", details={"code": "transcript.keyword_required"}
+            )
+        with self.sessions() as session:
+            item = session.get(Item, item_id)
+            if item is None:
+                raise NotFoundError("内容不存在")
+            segments = list(
+                session.execute(
+                    select(TranscriptSegment)
+                    .where(TranscriptSegment.item_id == item_id)
+                    .order_by(TranscriptSegment.seq)
+                ).scalars()
+            )
+            changed = [segment for segment in segments if keyword in segment.text]
+            if not changed:
+                return 0, None
+            for segment in changed:
+                segment.text = segment.text.replace(keyword, new)
+            existing = self.package.read_json(item_id, "transcript.json")
+            payload = dict(existing) if isinstance(existing, dict) else {}
+            payload["language"] = payload.get("language") or item.language
+            payload["segments"] = [
+                {
+                    "seq": segment.seq,
+                    "start_ms": segment.start_ms,
+                    "end_ms": segment.end_ms,
+                    "text": segment.text,
+                }
+                for segment in segments
+            ]
+            path = self.package.write_json(item_id, "transcript.json", payload)
+            artifact = session.execute(
+                select(Artifact).where(
+                    Artifact.item_id == item_id, Artifact.kind == "transcript"
+                )
+            ).scalars().first()
+            if artifact is not None:
+                artifact.sha256 = sha256_file(path)
+                artifact.size = path.stat().st_size
+            item.updated_at = utc_ms()
+            first_seq = changed[0].seq
+            session.commit()
+        self.search_index.index_item(item_id)
+        return len(changed), first_seq

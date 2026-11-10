@@ -17,6 +17,18 @@
   <div class="now-tags">{% for tag in bundle.tags %}<span class="now-tag">{{ tag.name }}</span>{% endfor %}</div>
   {% endif %}
 
+  <details class="now-search">
+    <summary>⌕ 搜索资料库</summary>
+    <div class="now-search-sheet">
+      <form method="get" action="/search" class="search-form"
+            hx-get="/search" hx-target="#now-search-results" hx-select="#search-results-region" hx-push-url="false">
+        <input name="q" placeholder="搜标题、transcript、书、Tag" autocomplete="off">
+        <button type="submit">搜索</button>
+      </form>
+      <div id="now-search-results"></div>
+    </div>
+  </details>
+
   {% if bundle.audio_artifact %}
   <section class="now-player" aria-label="播放器">
     <div class="now-times">
@@ -52,24 +64,47 @@
   </section>
   {% endif %}
 
+  {% if replace_count is not none %}
+  <p class="transcript-notice" role="status">
+    {% if replace_count %}已更新 {{ replace_count }} 个分段。{% else %}没有找到要替换的关键词。{% endif %}
+  </p>
+  {% endif %}
+
   <details class="now-transcript" {% if not transcript %}hidden{% endif %}>
     <summary>
       <span class="transcript-heading">Transcript</span>
       <span class="sheet-sub">{{ transcript|length }} 个分段 · 点击展开</span>
     </summary>
     {% if transcript %}
-    <ol class="segments">
+    <div class="transcript-tools">
+      <input type="search" data-transcript-search placeholder="在 transcript 中搜索" aria-label="在 transcript 中搜索" autocomplete="off">
+      <span class="transcript-match" data-transcript-count></span>
+    </div>
+    <ol class="segments" data-transcript-segments>
       {% for segment in transcript %}
-      <li class="seg">
+      <li class="seg" id="segment-{{ segment.seq }}" data-transcript-segment>
         <span class="seg-time">{{ segment.start_ms|clock }}</span>
         <span class="seg-text">{{ segment.text }}</span>
       </li>
       {% endfor %}
     </ol>
+    <p class="transcript-empty muted" data-transcript-empty hidden>没有匹配的分段。</p>
     {% else %}
     <p class="muted">还没有 transcript。</p>
     {% endif %}
   </details>
+
+  {% if transcript %}
+  <details class="transcript-edit">
+    <summary>修正转写（批量替换）</summary>
+    <form method="post" action="/items/{{ bundle.item.id }}/transcript/replace" class="transcript-edit-form">
+      <label>查找关键词<input name="old" placeholder="例如：曾世强" required maxlength="200" autocomplete="off"></label>
+      <label>替换为<input name="new" placeholder="留空表示删除" maxlength="200" autocomplete="off"></label>
+      <button type="submit">应用到全部分段</button>
+    </form>
+    <p class="hint">会同步更新 transcript.json、分段文本和搜索索引。</p>
+  </details>
+  {% endif %}
 
   {% if bundle.audio_artifact %}
   <section class="now-process">

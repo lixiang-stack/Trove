@@ -31,14 +31,18 @@ class ContentPackage:
     def source_path(self, item_id: str) -> Path:
         return self.directory(item_id) / "source.json"
 
-    def read_source(self, item_id: str) -> dict[str, Any]:
-        path = self.source_path(item_id)
+    def read_json(self, item_id: str, filename: str) -> Any | None:
+        path = self.directory(item_id) / filename
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except FileNotFoundError:
-            return {}
+            return None
         except (OSError, json.JSONDecodeError) as exc:
-            raise TroveError(f"无法读取内容包 source.json: {exc}") from exc
+            raise TroveError(f"无法读取内容包 {filename}: {exc}") from exc
+
+    def read_source(self, item_id: str) -> dict[str, Any]:
+        data = self.read_json(item_id, "source.json")
+        return data if isinstance(data, dict) else {}
 
     def write_source(self, item_id: str, data: dict[str, Any]) -> None:
         self.write_json(item_id, "source.json", data)

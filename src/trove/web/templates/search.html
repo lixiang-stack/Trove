@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros.html" import filter_stack with context %}
 {% block title %}Search · 拾藏{% endblock %}
 {% block main %}
 <section class="search-page">
@@ -8,41 +9,63 @@
       <h1>Search</h1>
     </div>
   </header>
-  <form method="get" action="/search" class="search-form">
+  <form method="get" action="/search" class="search-form"
+        hx-get="/search" hx-target="#main" hx-select="#main" hx-push-url="true">
     <input name="q" value="{{ query }}" placeholder="搜标题、摘要、transcript、书、Tag" autocomplete="off">
     <button type="submit">搜索</button>
   </form>
-  {% if query %}
-  <p class="search-meta">{{ results|length }} 个 Item 命中「{{ query }}」 · 按 Item 聚合</p>
-  <div class="search-results">
-    {% for result in results %}
-    {% set bundle = result.bundle %}
-    {% set hit = result.hit %}
-    <a class="search-result" href="/items/{{ bundle.item.id }}/listen"
-       hx-get="/items/{{ bundle.item.id }}/listen" hx-target="#main" hx-select="#main" hx-push-url="true">
-      <span class="cover cover-{{ bundle.item.id|cover_tone }}"><span>{{ bundle.item.title[:1] }}</span></span>
-      <span class="result-body">
-        <strong>{{ bundle.item.title }}</strong>
-        <span class="result-meta">{{ bundle.item.author or "未知作者" }} · {{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }}</span>
-        <span class="result-snippet">{{ hit.text }}</span>
-        <span class="result-ref">{{ hit.doc_kind|ref_label(hit.ref) }}</span>
-      </span>
-    </a>
-    {% endfor %}
-    {% if not results %}
+
+  {{ filter_stack(filter_groups, clear_url, has_filters, '搜索过滤') }}
+
+  <div id="search-results-region" data-search-query="{{ query }}">
+    {% if search_error %}
+    <div class="alert alert-error" role="alert">{{ search_error }}</div>
+    {% elif query %}
+    <p class="search-meta">{{ results|length }} 个 Item 命中「{{ query }}」 · 按 Item 聚合</p>
+    <div class="search-results">
+      {% for result in results %}
+      {% set bundle = result.bundle %}
+      {% set first = result.evidence[0] %}
+      {% set target = locate_url(bundle.item.id, bundle.item.source_type, first.doc_kind, first.ref) %}
+      <article class="search-result">
+        <a class="cover cover-{{ bundle.item.id|cover_tone }}" href="{{ target }}"
+           hx-get="{{ target }}" hx-target="#main" hx-select="#main" hx-push-url="true" tabindex="-1" aria-hidden="true"><span>{{ bundle.item.title[:1] }}</span></a>
+        <div class="result-body">
+          <a class="result-title" href="{{ target }}"
+             hx-get="{{ target }}" hx-target="#main" hx-select="#main" hx-push-url="true">{{ bundle.item.title }}</a>
+          <span class="result-meta">{{ bundle.item.author or "未知作者" }} · {{ source_type_labels.get(bundle.item.source_type, bundle.item.source_type) }} · {{ platform_labels.get(bundle.item.platform, bundle.item.platform) }} · {{ bundle.item.published_at or bundle.item.created_at|datetime }}</span>
+          {% if bundle.tags %}
+          <span class="result-tags">{% for tag in bundle.tags[:5] %}<span class="tag">{{ tag.name }}</span>{% endfor %}</span>
+          {% endif %}
+          <div class="result-evidence">
+            {% for evidence in result.evidence %}
+            {% set url = locate_url(bundle.item.id, bundle.item.source_type, evidence.doc_kind, evidence.ref) %}
+            <a class="evidence-row" href="{{ url }}"
+               hx-get="{{ url }}" hx-target="#main" hx-select="#main" hx-push-url="true">
+              <span class="result-snippet">{{ evidence.snippet }}</span>
+              <span class="result-ref">{{ evidence.doc_kind|ref_label(evidence.ref) }}</span>
+            </a>
+            {% endfor %}
+          </div>
+        </div>
+      </article>
+      {% endfor %}
+      {% if not results %}
+      <div class="empty-state compact">
+        <div class="empty-mark">?</div>
+        <h2>没有命中</h2>
+        <p>试试两字中文词、英文关键词，或清空过滤。</p>
+        {% if has_filters %}<a href="{{ clear_url }}" class="secondary" role="button">清空过滤</a>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
     <div class="empty-state compact">
-      <div class="empty-mark">?</div>
-      <h2>没有命中</h2>
-      <p>试试两字中文词或英文关键词。</p>
+      <div class="empty-mark">⌕</div>
+      <h2>搜索你的库</h2>
+      <p>标题、摘要、transcript、书文本和 Tag 会一起被检索。</p>
     </div>
     {% endif %}
   </div>
-  {% else %}
-  <div class="empty-state compact">
-    <div class="empty-mark">⌕</div>
-    <h2>搜索你的库</h2>
-    <p>标题、摘要、transcript、书文本和 Tag 会一起被检索。</p>
-  </div>
-  {% endif %}
 </section>
 {% endblock %}

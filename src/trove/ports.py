@@ -20,6 +20,7 @@ __all__ = [
     "Organizer",
     "SearchHit",
     "SearchIndex",
+    "SearchResult",
     "StageContext",
     "Transcriber",
     "TranscriptResult",
@@ -92,6 +93,7 @@ class TranscriptSegmentData:
 class TranscriptResult:
     segments: list[TranscriptSegmentData]
     language: str | None = None
+    model: str | None = None
 
 
 @dataclass(slots=True)
@@ -129,6 +131,13 @@ class SearchHit:
     doc_kind: str
     ref: str
     text: str
+
+
+@dataclass(slots=True)
+class SearchResult:
+    item_id: str
+    score: float
+    evidence: list[SearchHit]
 
 
 class Downloader(Protocol):
@@ -176,4 +185,6 @@ class SearchIndex(Protocol):
 
     def delete_item(self, item_id: str) -> None: ...
 
-    def search(self, query: str, *, limit: int = 50) -> list[SearchHit]: ...
+    def search(self, query: str, *, limit: int = 50) -> list[SearchResult]: ...
+
+    def rebuild(self) -> int: ...

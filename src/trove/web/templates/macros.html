@@ -70,6 +70,30 @@
 </section>
 {%- endmacro %}
 
+{% macro filter_stack(filter_groups, clear_url, has_filters, label='过滤') -%}
+<div class="filter-stack" aria-label="{{ label }}">
+  {% for group in filter_groups %}
+  {% if not (group.key == 'tag' and group.options|length <= 1) %}
+  <div class="filter-row">
+    <span class="filter-label">{{ group.label }}</span>
+    <div class="filter-group">
+      {% for option in group.options %}
+      <a class="chip {% if option.active %}active{% endif %}" href="{{ option.href }}"
+         hx-get="{{ option.href }}" hx-target="#main" hx-select="#main" hx-push-url="true">{{ option.label }}</a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% if has_filters %}
+  <div class="filter-row filter-clear">
+    <a class="chip" href="{{ clear_url }}" hx-get="{{ clear_url }}"
+       hx-target="#main" hx-select="#main" hx-push-url="true">清空过滤</a>
+  </div>
+  {% endif %}
+</div>
+{%- endmacro %}
+
 {% macro item_row(bundle, loop_index) -%}
 {% set item = bundle.item %}
 <article class="queue-item" data-item-id="{{ item.id }}">
