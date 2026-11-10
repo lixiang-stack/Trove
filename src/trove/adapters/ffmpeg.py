@@ -28,7 +28,7 @@ class FfmpegAudioExtractor:
         context: StageContext,
     ) -> AudioResult:
         if shutil.which(self.binary) is None or shutil.which(self.probe_binary) is None:
-            raise ProcessingError("ffmpeg.missing", "缺少 FFmpeg/ffprobe，请先安装")
+            raise ProcessingError("ffmpeg.missing", "FFmpeg/ffprobe is missing; install them first")
         output_dir.mkdir(parents=True, exist_ok=True)
         ensure_probe = run_command(
             context,
@@ -84,7 +84,7 @@ class FfmpegAudioExtractor:
             temporary.unlink(missing_ok=True)
             raise ProcessingError(
                 "ffmpeg.failed",
-                "FFmpeg 抽取音频失败",
+                "FFmpeg audio extraction failed",
                 details={"stderr": result.stderr[-2000:]},
             )
         temporary.replace(destination)

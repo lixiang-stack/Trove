@@ -145,7 +145,7 @@ class ProcessingService:
             if item is None:
                 run.state = RunState.FAILED
                 run.error_code = "internal.error"
-                run.error_message = "内容不存在"
+                run.error_message = "Content not found"
                 run.finished_at = utc_ms()
                 session.commit()
                 return
@@ -201,7 +201,7 @@ class ProcessingService:
                     f"stage {stage} crashed: {traceback.format_exc()}",
                     level="error",
                 )
-                self._fail(run_id, stage, "internal.error", "内部错误", {"error": str(exc)})
+                self._fail(run_id, stage, "internal.error", "Internal error", {"error": str(exc)})
                 self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
                 if stage != STAGE_INDEXING:
                     self._try_index(run_id, context.item_id)
@@ -224,14 +224,14 @@ class ProcessingService:
         with self.sessions() as session:
             item = session.get(Item, item_id)
             if item is None:
-                raise TroveError("内容不存在")
+                raise TroveError("Content not found")
             run = self._latest_run(session, item_id)
             if run is None:
-                raise ConflictError("没有可重试的 Processing Run")
+                raise ConflictError("No retryable Processing Run")
             if run.state in ACTIVE_RUN_STATES:
                 return run
             if run.state not in {RunState.FAILED, RunState.CANCELLED}:
-                raise ConflictError("当前 Processing Run 不需要重试")
+                raise ConflictError("The current Processing Run does not need a retry")
             run.state = RunState.QUEUED
             run.current_stage = None
             run.error_code = None
@@ -247,7 +247,7 @@ class ProcessingService:
         with self.sessions() as session:
             run = session.get(Run, run_id)
             if run is None:
-                raise TroveError("Processing Run 不存在")
+                raise TroveError("Processing Run not found")
             if run.state in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
                 return run
             if run.state == RunState.QUEUED:
@@ -270,7 +270,7 @@ class ProcessingService:
                     return run
                 run = session.get(Run, run_id)
                 if run is None:
-                    raise TroveError("Processing Run 不存在")
+                    raise TroveError("Processing Run not found")
                 if run.state in {RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED}:
                     return run
             run.cancel_requested_at = now
@@ -282,7 +282,7 @@ class ProcessingService:
         with self.sessions() as session:
             run = self._latest_run(session, item_id)
             if run is None:
-                raise TroveError("没有可取消的 Processing Run")
+                raise TroveError("No Processing Run to cancel")
         return self.cancel(run.id)
 
     def reclaim_stale_runs(self) -> int:
@@ -304,7 +304,7 @@ class ProcessingService:
                 for step in running_steps:
                     step.state = "cancelled"
                     step.error_code = "run.reclaimed"
-                    step.error_message = "Host 重启，阶段重新排队"
+                    step.error_message = "Host restarted; stage requeued"
                     step.finished_at = utc_ms()
                 if run.cancel_requested_at is not None:
                     run.state = RunState.CANCELLED
@@ -346,7 +346,7 @@ class ProcessingService:
         elif stage == STAGE_INDEXING:
             self.search_index.index_item(item.id)
         else:
-            raise ProcessingError("internal.error", f"未知阶段: {stage}")
+            raise ProcessingError("internal.error", f"Unknown stage: {stage}")
 
     def _stage_download(
         self, session: Session, item: Item, source: dict[str, Any], context: StageContext
@@ -366,14 +366,16 @@ class ProcessingService:
         if item.source_type in {"video_url", "podcast_episode"}:
             media_path = _downloaded_media(context.work_dir)
             if media_path is None:
-                raise ProcessingError("download.parse", "找不到已下载的媒体文件")
+                raise ProcessingError("download.parse", "Downloaded media file not found")
             force_transcode = True
         else:
             if not item.source_path:
-                raise ProcessingError("storage.source_missing", "缺少本地源文件路径")
+                raise ProcessingError("storage.source_missing", "Local source file path is missing")
             media_path = Path(item.source_path)
             if not media_path.is_file():
-                raise ProcessingError("storage.source_missing", "原始文件不存在或不可读")
+                raise ProcessingError(
+                    "storage.source_missing", "Source file does not exist or is not readable"
+                )
             force_transcode = item.source_type == "local_video"
         result = self.audio_extractor.extract(
             media_path,
@@ -408,7 +410,7 @@ class ProcessingService:
     ) -> None:
         audio = self._artifact(session, item.id, "audio")
         if audio is None:
-            raise ProcessingError("asr.failed", "缺少音频，无法转写")
+            raise ProcessingError("asr.failed", "Audio is missing; cannot transcribe")
         audio_path = self.package.artifact_path(item.id, audio.path)
         result = self.transcriber.transcribe(audio_path, context)
         payload = {
@@ -460,7 +462,7 @@ class ProcessingService:
     ) -> None:
         book = self._artifact(session, item.id, "book")
         if book is None:
-            raise ProcessingError("epub.invalid", "缺少 EPUB 文件")
+            raise ProcessingError("epub.invalid", "EPUB file is missing")
         book_path = self.package.artifact_path(item.id, book.path)
         result = self.book_extractor.extract(book_path, context)
         payload = {
@@ -800,7 +802,7 @@ class ProcessingService:
             if step is not None:
                 step.state = "cancelled"
                 step.error_code = "run.cancelled"
-                step.error_message = "已取消"
+                step.error_message = "Cancelled"
                 step.finished_at = utc_ms()
             run = session.get(Run, run_id)
             if run is not None:

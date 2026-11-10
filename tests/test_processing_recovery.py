@@ -165,7 +165,7 @@ def test_failure_reason_is_visible_in_html(host):
     item_id, _ = _add(host, "https://youtu.be/visiblefailure")
     host.wait_for_item(item_id)
     detail = host.client.get(f"/items/{item_id}")
-    assert "处理失败" in detail.text
+    assert "Failed" in detail.text
     assert "asr.failed" in detail.text
     listen = host.client.get(f"/items/{item_id}/listen")
-    assert "处理失败" in listen.text
+    assert "Failed" in listen.text

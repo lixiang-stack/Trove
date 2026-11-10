@@ -250,7 +250,7 @@ def test_batch_replace_rejects_empty_keyword_and_reports_no_match(host):
     )
 
     assert empty.status_code == 422
-    assert "查找关键词不能为空" in empty.text
+    assert "Search keyword cannot be empty" in empty.text
     assert missing.status_code == 303
     assert "replace=0" in missing.headers["location"]
     page = host.client.get(missing.headers["location"])

@@ -25,4 +25,6 @@ class UnavailableOrganizer:
                 model="disabled",
                 prompt_version="disabled",
             )
-        raise ProcessingError("llm.not_configured", "整理组件尚未配置，请稍后重试")
+        raise ProcessingError(
+            "llm.not_configured", "Organization service is not configured; try again later"
+        )

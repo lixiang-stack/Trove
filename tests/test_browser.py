@@ -136,7 +136,7 @@ def test_transcript_in_page_search_filters_and_highlights(host, browser):
     field.fill("智能体")
     assert details.locator("li.seg:visible").count() == 1
     assert details.locator("li.seg:visible mark").count() == 1
-    assert "1 段匹配" in details.locator("[data-transcript-count]").inner_text()
+    assert "1 segments matched" in details.locator("[data-transcript-count]").inner_text()
     field.fill("不存在的词")
     assert details.locator("li.seg:visible").count() == 0
     assert details.locator("[data-transcript-empty]").is_visible()
@@ -356,7 +356,7 @@ def test_status_updates_and_polling_stops(host_factory, browser):
     page = context.new_page()
     page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
     badge = page.locator(f'[data-item-id="{item_id}"] .badge').first
-    assert "排队中" in badge.inner_text()
+    assert "Queued" in badge.inner_text()
     assert badge.get_attribute("hx-trigger") == "every 3s"
     from trove.worker import WorkerThread
 
@@ -366,7 +366,7 @@ def test_status_updates_and_polling_stops(host_factory, browser):
             """(itemId) => {
                 const row = document.querySelector(`[data-item-id="${itemId}"]`);
                 const badge = row && row.querySelector('.badge');
-                return badge && badge.textContent.includes('已完成');
+                return badge && badge.textContent.includes('Completed');
             }""",
             arg=item_id,
             timeout=20000,
@@ -505,7 +505,8 @@ def test_listen_page_is_readable_in_dark_system(host_factory, browser):
             text(
                 "UPDATE runs SET state = 'failed', current_stage = 'transcribing', "
                 "error_code = 'asr.not_configured', "
-                "error_message = '转写组件尚未配置，请稍后重试' WHERE item_id = :item_id"
+                "error_message = 'ASR components are not installed; run: uv sync --extra asr' "
+                "WHERE item_id = :item_id"
             ),
             {"item_id": item_id},
         )
@@ -695,7 +696,7 @@ def test_all_pages_pass_contrast_audit_in_light_and_dark(host, browser):
         session.execute(
             text(
                 "UPDATE runs SET error_code = 'asr.not_configured', "
-                "error_message = '转写组件尚未配置，请稍后重试', "
+                "error_message = 'ASR components are not installed; run: uv sync --extra asr', "
                 "current_stage = 'transcribing' WHERE item_id = :item_id"
             ),
             {"item_id": failed.item.id},

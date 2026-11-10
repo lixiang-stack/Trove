@@ -76,7 +76,7 @@
           if (matches) visible += 1;
           if (text) highlight(text, query ? [query] : []);
         });
-        if (count) count.textContent = query ? `${visible} 段匹配` : "";
+        if (count) count.textContent = query ? `${visible} segments matched` : "";
         if (empty) empty.hidden = !query || visible > 0;
       };
       input.addEventListener("input", apply);

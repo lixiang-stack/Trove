@@ -82,7 +82,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         config = load_config()
     except ConfigError as exc:
-        print(f"配置错误: {exc}", file=sys.stderr)
+        print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
     if args.command == "serve":
@@ -111,7 +111,7 @@ def main(argv: list[str] | None = None) -> int:
         return _setup(config)
     if args.command == "auth":
         return _auth(config, args)
-    parser.error("未知命令")
+    parser.error("Unknown command")
     return 2
 
 
@@ -123,9 +123,15 @@ def _serve(config, args) -> int:
         host = "0.0.0.0"
     port = args.port or config.port
     if host not in {"127.0.0.1", "::1", "localhost"} and not args.lan:
-        print("提示：非本机访问建议使用 Tailscale Serve 或 HTTPS。", file=sys.stderr)
+        print(
+            "Hint: for non-local access, prefer Tailscale Serve or HTTPS.",
+            file=sys.stderr,
+        )
     if args.lan:
-        print("警告：--lan 会绑定 0.0.0.0，仅建议在受信任局域网使用。", file=sys.stderr)
+        print(
+            "Warning: --lan binds 0.0.0.0; use only on a trusted local network.",
+            file=sys.stderr,
+        )
     worker_process = None if args.no_worker else _start_worker_child(config)
     app = create_app(config)
     try:
@@ -141,9 +147,12 @@ def _start_worker_child(config) -> subprocess.Popen[str] | None:
 
     heartbeat = read_heartbeat(config)
     if heartbeat_is_fresh(heartbeat) and _heartbeat_process_alive(heartbeat):
-        print("检测到已有 worker，跳过启动内置 worker。", file=sys.stderr)
+        print("Detected an existing worker; skipping the built-in worker.", file=sys.stderr)
         return None
-    print("启动内置 processing worker（使用 --no-worker 可关闭）。", file=sys.stderr)
+    print(
+        "Starting the built-in processing worker (disable with --no-worker).",
+        file=sys.stderr,
+    )
     environment = os.environ.copy()
     environment["TROVE_PARENT_PID"] = str(os.getpid())
     process = subprocess.Popen(
@@ -159,7 +168,8 @@ def _start_worker_child(config) -> subprocess.Popen[str] | None:
             break
         if process.poll() is not None:
             print(
-                "内置 worker 启动失败；请检查数据库迁移并运行 uv run trove doctor。",
+                "Built-in worker failed to start; check database migrations and run "
+                "uv run trove doctor.",
                 file=sys.stderr,
             )
             break
@@ -195,7 +205,7 @@ def _db(config) -> int:
     config.ensure_layout()
     upgrade_database(config)
     current = current_revision(_engine(config))
-    print(f"数据库已迁移到 {current}")
+    print(f"Database migrated to {current}")
     return 0
 
 
@@ -218,7 +228,7 @@ def _search(config, args) -> int:
             limit=args.limit,
         )
     except ValueError as exc:
-        print(f"查询无效: {exc}", file=sys.stderr)
+        print(f"Invalid query: {exc}", file=sys.stderr)
         return 2
     if args.as_json:
         print(
@@ -229,11 +239,11 @@ def _search(config, args) -> int:
             )
         )
         return 0
-    print(f"{len(results)} 个 Item 命中「{args.query}」")
+    print(f'{len(results)} Items matched "{args.query}"')
     for result in results:
         item = result.bundle.item
         print(f"\n{item.title}")
-        print(f"  {item.source_type} · {item.platform} · {item.author or '未知作者'}")
+        print(f"  {item.source_type} · {item.platform} · {item.author or 'Unknown author'}")
         for evidence in result.evidence:
             print(f"  [{evidence.doc_kind}] {evidence.snippet}")
             print(
@@ -280,7 +290,7 @@ def _index(config, args) -> int:
         runtime = build_runtime(config)
         ensure_migrated(runtime)
         count = runtime.search_index.rebuild()
-        print(f"搜索索引已重建: {count} 个 Item")
+        print(f"Search index rebuilt: {count} Items")
         return 0
     return _index_status(config, args)
 
@@ -313,8 +323,8 @@ def _index_status(config, args) -> int:
         )
         return 0
     print(
-        f"搜索索引: {len(status.items)} 个 Item · {status.total_rows} 行"
-        f" · {status.orphan_rows} 条孤立行"
+        f"Search index: {len(status.items)} Items · {status.total_rows} rows"
+        f" · {status.orphan_rows} orphan rows"
     )
     for item in status.items:
         if item.missing_kinds:
@@ -322,14 +332,14 @@ def _index_status(config, args) -> int:
                 f"{kind} {item.counts.get(kind, 0)}/{item.expected[kind]}"
                 for kind in item.missing_kinds
             )
-            print(f"✗ {item.title} · 缺少: {missing}")
+            print(f"✗ {item.title} · missing: {missing}")
             continue
         counts = ", ".join(
             f"{kind}={item.counts.get(kind, 0)}"
             for kind in ("title", "summary", "tag", "transcript", "book")
             if item.counts.get(kind)
         )
-        print(f"✓ {item.title} · {counts or '无索引行'}")
+        print(f"✓ {item.title} · {counts or 'no indexed rows'}")
     return 0
 
 
@@ -337,35 +347,35 @@ def _doctor(config) -> int:
     config.ensure_layout()
     problems: list[str] = []
     print(f"Trove {__version__}")
-    print(f"数据目录: {config.home} ({oct(config.home.stat().st_mode & 0o777)})")
+    print(f"Data directory: {config.home} ({oct(config.home.stat().st_mode & 0o777)})")
 
     for path in (config.library_dir, config.cache_dir, config.logs_dir):
         mode = oct(path.stat().st_mode & 0o777)
         print(f"  {path.name}/ {mode}")
         if path.stat().st_mode & 0o077:
-            problems.append(f"{path} 权限过宽，应为 0700")
+            problems.append(f"{path} permissions are too broad; expected 0700")
     for path in (config.config_path, config.env_path):
         if not path.exists():
-            problems.append(f"缺少 {path}")
+            problems.append(f"Missing {path}")
         elif path.stat().st_mode & 0o077:
-            problems.append(f"{path} 权限过宽，应为 0600")
+            problems.append(f"{path} permissions are too broad; expected 0600")
 
     engine = _engine(config)
     if not fts5_available(engine):
-        problems.append("SQLite 缺少 FTS5 支持")
+        problems.append("SQLite lacks FTS5 support")
     else:
         print("SQLite FTS5: OK")
     head = head_revision(config)
     current = current_revision(engine)
     if current != head:
-        problems.append(f"数据库未迁移（当前 {current or '空'}，目标 {head}）")
+        problems.append(f"Database is not migrated (current {current or 'empty'}, target {head})")
     else:
-        print(f"数据库迁移: {current}")
+        print(f"Database migration: {current}")
 
     if config.password_configured():
-        print("密码: 已设置")
+        print("Password: configured")
     else:
-        problems.append("尚未设置密码，请运行: uv run trove auth set-password")
+        problems.append("Password is not configured; run: uv run trove auth set-password")
 
     for name, binary, args_ in (
         ("FFmpeg", "ffmpeg", ["-version"]),
@@ -373,8 +383,8 @@ def _doctor(config) -> int:
     ):
         path = shutil.which(binary)
         if path is None:
-            problems.append(f"缺少 {name}，请安装: brew install ffmpeg")
-            print(f"{name}: 缺失")
+            problems.append(f"Missing {name}; install with: brew install ffmpeg")
+            print(f"{name}: missing")
             continue
         output = _command_version([path, *args_])
         print(f"{name}: {output} ({path})")
@@ -395,59 +405,59 @@ def _doctor(config) -> int:
         except (OSError, subprocess.SubprocessError):
             ytdlp_result = None
         if ytdlp_result is None or ytdlp_result.returncode != 0:
-            problems.append("缺少 yt-dlp，请运行: uv sync")
-            print("yt-dlp: 缺失")
+            problems.append("yt-dlp is missing; run: uv sync")
+            print("yt-dlp: missing")
         else:
             print(f"yt-dlp: {ytdlp_result.stdout.strip()}")
 
     _doctor_asr(config, problems)
 
     if problems:
-        print("\n需要处理：")
+        print("\nProblems to fix:")
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print("\nHost 检查通过。")
+    print("\nHost check passed.")
     return 0
 
 
 def _doctor_asr(config, problems: list[str]) -> None:
     if importlib.util.find_spec("mlx_whisper") is None:
         problems.append(ASR_NOT_INSTALLED_HINT)
-        print("mlx-whisper: 缺失")
+        print("mlx-whisper: missing")
         return
     print("mlx-whisper: OK")
     from trove.adapters.asr import model_cached
 
     if model_cached(config.asr_model):
-        print(f"ASR 模型: {config.asr_model}")
+        print(f"ASR model: {config.asr_model}")
     else:
         problems.append(ASR_MODEL_MISSING_HINT)
-        print("ASR 模型: 缺失")
+        print("ASR model: missing")
 
 
 def _setup(config) -> int:
     config.ensure_layout()
     problems: list[str] = []
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
-        problems.append("缺少 FFmpeg/ffprobe，请安装: brew install ffmpeg")
+        problems.append("Missing FFmpeg/ffprobe; install with: brew install ffmpeg")
     if importlib.util.find_spec("mlx_whisper") is None:
         problems.append(ASR_NOT_INSTALLED_HINT)
     if problems:
-        print("需要处理：")
+        print("Problems to fix:")
         for problem in problems:
             print(f"  - {problem}")
         return 1
 
     from trove.adapters.asr import download_model
 
-    print(f"下载转写模型 {config.asr_model} …")
+    print(f"Downloading transcription model {config.asr_model} …")
     try:
         path = download_model(config.asr_model)
     except Exception as exc:  # noqa: BLE001 - setup reports the download failure
-        print(f"模型下载失败: {exc}", file=sys.stderr)
+        print(f"Model download failed: {exc}", file=sys.stderr)
         return 1
-    print(f"模型已就绪: {path}")
+    print(f"Model ready: {path}")
     return 0
 
 
@@ -469,17 +479,17 @@ def _auth(config, args) -> int:
         password = sys.stdin.readline().rstrip("\n")
         confirm = password
     else:
-        password = getpass.getpass("新密码: ")
-        confirm = getpass.getpass("再输入一次: ")
+        password = getpass.getpass("New password: ")
+        confirm = getpass.getpass("Enter it again: ")
     if password != confirm:
-        print("两次输入的密码不一致。", file=sys.stderr)
+        print("Passwords do not match.", file=sys.stderr)
         return 1
     if not password:
-        print("密码不能为空。", file=sys.stderr)
+        print("Password cannot be empty.", file=sys.stderr)
         return 1
     config.set_password(password)
     config.config_path.chmod(0o600)
-    print(f"密码已写入 {config.config_path}（权限 0600）。")
+    print(f"Password written to {config.config_path} (mode 0600).")
     return 0
 
 

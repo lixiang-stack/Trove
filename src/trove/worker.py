@@ -22,7 +22,7 @@ def ensure_migrated(runtime: Runtime) -> None:
     current = current_revision(runtime.engine)
     head = head_revision(runtime.config)
     if current != head:
-        raise RuntimeError("数据库尚未迁移，请先运行: uv run trove db upgrade")
+        raise RuntimeError("Database is not migrated; run: uv run trove db upgrade")
 
 
 def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> None:
@@ -86,7 +86,8 @@ def _mark_worker_failure(runtime: Runtime, run_id: str) -> None:
             session.execute(
                 text(
                     "UPDATE runs SET state = 'failed', error_code = 'internal.error', "
-                    "error_message = 'worker 异常退出', finished_at = :now WHERE id = :run_id"
+                    "error_message = 'worker exited unexpectedly', finished_at = :now "
+                    "WHERE id = :run_id"
                 ),
                 {"now": utc_ms(), "run_id": run_id},
             )

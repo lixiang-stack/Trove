@@ -236,11 +236,11 @@ def test_search_and_library_filter_ui_share_semantics(host):
 
     unfiltered = host.client.get("/search", params={"q": "shared"})
     assert "UI Alpha" in unfiltered.text and "UI Beta" in unfiltered.text
-    assert "类型" in unfiltered.text and "来源" in unfiltered.text
+    assert "Type" in unfiltered.text and "Source" in unfiltered.text
 
     too_long = host.client.get("/search", params={"q": "a" * 201})
     assert too_long.status_code == 200
-    assert "查询过长" in too_long.text
+    assert "Query is too long" in too_long.text
     empty = host.client.get("/search", params={"q": "zzzz-not-found"})
     assert "没有命中" in empty.text
 
