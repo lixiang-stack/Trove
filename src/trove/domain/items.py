@@ -119,6 +119,7 @@ CONSUMPTION_LABELS: dict[str, str] = {
     ConsumptionState.FINISHED: "已完成",
 }
 
+ASR_NOT_INSTALLED_HINT = "转写组件未安装，请运行: uv sync --extra asr"
 ASR_MODEL_MISSING_HINT = "转写模型未下载，请运行: uv run trove setup"
 
 ERROR_LABELS = {
@@ -132,7 +133,7 @@ ERROR_LABELS = {
     "download.invalid_type": "媒体类型不受支持",
     "ffmpeg.missing": "缺少 FFmpeg/ffprobe，请先安装",
     "ffmpeg.failed": "抽取音频失败",
-    "asr.not_configured": "转写组件尚未配置",
+    "asr.not_configured": ASR_NOT_INSTALLED_HINT,
     "asr.model_missing": ASR_MODEL_MISSING_HINT,
     "asr.failed": "转写失败",
     "llm.not_configured": "整理组件尚未配置",

@@ -41,6 +41,7 @@ def test_html_feed_preview_uses_htmx_partial(api_host):
     assert "<html" not in response.text
 
 
+@pytest.mark.ffmpeg
 def test_add_podcast_episode_creates_item_and_audio(host):
     host.login()
     response = host.client.post(

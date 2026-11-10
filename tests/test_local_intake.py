@@ -4,6 +4,8 @@ import shutil
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from .fakes import FIXTURES
 
 
@@ -24,6 +26,7 @@ def _rewrite_epub(
             writer.writestr(name, data)
 
 
+@pytest.mark.ffmpeg
 def test_upload_audio_creates_item_and_cleans_temp(host):
     host.login()
     record = host.client.post(
@@ -93,6 +96,7 @@ def test_upload_epub_is_copied_and_parsed(host):
     assert not (host.config.uploads_dir / upload_id).exists()
 
 
+@pytest.mark.ffmpeg
 def test_host_path_audio_is_copied_not_moved(host):
     source = host.config.home / "user-audio.wav"
     shutil.copyfile(FIXTURES / "short.wav", source)
@@ -106,6 +110,7 @@ def test_host_path_audio_is_copied_not_moved(host):
     assert (host.config.library_dir / item_id / "audio.wav").is_file()
 
 
+@pytest.mark.ffmpeg
 def test_local_video_keeps_path_but_not_video_file(host):
     source = host.config.home / "user-video.mp4"
     shutil.copyfile(FIXTURES / "short.mp4", source)
@@ -136,6 +141,7 @@ def test_duplicate_local_file_is_deduplicated(host):
     assert second.json()["item"]["id"] == item_id
 
 
+@pytest.mark.ffmpeg
 def test_unsupported_audio_is_transcoded(host):
     host.login()
     response = host.client.post(
