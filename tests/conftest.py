@@ -240,7 +240,7 @@ def seed_item(
                 started_at=utc_ms(),
                 finished_at=utc_ms() if run_state in TERMINAL_STATES else None,
                 error_code="download.network" if run_state == "failed" else None,
-                error_message="网络错误，下载失败" if run_state == "failed" else None,
+                error_message="Network error; download failed" if run_state == "failed" else None,
             )
             session.add(run)
             if run_state in TERMINAL_STATES:

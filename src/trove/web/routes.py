@@ -91,7 +91,7 @@ def _wants_json(request: Request) -> bool:
 def _unauthorized(request: Request) -> Response:
     if _wants_json(request):
         return JSONResponse(
-            {"code": "auth.required", "message": "请先登录"}, status_code=401
+            {"code": "auth.required", "message": "Sign in required"}, status_code=401
         )
     target = request.url.path
     if request.url.query:
@@ -102,9 +102,9 @@ def _unauthorized(request: Request) -> Response:
 def _csrf_denied(request: Request) -> Response:
     if _wants_json(request):
         return JSONResponse(
-            {"code": "auth.csrf", "message": "跨站请求被拒绝"}, status_code=403
+            {"code": "auth.csrf", "message": "Cross-site request rejected"}, status_code=403
         )
-    return PlainTextResponse("跨站请求被拒绝", status_code=403)
+    return PlainTextResponse("Cross-site request rejected", status_code=403)
 
 
 def _check_csrf(request: Request) -> Response | None:
@@ -193,7 +193,7 @@ def _filter_groups(
     groups = []
     for key, label, choices in dimensions:
         options = [
-            {"label": "全部", "href": build(**{key: ""}), "active": not selected.get(key)}
+            {"label": "All", "href": build(**{key: ""}), "active": not selected.get(key)}
         ]
         options.extend(
             {
@@ -209,10 +209,10 @@ def _filter_groups(
 
 def _search_dimensions(runtime) -> list[tuple[str, str, list[tuple[str, str]]]]:
     return [
-        ("type", "类型", list(SOURCE_TYPE_LABELS.items())),
-        ("consumption", "状态", list(CONSUMPTION_LABELS.items())),
+        ("type", "Type", list(SOURCE_TYPE_LABELS.items())),
+        ("consumption", "Status", list(CONSUMPTION_LABELS.items())),
         ("tag", "Tag", [(name, name) for name, _ in runtime.library.tag_counts()]),
-        ("source", "来源", list(PLATFORM_LABELS.items())),
+        ("source", "Source", list(PLATFORM_LABELS.items())),
     ]
 
 
@@ -277,7 +277,7 @@ def login_submit(
             {
                 "password_configured": runtime.config.password_configured(),
                 "next_path": _safe_next(next),
-                "error": "密码错误",
+                "error": "Incorrect password",
                 "active_nav": None,
             },
             status_code=401,
@@ -686,7 +686,7 @@ def api_login(request: Request, payload: LoginRequest):
     token = runtime.auth.login(payload.password, client)
     if token is None:
         return JSONResponse(
-            {"code": "auth.invalid", "message": "密码错误"}, status_code=401
+            {"code": "auth.invalid", "message": "Incorrect password"}, status_code=401
         )
     response = JSONResponse({"ok": True})
     _set_session_cookie(request, response, token)
@@ -734,24 +734,24 @@ def api_create_item(request: Request, payload: ItemCreateRequest):
     runtime = request.app.state.runtime
     if payload.kind == "url":
         if not payload.url:
-            raise ValidationError("缺少 url")
+            raise ValidationError("Missing url")
         bundle, duplicated = runtime.intake.add_video_url(payload.url)
     elif payload.kind == "path":
         if not payload.path:
-            raise ValidationError("缺少 path")
+            raise ValidationError("Missing path")
         bundle, duplicated = runtime.intake.add_host_path(payload.path)
     elif payload.kind == "upload":
         if not payload.upload_id:
-            raise ValidationError("缺少 upload_id")
+            raise ValidationError("Missing upload_id")
         bundle, duplicated = runtime.intake.add_upload(payload.upload_id)
     elif payload.kind == "podcast":
         if not payload.feed_url or not (payload.episode_guid or payload.enclosure_url):
-            raise ValidationError("缺少 feed_url 或单集标识")
+            raise ValidationError("Missing feed_url or episode identifier")
         bundle, duplicated = runtime.intake.add_podcast_episode(
             payload.feed_url, payload.episode_guid, payload.enclosure_url
         )
     else:
-        raise ValidationError("kind 必须是 url、path、upload 或 podcast")
+        raise ValidationError("kind must be one of url, path, upload, or podcast")
     return JSONResponse(
         {"item": runtime.library.payload(bundle), "deduplicated": duplicated},
         status_code=200 if duplicated else 201,
@@ -839,10 +839,10 @@ def api_run(request: Request, run_id: str):
     with runtime.sessions() as session:
         run = session.get(Run, run_id)
         if run is None:
-            raise NotFoundError("Processing Run 不存在")
+            raise NotFoundError("Processing Run not found")
         item = session.get(Item, run.item_id)
         if item is None:
-            raise NotFoundError("内容不存在")
+            raise NotFoundError("Content not found")
         bundle = item_bundle(session, item)
         payload = runtime.library.run_payload(bundle)
     return {
@@ -857,7 +857,7 @@ def api_cancel_run(request: Request, run_id: str):
     with runtime.sessions() as session:
         run = session.get(Run, run_id)
         if run is None:
-            raise NotFoundError("Processing Run 不存在")
+            raise NotFoundError("Processing Run not found")
         item_id = run.item_id
     runtime.processing.cancel(run_id)
     bundle = runtime.library.get(item_id)
@@ -1032,11 +1032,15 @@ def install_exception_handlers(app) -> None:
             return _render(
                 request,
                 "error.html",
-                {"status": 422, "message": "请求参数无效", "code": "request.invalid"},
+                {"status": 422, "message": "Invalid request parameters", "code": "request.invalid"},
                 status_code=422,
             )
         return JSONResponse(
-            {"code": "request.invalid", "message": "请求参数无效", "details": details},
+            {
+                "code": "request.invalid",
+                "message": "Invalid request parameters",
+                "details": details,
+            },
             status_code=422,
         )
 

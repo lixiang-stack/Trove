@@ -125,7 +125,7 @@ class Config:
             with self.config_path.open("rb") as handle:
                 return tomllib.load(handle)
         except (OSError, tomllib.TOMLDecodeError) as exc:
-            raise ConfigError(f"无法读取配置 {self.config_path}: {exc}") from exc
+            raise ConfigError(f"Could not read config {self.config_path}: {exc}") from exc
 
     def _write_config(self, values: dict[str, Any]) -> None:
         lines = []
@@ -170,7 +170,7 @@ class Config:
 
     def set_password(self, password: str) -> None:
         if not password:
-            raise ConfigError("密码不能为空")
+            raise ConfigError("Password cannot be empty")
         hasher = PasswordHasher()
         self._update_config(password_hash=hasher.hash(password))
 

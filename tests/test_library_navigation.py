@@ -87,8 +87,8 @@ def test_inbox_filters_processing_and_failed(host):
     inbox = host.client.get("/library?state=processing,failed")
     assert set(_order(inbox.text)) == {processing.item.id, failed.item.id}
     assert "Ready item" not in inbox.text
-    assert "转写中" in inbox.text
-    assert "处理失败" in inbox.text
+    assert "Transcribing" in inbox.text
+    assert "Failed" in inbox.text
 
 
 def test_active_status_badge_polls_and_failed_does_not(host):
@@ -129,9 +129,9 @@ def test_row_shows_title_author_type_tags_and_progress(host):
     row = host.client.get("/library").text
     assert "Row details" in row
     assert "作者名" in row
-    assert "播客" in row
+    assert "Podcast" in row
     assert "记忆" in row
-    assert "进行中" in row
+    assert "In progress" in row
     assert "progress-line" in row
     assert f'data-audio-url="/api/items/{bundle.item.id}/audio"' in row
 

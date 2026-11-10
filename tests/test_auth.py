@@ -17,8 +17,8 @@ def test_unauthenticated_api_is_401_and_html_redirects(api_host):
 def test_login_wrong_password_is_generic(api_host):
     response = api_host.client.post("/login", data={"password": "nope"})
     assert response.status_code == 401
-    assert "密码错误" in response.text
-    assert "不存在" not in response.text
+    assert "Incorrect password" in response.text
+    assert "not found" not in response.text.lower()
 
 
 def test_login_logout_and_session_persistence(host_factory):

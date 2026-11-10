@@ -33,10 +33,10 @@ class DefaultDownloader:
         self, source: dict[str, Any], context: StageContext
     ) -> DownloadResult:
         if shutil.which(sys.executable) is None:
-            raise ProcessingError("download.tool_missing", "缺少 yt-dlp")
+            raise ProcessingError("download.tool_missing", "yt-dlp is missing")
         url = str(source.get("source_url_canonical") or source.get("source_url_raw") or "")
         if not url:
-            raise ProcessingError("download.unsupported", "缺少视频 URL")
+            raise ProcessingError("download.unsupported", "Video URL is missing")
         template = context.work_dir / "download.%(ext)s"
         command = [
             sys.executable,
@@ -84,10 +84,10 @@ class DefaultDownloader:
         feed = source.get("feed") or {}
         enclosure_url = feed.get("enclosure_url")
         if not enclosure_url:
-            raise ProcessingError("download.unsupported", "播客单集缺少 enclosure")
+            raise ProcessingError("download.unsupported", "Podcast episode is missing an enclosure")
         episode = FeedEpisode(
             guid=feed.get("episode_guid"),
-            title=str(source.get("title") or "未命名单集"),
+            title=str(source.get("title") or "Untitled episode"),
             author=source.get("author"),
             published_at=source.get("published_at"),
             duration_sec=source.get("duration_sec"),
@@ -122,7 +122,7 @@ def _downloaded_file(work_dir: Path) -> Path:
         if path.is_file() and path.name.startswith("download.") and not path.name.endswith(".tmp")
     ]
     if not candidates:
-        raise ProcessingError("download.parse", "yt-dlp 未产生媒体文件")
+        raise ProcessingError("download.parse", "yt-dlp produced no media file")
     return max(candidates, key=lambda path: path.stat().st_size)
 
 
@@ -142,15 +142,15 @@ def _last_json(output: str) -> dict[str, Any]:
 
 def _classify_download_error(stderr: str) -> ProcessingError:
     text = stderr.lower()
-    if re.search(r"sign in|cookies|login|authentication|验证|登录", text):
-        return ProcessingError("download.login_required", "下载需要登录或 cookies")
-    if re.search(r"not available in your country|geo|region|地区", text):
-        return ProcessingError("download.geo_restricted", "内容在当前地区不可用")
+    if re.search(r"sign in|cookies|login|authentication", text):
+        return ProcessingError("download.login_required", "Download requires sign-in or cookies")
+    if re.search(r"not available in your country|geo|region", text):
+        return ProcessingError("download.geo_restricted", "Content is not available in your region")
     if re.search(r"private video|unsupported url|not a valid url|live event|is live", text):
-        return ProcessingError("download.unsupported", "不支持的视频类型或链接")
+        return ProcessingError("download.unsupported", "Unsupported video type or URL")
     if re.search(r"timed out|connection|network|temporary failure|http error", text):
-        return ProcessingError("download.network", "网络错误，下载失败")
-    return ProcessingError("download.parse", "无法解析视频信息")
+        return ProcessingError("download.network", "Network error; download failed")
+    return ProcessingError("download.parse", "Could not parse video info")
 
 
 def _string(value: Any) -> str | None:

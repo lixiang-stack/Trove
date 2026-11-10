@@ -63,7 +63,7 @@ def norm_text(value: str) -> str:
 def query_tokens(query: str) -> list[str]:
     query = normalize_text(query)
     if len(query) > MAX_QUERY_LENGTH:
-        raise ValueError(f"查询过长，最多 {MAX_QUERY_LENGTH} 个字符")
+        raise ValueError(f"Query is too long; maximum {MAX_QUERY_LENGTH} characters")
     return document_tokens(query)
 
 
@@ -75,7 +75,7 @@ def build_match_query(query: str) -> tuple[str | None, list[str]]:
     """
     normalized = normalize_text(query)
     if len(normalized) > MAX_QUERY_LENGTH:
-        raise ValueError(f"查询过长，最多 {MAX_QUERY_LENGTH} 个字符")
+        raise ValueError(f"Query is too long; maximum {MAX_QUERY_LENGTH} characters")
     phrases: list[str] = []
     like_terms: list[str] = []
     for kind, unit in _scan(normalized):
@@ -122,11 +122,11 @@ def ref_label(doc_kind: str, ref: str) -> str:
             return f"transcript · {seconds // 60:02d}:{seconds % 60:02d}"
         return "transcript"
     if doc_kind == "book":
-        return f"书 · {ref}"
+        return f"Book · {ref}"
     if doc_kind == "title":
-        return "标题"
+        return "Title"
     if doc_kind == "summary":
-        return "摘要"
+        return "Summary"
     if doc_kind == "tag":
         return "Tag"
     return doc_kind

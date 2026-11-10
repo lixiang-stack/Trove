@@ -22,7 +22,7 @@ class ReadingService:
     def chapters(self, item_id: str) -> list[BookChapterView]:
         with self.sessions() as session:
             if session.get(Item, item_id) is None:
-                raise NotFoundError("内容不存在")
+                raise NotFoundError("Content not found")
             chapters = list(
                 session.execute(
                     select(BookChapter)

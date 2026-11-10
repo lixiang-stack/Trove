@@ -31,8 +31,8 @@ def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         if not fts5_available(runtime.engine):
             raise RuntimeError(
-                "当前 SQLite 构建缺少 FTS5。请使用 uv 管理的 Python 3.12，"
-                "或安装带 FTS5 的 SQLite。"
+                "This SQLite build lacks FTS5. Use the Python 3.12 managed by uv, "
+                "or install SQLite with FTS5."
             )
         yield
 
