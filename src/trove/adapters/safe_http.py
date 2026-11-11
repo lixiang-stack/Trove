@@ -40,10 +40,7 @@ def validate_public_url(url: str) -> str:
         raise SafeHttpError("feed.private_address", "Access to local addresses is not allowed")
     try:
         addresses = {
-            str(info[4][0])
-            for info in socket.getaddrinfo(
-                hostname, parts.port or (443 if parts.scheme == "https" else 80)
-            )
+            str(info[4][0]) for info in socket.getaddrinfo(hostname, parts.port or 80)
         }
     except OSError as exc:
         raise SafeHttpError("feed.network", f"Could not resolve hostname: {hostname}") from exc
@@ -63,7 +60,14 @@ def _is_public_address(address: str) -> bool:
         return False
     if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
-    if not ip.is_global:
+    if (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    ):
         return False
     return not (
         isinstance(ip, ipaddress.IPv4Address)

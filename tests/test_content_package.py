@@ -300,26 +300,6 @@ def test_install_artifact_rejects_traversal_in_replaces(
     assert temp.exists()
 
 
-def test_remove_artifact_deletes_the_file(
-    package: ContentPackage, tmp_path: Path
-) -> None:
-    temp = tmp_path / "temp.m4a"
-    temp.write_bytes(b"audio")
-    installed = package.install_artifact(
-        ITEM_ID, ArtifactKind.AUDIO, temp, extension=".m4a"
-    )
-
-    package.remove_artifact(ITEM_ID, installed.relative_path)
-    package.remove_artifact(ITEM_ID, installed.relative_path)
-
-    assert not installed.path.exists()
-
-
-def test_remove_artifact_rejects_traversal(package: ContentPackage) -> None:
-    with pytest.raises(FileNotFoundError):
-        package.remove_artifact(ITEM_ID, "../../escape.m4a")
-
-
 def test_export_files_includes_source_and_artifacts(
     package: ContentPackage, tmp_path: Path
 ) -> None:

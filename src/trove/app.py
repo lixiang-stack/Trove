@@ -4,7 +4,6 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from fastapi.openapi.utils import get_openapi
 from fastapi.staticfiles import StaticFiles
 
 from trove import __version__
@@ -18,7 +17,6 @@ from trove.web.routes import (
     install_exception_handlers,
     install_middleware,
 )
-from trove.web.security import PUBLIC_PATHS
 from trove.web.templating import STATIC_DIR
 
 
@@ -42,33 +40,11 @@ def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
         title="Trove",
         version=__version__,
         lifespan=lifespan,
-        openapi_url="/api/openapi.json",
     )
     app.state.runtime = runtime
-    app.openapi = lambda: _openapi(app)  # type: ignore[method-assign]
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     install_middleware(app)
     install_exception_handlers(app)
     app.include_router(api_router)
     app.include_router(html_router)
     return app
-
-
-def _openapi(app: FastAPI) -> dict:
-    if app.openapi_schema:
-        return app.openapi_schema
-    schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
-    components = schema.setdefault("components", {})
-    components.setdefault("securitySchemes", {})["cookieAuth"] = {
-        "type": "apiKey",
-        "in": "cookie",
-        "name": "trove_session",
-    }
-    for path, operations in schema.get("paths", {}).items():
-        if not path.startswith("/api/") or path in PUBLIC_PATHS:
-            continue
-        for method, operation in operations.items():
-            if method in {"get", "post", "put", "patch", "delete"}:
-                operation.setdefault("security", [{"cookieAuth": []}])
-    app.openapi_schema = schema
-    return schema

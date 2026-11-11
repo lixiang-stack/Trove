@@ -164,9 +164,6 @@ class FakeAudioExtractor:
         self.real = FfmpegAudioExtractor()
         self.fail_code: str | None = None
 
-    def probe(self, source: Path, *, kind: str) -> None:
-        self.real.probe(source, kind=kind)
-
     def extract(
         self,
         source: Path,

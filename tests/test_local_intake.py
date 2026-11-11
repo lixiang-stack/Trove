@@ -43,11 +43,6 @@ def test_upload_audio_creates_item_and_cleans_temp(host):
     item_dir = host.config.library_dir / item_id
     assert (item_dir / "audio.wav").is_file()
     assert (item_dir / "source.json").is_file()
-    assert "source_path" not in host.item(item_id)
-    source = host.runtime.package.read_source(item_id)
-    assert source is not None
-    assert source.source_path is None
-    assert source.uploaded is True
     assert not (host.config.uploads_dir / upload_id).exists()
 
 
@@ -98,43 +93,7 @@ def test_upload_epub_is_copied_and_parsed(host):
     item_dir = host.config.library_dir / item_id
     assert (item_dir / "book.epub").is_file()
     assert (item_dir / "book.json").is_file()
-    assert "source_path" not in host.item(item_id)
-    source = host.runtime.package.read_source(item_id)
-    assert source is not None
-    assert source.source_path is None
     assert not (host.config.uploads_dir / upload_id).exists()
-
-
-def test_deleting_a_pending_upload_cleans_it(api_host, monkeypatch):
-    monkeypatch.setattr(
-        api_host.stack.audio_extractor,
-        "probe",
-        lambda source, *, kind: None,
-    )
-    api_host.login()
-    upload = api_host.client.post(
-        "/api/uploads",
-        files={
-            "file": (
-                "pending.wav",
-                (FIXTURES / "short.wav").read_bytes(),
-                "audio/wav",
-            )
-        },
-    )
-    assert upload.status_code == 200, upload.text
-    upload_id = upload.json()["upload_id"]
-    response = api_host.client.post(
-        "/api/items", json={"kind": "upload", "upload_id": upload_id}
-    )
-    assert response.status_code == 201, response.text
-    item_id = response.json()["item"]["id"]
-    assert (api_host.config.uploads_dir / upload_id).exists()
-
-    delete = api_host.client.delete(f"/api/items/{item_id}")
-
-    assert delete.status_code == 204
-    assert not (api_host.config.uploads_dir / upload_id).exists()
 
 
 @pytest.mark.ffmpeg
@@ -159,7 +118,7 @@ def test_local_video_keeps_path_but_not_video_file(host):
     response = host.client.post("/api/items", json={"kind": "path", "path": str(source)})
     assert response.status_code == 201, response.text
     payload = response.json()["item"]
-    assert "source_path" not in payload
+    assert payload["source_path"] == str(source)
     item_id = payload["id"]
     host.wait_for_item(item_id)
     item_dir = host.config.library_dir / item_id
@@ -169,7 +128,6 @@ def test_local_video_keeps_path_but_not_video_file(host):
     assert source.exists()
 
 
-@pytest.mark.ffmpeg
 def test_duplicate_local_file_is_deduplicated(host):
     source = host.config.home / "duplicate.wav"
     shutil.copyfile(FIXTURES / "short.wav", source)
@@ -268,9 +226,12 @@ def test_failed_upload_validation_cleans_temp(host):
         "/api/uploads",
         files={"file": ("broken.epub", b"not a zip", "application/epub+zip")},
     )
-    assert upload.status_code == 422
-    assert upload.json()["details"]["code"] == "epub.invalid"
-    assert list(host.config.uploads_dir.iterdir()) == []
+    assert upload.status_code == 200
+    upload_id = upload.json()["upload_id"]
+    response = host.client.post("/api/items", json={"kind": "upload", "upload_id": upload_id})
+    assert response.status_code == 422
+    assert response.json()["details"]["code"] == "epub.invalid"
+    assert not (host.config.uploads_dir / upload_id).exists()
 
 
 def test_upload_rejects_wrong_mime_type(host):

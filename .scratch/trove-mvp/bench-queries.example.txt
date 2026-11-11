@@ -1,7 +1,0 @@
-# Copy to bench-queries.txt and replace with the pre-registered warehouse queries.
-人工智能
-记忆
-注意力
-生产力
-播客
-transcript

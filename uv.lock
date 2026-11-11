@@ -1584,7 +1584,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-multipart" },
     { name = "sqlalchemy" },
-    { name = "starlette" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "yt-dlp" },
 ]
@@ -1617,7 +1616,6 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.10" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "sqlalchemy", specifier = ">=2.0" },
-    { name = "starlette", specifier = ">=0.49.1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34" },
     { name = "yt-dlp", specifier = ">=2025.1" },
 ]
