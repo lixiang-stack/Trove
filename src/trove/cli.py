@@ -2,19 +2,15 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import http.client
 import importlib.util
 import json
 import os
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import threading
 import time
-from pathlib import Path
-from typing import Any
 
 from trove import __version__
 from trove.app import create_app
@@ -62,28 +58,6 @@ def _build_parser() -> argparse.ArgumentParser:
     search.add_argument("--tag", default="")
     search.add_argument("--source", default="")
 
-    bench = subparsers.add_parser("bench", help="local performance benchmarks")
-    bench_sub = bench.add_subparsers(dest="bench_command", required=True)
-    bench_asr = bench_sub.add_parser("asr", help="time a real ASR transcription")
-    bench_asr.add_argument("audio")
-    bench_asr.add_argument("--model", default=None)
-    bench_asr.add_argument("--json", action="store_true", dest="as_json")
-    bench_search = bench_sub.add_parser("search", help="time search queries against the library")
-    bench_search.add_argument("--queries", required=True, help="one query per line")
-    bench_search.add_argument("--repeat", type=int, default=3)
-    bench_search.add_argument("--limit", type=int, default=20)
-    bench_search.add_argument("--json", action="store_true", dest="as_json")
-    bench_pipeline = bench_sub.add_parser(
-        "pipeline", help="time a full real video pipeline (network and tools required)"
-    )
-    bench_pipeline.add_argument("url")
-    bench_pipeline.add_argument("--json", action="store_true", dest="as_json")
-    bench_seed = bench_sub.add_parser(
-        "seed", help="insert repeatable search-benchmark Items into TROVE_HOME"
-    )
-    bench_seed.add_argument("--count", type=int, default=1000)
-    bench_seed.add_argument("--json", action="store_true", dest="as_json")
-
     index = subparsers.add_parser("index", help="search index commands")
     index_sub = index.add_subparsers(dest="index_command", required=True)
     index_sub.add_parser("rebuild", help="rebuild the search index")
@@ -92,15 +66,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("doctor", help="check Host dependencies and layout")
     subparsers.add_parser("setup", help="download the ASR model and check dependencies")
-
-    service = subparsers.add_parser("service", help="install or remove launchd agents")
-    service_sub = service.add_subparsers(dest="service_command", required=True)
-    for action in ("install", "uninstall"):
-        command = service_sub.add_parser(action, help=f"{action} launchd agents")
-        command.add_argument("--root", default=None, help="repository root")
-        command.add_argument("--home", default=None, help="TROVE_HOME to use")
-        command.add_argument("--agents-dir", default=None, help="LaunchAgents directory")
-        command.add_argument("--dry-run", action="store_true")
 
     auth = subparsers.add_parser("auth", help="authentication commands")
     auth_sub = auth.add_subparsers(dest="auth_command", required=True)
@@ -140,14 +105,10 @@ def main(argv: list[str] | None = None) -> int:
         return _search(config, args)
     if args.command == "index":
         return _index(config, args)
-    if args.command == "bench":
-        return _bench(config, args)
     if args.command == "doctor":
         return _doctor(config)
     if args.command == "setup":
         return _setup(config)
-    if args.command == "service":
-        return _service(config, args)
     if args.command == "auth":
         return _auth(config, args)
     parser.error("Unknown command")
@@ -382,97 +343,6 @@ def _index_status(config, args) -> int:
     return 0
 
 
-def _bench(config, args) -> int:
-    from trove.benchmarks import (
-        read_queries,
-        run_asr_benchmark,
-        run_pipeline_benchmark,
-        run_search_benchmark,
-        seed_library,
-    )
-
-    payload: dict[str, Any]
-    if args.bench_command == "seed":
-        if args.count < 1:
-            print("--count must be positive", file=sys.stderr)
-            return 2
-        count = seed_library(config, args.count)
-        payload = {"seeded": count, "home": str(config.home)}
-        if args.as_json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(f"Seeded {count} benchmark Items in {config.home}")
-        return 0
-
-    if args.bench_command == "pipeline":
-        try:
-            payload = run_pipeline_benchmark(config, args.url)
-        except Exception as exc:  # noqa: BLE001 - benchmark reports the failure
-            print(f"Pipeline benchmark failed: {exc}", file=sys.stderr)
-            return 1
-        if args.as_json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(f"Item: {payload['title']}")
-            print(f"Elapsed: {payload['elapsed_sec']} s")
-            print(f"State: {payload['state']}")
-            if payload["error_code"]:
-                print(f"Error: {payload['error_code']}")
-        return 0 if payload["state"] == "completed" else 1
-
-    if args.bench_command == "asr":
-        audio = Path(args.audio).expanduser()
-        if not audio.is_file():
-            print(f"Audio file not found: {audio}", file=sys.stderr)
-            return 2
-        try:
-            payload = run_asr_benchmark(config, audio, model=args.model)
-        except Exception as exc:  # noqa: BLE001 - benchmark reports the failure
-            print(f"ASR benchmark failed: {exc}", file=sys.stderr)
-            return 1
-        if args.as_json:
-            print(json.dumps(payload, ensure_ascii=False, indent=2))
-        else:
-            print(f"ASR model: {payload['model']}")
-            print(f"Audio: {payload['duration_sec']} s")
-            print(f"Elapsed: {payload['elapsed_sec']} s")
-            print(f"Realtime factor: {payload['realtime_factor']}")
-            print(f"Language: {payload['language']} · segments: {payload['segments']}")
-        return 0
-
-    if args.repeat < 1 or args.limit < 1:
-        print("--repeat and --limit must be positive", file=sys.stderr)
-        return 2
-    query_path = Path(args.queries).expanduser()
-    if not query_path.is_file():
-        print(f"Query file not found: {query_path}", file=sys.stderr)
-        return 2
-    try:
-        queries = read_queries(query_path)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    runtime = build_runtime(config)
-    ensure_migrated(runtime)
-    payload = run_search_benchmark(
-        runtime, queries, repeat=args.repeat, limit=args.limit
-    )
-    if args.as_json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
-        return 0
-    summary = payload["summary"]
-    print(
-        f"{payload['queries']} queries × {payload['repeat']} · "
-        f"p50 {summary['p50_ms']} ms · p95 {summary['p95_ms']} ms"
-    )
-    for row in payload["results"]:
-        print(
-            f"{row['timings']['p50_ms']:8.2f} ms  "
-            f"{row['results']:3d} results  {row['query']}"
-        )
-    return 0
-
-
 def _doctor(config) -> int:
     config.ensure_layout()
     problems: list[str] = []
@@ -506,11 +376,6 @@ def _doctor(config) -> int:
         print("Password: configured")
     else:
         problems.append("Password is not configured; run: uv run trove auth set-password")
-
-    port_problem, port_message = _port_status(config.host, config.port)
-    print(port_message)
-    if port_problem:
-        problems.append(port_message)
 
     for name, binary, args_ in (
         ("FFmpeg", "ffmpeg", ["-version"]),
@@ -578,13 +443,6 @@ def _setup(config) -> int:
         problems.append("Missing FFmpeg/ffprobe; install with: brew install ffmpeg")
     if importlib.util.find_spec("mlx_whisper") is None:
         problems.append(ASR_NOT_INSTALLED_HINT)
-    if importlib.util.find_spec("yt_dlp") is None:
-        problems.append("yt-dlp is missing; run: uv sync")
-    if not fts5_available(_engine(config)):
-        problems.append("SQLite lacks FTS5 support")
-    port_problem, port_message = _port_status(config.host, config.port)
-    if port_problem:
-        problems.append(port_message)
     if problems:
         print("Problems to fix:")
         for problem in problems:
@@ -601,73 +459,6 @@ def _setup(config) -> int:
         return 1
     print(f"Model ready: {path}")
     return 0
-
-
-def _service(config, args) -> int:
-    from trove import deploy
-    from trove.config import Config
-
-    root = Path(args.root).expanduser().resolve() if args.root else Path.cwd().resolve()
-    home = Path(args.home).expanduser().resolve() if args.home else config.home
-    agents_dir = (
-        Path(args.agents_dir).expanduser().resolve()
-        if args.agents_dir
-        else deploy.default_agents_dir()
-    )
-    try:
-        if args.service_command == "install":
-            if not args.dry_run:
-                target = config if home == config.home else Config(home=home)
-                target.ensure_layout()
-                upgrade_database(target)
-            paths = deploy.install(
-                repo_root=root,
-                home=home,
-                agents_dir=agents_dir,
-                dry_run=args.dry_run,
-            )
-            verb = "Rendered" if args.dry_run else "Installed"
-            for path in paths:
-                print(f"{verb} {path}")
-            if not args.dry_run:
-                print("Start: launchctl kickstart -k gui/$(id -u)/com.trove.api")
-            return 0
-        paths = deploy.uninstall(agents_dir=agents_dir, dry_run=args.dry_run)
-        verb = "Would remove" if args.dry_run else "Removed"
-        for path in paths:
-            print(f"{verb} {path}")
-        print(f"Data in {home} was left untouched.")
-        return 0
-    except deploy.DeployError as exc:
-        print(f"Deployment error: {exc}", file=sys.stderr)
-        return 1
-
-
-def _port_status(host: str, port: int) -> tuple[bool, str]:
-    if _port_available(host, port):
-        return False, f"Port: {host}:{port} available"
-    probe_host = {"0.0.0.0": "127.0.0.1", "::": "::1"}.get(host, host)
-    try:
-        connection = http.client.HTTPConnection(probe_host, port, timeout=1)
-        connection.request("GET", "/api/health")
-        response = connection.getresponse()
-        payload = json.loads(response.read())
-        if isinstance(payload, dict) and {"host", "database", "worker"} <= set(payload):
-            return False, f"Port: {host}:{port} in use by Trove (running)"
-    except (OSError, http.client.HTTPException, json.JSONDecodeError):
-        pass
-    return True, f"Port {host}:{port} is already in use; stop the other process"
-
-
-def _port_available(host: str, port: int) -> bool:
-    family = socket.AF_INET6 if ":" in host else socket.AF_INET
-    with socket.socket(family, socket.SOCK_STREAM) as sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            sock.bind((host, port))
-        except OSError:
-            return False
-    return True
 
 
 def _command_version(command: list[str]) -> str:

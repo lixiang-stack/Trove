@@ -38,12 +38,3 @@ MVP 的硬指标是：1 小时视频端到端 <30 分钟、千条级搜索 <1 �
 
 - 性能优化本身；如果不达标，另开 issue 或回退方案。
 - 大众市场容量/成本模型；不做。
-
-## Comments
-
-2026-11-10 — Added repeatable commands `trove bench asr <audio>`,
-`trove bench seed --count N` (use a disposable `TROVE_HOME`),
-`trove bench search --queries <file> --repeat N`, and
-`trove bench pipeline <video-url>`, plus the recording template at
-`.scratch/trove-mvp/benchmarks.md`. Real 1-hour audio, 1k-Item search, end-to-end
-timing, and storage measurements still require the physical Mac and user data.

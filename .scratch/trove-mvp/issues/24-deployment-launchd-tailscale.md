@@ -40,12 +40,3 @@ MVP 的 Host 是用户自己的 Mac，需要开机/登录后自动运行、崩�
 
 - Docker、云主机、公网反向代理、多用户；不做。
 - Q10 一周播放验证；由 25 执行。
-
-## Comments
-
-2026-11-10 — Added `trove service install/uninstall`, launchd plist rendering with
-`RunAtLoad`/`KeepAlive`, separate logs, `TROVE_HOME`, and full `PATH`; wrapper
-scripts perform the first migration. `trove doctor` now checks the listen port;
-`trove setup` checks FTS5, `yt-dlp`, and the port as well. Documented Tailscale
-Serve, Caddy, upgrade, backup, caffeinate, uninstall, and a deployment checklist
-in `docs/deployment.md`. Real clean-Mac kill/reboot/HTTPS checks remain manual.

@@ -600,9 +600,6 @@ class ContentPackage:
             mime=mime or guess_mime(filename),
         )
 
-    def remove_artifact(self, item_id: str, relative: str) -> None:
-        self.artifact_path(item_id, relative).unlink(missing_ok=True)
-
     def export_files(
         self, item_id: str, artifact_paths: Iterable[str]
     ) -> list[tuple[Path, str]]:
