@@ -42,3 +42,11 @@ ADRs: [0008](../../../docs/adr/0008-content-package-as-source-of-truth.md)
 
 - Android 客户端、代码生成、API 版本前缀/迁移策略；V1 再定。
 - 同步 manifest/cursor/tombstone；V1。
+
+## Comments
+
+2026-11-10 — Completed the API contract audit: typed response schemas and OpenAPI
+error/auth components, `GET /api/continue`, Item pagination (`limit`/`offset`),
+artifact metadata without server paths, run-error/log path redaction, stable
+`run.not_found`, and contract tests in `tests/test_api_contract.py`. Range/ETag
+behavior is covered together with ticket 11 playback tests.

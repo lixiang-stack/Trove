@@ -6,8 +6,9 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
+from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import Engine, create_engine, event, text
+from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.config import Config
@@ -61,13 +62,9 @@ def head_revision(config: Config) -> str | None:
 
 def current_revision(engine: Engine) -> str | None:
     with engine.connect() as connection:
-        exists = connection.execute(
-            text("SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version'")
-        ).first()
-        if not exists:
+        if "alembic_version" not in inspect(connection).get_table_names():
             return None
-        row = connection.execute(text("SELECT version_num FROM alembic_version")).first()
-        return str(row[0]) if row else None
+        return MigrationContext.configure(connection).get_current_revision()
 
 
 def migration_status(engine: Engine, config: Config) -> dict[str, object]:
@@ -85,8 +82,9 @@ def verify_fts5(engine: Engine) -> None:
     table = f"fts5_check_{uuid.uuid4().hex}"
     try:
         with engine.begin() as connection:
-            connection.execute(text(f"CREATE VIRTUAL TABLE {table} USING fts5(content)"))
-            connection.execute(text(f"DROP TABLE {table}"))
+            quoted = connection.dialect.identifier_preparer.quote(table)
+            connection.execute(text(f"CREATE VIRTUAL TABLE {quoted} USING fts5(content)"))
+            connection.execute(text(f"DROP TABLE {quoted}"))
     except Exception as exc:  # sqlite3.OperationalError or SQLAlchemy wrapper
         raise RuntimeError(
             "This SQLite build lacks FTS5. Reinstall the Python 3.12 managed by uv"

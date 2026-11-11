@@ -24,6 +24,11 @@ class ConsumptionState(StrEnum):
     FINISHED = "finished"
 
 
+class ContinueKind(StrEnum):
+    READ = "read"
+    LISTEN = "listen"
+
+
 class RunState(StrEnum):
     QUEUED = "queued"
     COMPLETED = "completed"
