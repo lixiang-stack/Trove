@@ -38,3 +38,11 @@ Requirements: 需求文档 9.1–9.5
 
 - V1 Android、离线、同步、云端、PDF/TTS/标注/语义检索/Topic；不做。
 - 新功能；发现缺口另开 issue。
+
+## Comments
+
+2026-11-10 — Added the release checklist at `.scratch/trove-mvp/acceptance.md`
+(automated gates, manual gates, P1 evidence, known issues, release decision). The
+full local suite currently passes (`./scripts/check.sh`, 313 tests including
+FFmpeg and Playwright; docs check passes). Q10, performance, search, and
+source/Tag evidence remain pending, so the release decision is not yet made.
