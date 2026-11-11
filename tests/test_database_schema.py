@@ -17,6 +17,7 @@ from trove.db.models import (
     Run,
     RunStep,
     Tag,
+    TranscriptSegment,
 )
 
 
@@ -61,16 +62,14 @@ def test_migration_creates_tables_and_indexes(tmp_path):
         "runs",
         "run_steps",
         "artifacts",
+        "transcript_segments",
+        "book_chapters",
+        "book_paragraphs",
         "tags",
         "item_tags",
         "ai_results",
         "search_fts",
     } <= tables
-    assert {
-        "transcript_segments",
-        "book_chapters",
-        "book_paragraphs",
-    }.isdisjoint(tables)
     assert "uq_runs_active_item" in indexes
     with engine.connect() as connection:
         schema_sql = " ".join(
@@ -81,6 +80,9 @@ def test_migration_creates_tables_and_indexes(tmp_path):
     for constraint in (
         "uq_run_steps_attempt",
         "uq_artifacts_item_kind",
+        "uq_transcript_item_seq",
+        "uq_book_chapters_item_index",
+        "uq_book_paragraphs_item_ref",
     ):
         assert constraint in schema_sql
 
@@ -185,10 +187,12 @@ def test_delete_cascades_and_keeps_original_file(tmp_path):
         )
         session.add(Run(id="run-1", item_id="item-1", state="completed", created_at=utc_ms()))
         session.add(RunStep(run_id="run-1", stage="indexing", state="completed", attempt=1))
+        session.add(TranscriptSegment(item_id="item-1", seq=0, start_ms=0, end_ms=10, text="hi"))
         session.commit()
         session.delete(session.get(Item, "item-1"))
         session.commit()
         assert session.execute(text("SELECT count(*) FROM artifacts")).scalar() == 0
         assert session.execute(text("SELECT count(*) FROM runs")).scalar() == 0
         assert session.execute(text("SELECT count(*) FROM run_steps")).scalar() == 0
+        assert session.execute(text("SELECT count(*) FROM transcript_segments")).scalar() == 0
     assert original.exists()

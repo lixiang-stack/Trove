@@ -11,7 +11,7 @@ from trove.content_package import (
 from trove.content_package import (
     TranscriptSegment as TranscriptSegmentDocument,
 )
-from trove.db.models import Artifact
+from trove.db.models import Artifact, TranscriptSegment
 
 from .conftest import seed_item
 
@@ -103,26 +103,26 @@ def test_invalid_progress_is_rejected(host):
 
 def test_transcript_and_listen_page(host):
     bundle = seed_item(host, title="Transcript item")
-    host.runtime.package.write_transcript(
-        bundle.item.id,
-        TranscriptDocument(
-            language="zh",
-            segments=[
-                TranscriptSegmentDocument(
+    with host.runtime.sessions() as session:
+        session.add_all(
+            [
+                TranscriptSegment(
+                    item_id=bundle.item.id,
                     seq=0,
                     start_ms=0,
                     end_ms=1000,
                     text="第一段关于记忆的内容。",
                 ),
-                TranscriptSegmentDocument(
+                TranscriptSegment(
+                    item_id=bundle.item.id,
                     seq=1,
                     start_ms=1000,
                     end_ms=2000,
                     text="第二段继续讨论智能体。",
                 ),
-            ],
-        ),
-    )
+            ]
+        )
+        session.commit()
     host.login()
     payload = host.client.get(f"/api/items/{bundle.item.id}/transcript").json()
     assert len(payload["segments"]) == 2
@@ -137,8 +137,35 @@ def test_transcript_and_listen_page(host):
     assert "<script type=\"application/json\" data-player-item>" in page.text
 
 
-def test_batch_replace_updates_package_artifact_and_search(host):
+def test_batch_replace_updates_segments_package_artifact_and_search(host):
     bundle = seed_item(host, title="批量替换")
+    with host.runtime.sessions() as session:
+        session.add_all(
+            [
+                TranscriptSegment(
+                    item_id=bundle.item.id,
+                    seq=0,
+                    start_ms=0,
+                    end_ms=1000,
+                    text="智能体需要记忆。",
+                ),
+                TranscriptSegment(
+                    item_id=bundle.item.id,
+                    seq=1,
+                    start_ms=1000,
+                    end_ms=2000,
+                    text="智能体也需要遗忘。",
+                ),
+                TranscriptSegment(
+                    item_id=bundle.item.id,
+                    seq=2,
+                    start_ms=2000,
+                    end_ms=3000,
+                    text="这段保持不变。",
+                ),
+            ]
+        )
+        session.commit()
     package_path = host.runtime.package.write_transcript(
         bundle.item.id,
         TranscriptDocument(
@@ -210,16 +237,17 @@ def test_batch_replace_updates_package_artifact_and_search(host):
 
 def test_batch_replace_rejects_empty_keyword_and_reports_no_match(host):
     bundle = seed_item(host, title="替换边界")
-    host.runtime.package.write_transcript(
-        bundle.item.id,
-        TranscriptDocument(
-            segments=[
-                TranscriptSegmentDocument(
-                    seq=0, start_ms=0, end_ms=1000, text="一段转写。"
-                )
-            ],
-        ),
-    )
+    with host.runtime.sessions() as session:
+        session.add(
+            TranscriptSegment(
+                item_id=bundle.item.id,
+                seq=0,
+                start_ms=0,
+                end_ms=1000,
+                text="一段转写。",
+            )
+        )
+        session.commit()
     host.login()
 
     empty = host.client.post(

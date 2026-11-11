@@ -38,11 +38,3 @@ Requirements: FR-51, FR-52, NFR-05
 
 - 向量/语义检索、推荐；P2。
 - 大规模众包评估；个人验证即可。
-
-## Comments
-
-2026-11-10 — Added `scripts/evaluate-search.py` plus pure scoring helpers in
-`src/trove/evaluation.py` (recall@10, first relevant rank, misses, result types,
-and per-content-type recall).
-The pre-registration and result template is `.scratch/trove-mvp/search-evaluation.md`.
-The 30 real queries and manual Item judgments remain human work.

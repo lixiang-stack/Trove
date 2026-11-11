@@ -21,9 +21,6 @@ __all__ = [
     "FeedClient",
     "FeedEpisode",
     "FeedPreview",
-    "IndexItemStatus",
-    "IndexStatus",
-    "INDEX_KINDS",
     "OrganizationResult",
     "Organizer",
     "SearchHit",
@@ -159,32 +156,6 @@ class SearchResult:
     evidence: list[SearchHit]
 
 
-INDEX_KINDS = ("title", "summary", "tag", "transcript", "book")
-
-
-@dataclass(slots=True)
-class IndexItemStatus:
-    item_id: str
-    title: str
-    counts: dict[str, int]
-    expected: dict[str, int]
-
-    @property
-    def missing_kinds(self) -> list[str]:
-        return [
-            kind
-            for kind in INDEX_KINDS
-            if self.counts.get(kind, 0) < self.expected.get(kind, 0)
-        ]
-
-
-@dataclass(slots=True)
-class IndexStatus:
-    items: list[IndexItemStatus]
-    total_rows: int
-    orphan_rows: int
-
-
 class Downloader(Protocol):
     def download(
         self, source: SourceDocument, context: StageContext
@@ -196,8 +167,6 @@ class FeedClient(Protocol):
 
 
 class AudioExtractor(Protocol):
-    def probe(self, source: Path, *, kind: str) -> None: ...
-
     def extract(
         self,
         source: Path,
@@ -237,5 +206,3 @@ class SearchIndex(Protocol):
     def search(self, query: str, *, limit: int = 50) -> list[SearchResult]: ...
 
     def rebuild(self) -> int: ...
-
-    def status(self) -> IndexStatus: ...

@@ -38,10 +38,3 @@ Requirements: FR-01, FR-03, FR-04, FR-25, FR-26, FR-27
 
 - 绕过 DRM/地区限制；不做。
 - 大众市场来源覆盖/合规；不做。
-
-## Comments
-
-2026-11-10 — Added the source matrix and Tag/summary review template at
-`.scratch/trove-mvp/source-quality.md`. Real Bilibili/YouTube/podcast/EPUB/local
-samples and human Tag judgments are still required; no copyrighted content is
-stored in the repository.
