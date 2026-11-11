@@ -12,43 +12,42 @@ from trove.content_package import (
 from trove.content_package import (
     TranscriptSegment as TranscriptSegmentDocument,
 )
+from trove.db.models import BookChapter, BookParagraph, TranscriptSegment
 
 from .conftest import seed_item
 
 
 def _add_segments(host, item_id: str, *texts: str) -> None:
-    host.runtime.package.write_transcript(
-        item_id,
-        TranscriptDocument(
-            segments=[
-                TranscriptSegmentDocument(
+    with host.runtime.sessions() as session:
+        session.add_all(
+            [
+                TranscriptSegment(
+                    item_id=item_id,
                     seq=index,
                     start_ms=index * 1000,
                     end_ms=(index + 1) * 1000,
                     text=value,
                 )
                 for index, value in enumerate(texts)
-            ],
-        ),
-    )
+            ]
+        )
+        session.commit()
 
 
 def _add_book_paragraphs(host, item_id: str, *texts: str) -> None:
-    host.runtime.package.write_book(
-        item_id,
-        BookDocument(
-            title="Book",
-            chapters=[
-                BookChapterDocument(
+    with host.runtime.sessions() as session:
+        session.add_all(
+            [
+                BookParagraph(
+                    item_id=item_id,
                     chapter_index=0,
-                    title="Chapter",
-                    html="",
-                    text="\n".join(texts),
-                    paragraphs=list(texts),
+                    paragraph_index=index,
+                    text=value,
                 )
-            ],
-        ),
-    )
+                for index, value in enumerate(texts)
+            ]
+        )
+        session.commit()
 
 
 def _index(host, item_id: str) -> None:
@@ -287,12 +286,11 @@ def test_index_reads_content_package_and_rebuilds_without_db_text(host):
     host.login()
     _index(host, item.item.id)
 
-    status = host.runtime.search.index_status()
-    row = next(entry for entry in status.items if entry.item_id == item.item.id)
-    assert row.missing_kinds == []
-
     assert host.client.get("/api/search", params={"q": "包内独有"}).json()["count"] == 1
     assert host.client.get("/api/search", params={"q": "包内书页"}).json()["count"] == 1
+    with host.runtime.sessions() as session:
+        assert session.execute(text("SELECT count(*) FROM transcript_segments")).scalar() == 0
+        assert session.execute(text("SELECT count(*) FROM book_paragraphs")).scalar() == 0
     host.runtime.search_index.rebuild()
     assert host.client.get("/api/search", params={"q": "包内独有"}).json()["count"] == 1
     assert host.client.get("/api/search", params={"q": "包内书页"}).json()["count"] == 1
@@ -400,21 +398,25 @@ def test_book_search_result_links_to_paragraph_anchor(host):
         with_audio=False,
         run_state=None,
     )
-    host.runtime.package.write_book(
-        item.item.id,
-        BookDocument(
-            title="Book Locate",
-            chapters=[
-                BookChapterDocument(
-                    chapter_index=0,
-                    title="第一章",
-                    html="<p>bookword 在这里</p>",
-                    text="bookword 在这里",
-                    paragraphs=["bookword 在这里"],
-                )
-            ],
-        ),
-    )
+    with host.runtime.sessions() as session:
+        session.add(
+            BookChapter(
+                item_id=item.item.id,
+                chapter_index=0,
+                title="第一章",
+                html="<p>bookword 在这里</p>",
+                text="bookword 在这里",
+            )
+        )
+        session.add(
+            BookParagraph(
+                item_id=item.item.id,
+                chapter_index=0,
+                paragraph_index=0,
+                text="bookword 在这里",
+            )
+        )
+        session.commit()
     _index(host, item.item.id)
     host.login()
 

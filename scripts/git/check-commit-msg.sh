@@ -18,10 +18,6 @@ if [ -z "$subject" ]; then
   echo "✖ commit message must not be empty." >&2
   exit 1
 fi
-# fixup!/squash! are transient rebase markers; allow them for autosquash.
-if printf '%s\n' "$subject" | grep -Eq '^(fixup|squash)! '; then
-  exit 0
-fi
 if ! printf '%s\n' "$subject" | grep -Eq '^(feat|fix|test|docs|chore|refactor|perf|build|ci|style|revert)(\([^()]+\))?!?: .+'; then
   echo "✖ commit subject must start with a feat:/fix:/test:/docs:/chore:/... prefix and state the intent." >&2
   echo "  Current: $subject" >&2

@@ -2,13 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy import text
 
-from trove.domain.items import ContinueKind
-
 from .conftest import seed_item
 
 
 def _seed_book(host, *, title: str, chapter: int = 0, locator: str | None = None):
-    from trove.content_package import BookChapterDocument, BookDocument
+    from trove.db.models import BookChapter, BookParagraph
 
     bundle = seed_item(
         host,
@@ -18,21 +16,25 @@ def _seed_book(host, *, title: str, chapter: int = 0, locator: str | None = None
         duration=0.0,
         run_state="completed",
     )
-    host.runtime.package.write_book(
-        bundle.item.id,
-        BookDocument(
-            title=title,
-            chapters=[
-                BookChapterDocument(
-                    chapter_index=chapter,
-                    title=f"Chapter {chapter + 1}",
-                    html=f"<p>{title} text</p>",
-                    text=f"{title} text",
-                    paragraphs=[f"{title} text"],
-                )
-            ],
-        ),
-    )
+    with host.runtime.sessions() as session:
+        session.add(
+            BookChapter(
+                item_id=bundle.item.id,
+                chapter_index=chapter,
+                title=f"Chapter {chapter + 1}",
+                html=f"<p>{title} text</p>",
+                text=f"{title} text",
+            )
+        )
+        session.add(
+            BookParagraph(
+                item_id=bundle.item.id,
+                chapter_index=chapter,
+                paragraph_index=0,
+                text=f"{title} text",
+            )
+        )
+        session.commit()
     if locator is not None:
         with host.runtime.sessions() as session:
             session.execute(
@@ -56,28 +58,6 @@ def _touch(host, item_id: str, updated_at: int) -> None:
             {"updated_at": updated_at, "item_id": item_id},
         )
         session.commit()
-
-
-def test_continue_entries_use_typed_kind(host):
-    audio = seed_item(
-        host,
-        title="Typed audio",
-        consumption_state="in_progress",
-        position=5.0,
-        duration=20.0,
-    )
-    book = _seed_book(
-        host,
-        title="Typed book",
-        locator='{"chapter_index":0,"paragraph_index":0,"scroll_ratio":0.1}',
-    )
-
-    entries = {
-        entry.bundle.item.id: entry for entry in host.runtime.library.continue_items()
-    }
-
-    assert entries[audio.item.id].kind is ContinueKind.LISTEN
-    assert entries[book.item.id].kind is ContinueKind.READ
 
 
 def test_continue_lists_recent_audio_and_books_and_excludes_finished(host):

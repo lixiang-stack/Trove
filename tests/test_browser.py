@@ -38,38 +38,32 @@ def _context(browser, host):
 
 
 def _seed_transcript(host, item_id: str) -> None:
-    from trove.content_package import (
-        TranscriptDocument,
-    )
-    from trove.content_package import (
-        TranscriptSegment as TranscriptSegmentDocument,
-    )
+    from trove.db.models import TranscriptSegment
 
-    segments = [
-        (
-            0,
-            0,
-            4000,
-            "今天想聊一个我最近反复想到的问题：为什么智能体的瓶颈不是模型，而是记忆。",
-        ),
-        (1, 4000, 9000, "我们总把上下文窗口当成记忆，但上下文是临时的。"),
-    ]
-    host.runtime.package.write_transcript(
-        item_id,
-        TranscriptDocument(
-            language="zh",
-            segments=[
-                TranscriptSegmentDocument(
-                    seq=seq, start_ms=start, end_ms=end, text=text
-                )
-                for seq, start, end, text in segments
-            ],
-        ),
-    )
+    with host.runtime.sessions() as session:
+        session.add_all(
+            [
+                TranscriptSegment(
+                    item_id=item_id,
+                    seq=0,
+                    start_ms=0,
+                    end_ms=4000,
+                    text="今天想聊一个我最近反复想到的问题：为什么智能体的瓶颈不是模型，而是记忆。",
+                ),
+                TranscriptSegment(
+                    item_id=item_id,
+                    seq=1,
+                    start_ms=4000,
+                    end_ms=9000,
+                    text="我们总把上下文窗口当成记忆，但上下文是临时的。",
+                ),
+            ]
+        )
+        session.commit()
 
 
 def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int = 2):
-    from trove.content_package import BookChapterDocument, BookDocument
+    from trove.db.models import BookChapter, BookParagraph
 
     bundle = seed_item(
         host,
@@ -79,24 +73,33 @@ def _seed_book_with_chapters(host, *, title: str = "浏览器书", chapters: int
         duration=0.0,
         run_state="completed",
     )
-    chapter_documents = []
-    for chapter_index in range(chapters):
-        paragraphs = [
-            f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
-            for index in range(30)
-        ]
-        chapter_documents.append(
-            BookChapterDocument(
-                chapter_index=chapter_index,
-                title=f"第 {chapter_index + 1} 章",
-                html="".join(f"<p>{text}</p>" for text in paragraphs),
-                text="\n".join(paragraphs),
-                paragraphs=paragraphs,
+    with host.runtime.sessions() as session:
+        for chapter_index in range(chapters):
+            paragraphs = [
+                f"第 {chapter_index + 1} 章第 {index + 1} 段。" + "长文本 " * 20
+                for index in range(30)
+            ]
+            session.add(
+                BookChapter(
+                    item_id=bundle.item.id,
+                    chapter_index=chapter_index,
+                    title=f"第 {chapter_index + 1} 章",
+                    html="".join(f"<p>{text}</p>" for text in paragraphs),
+                    text="\n".join(paragraphs),
+                )
             )
-        )
-    host.runtime.package.write_book(
-        bundle.item.id, BookDocument(title=title, chapters=chapter_documents)
-    )
+            session.add_all(
+                [
+                    BookParagraph(
+                        item_id=bundle.item.id,
+                        chapter_index=chapter_index,
+                        paragraph_index=index,
+                        text=text,
+                    )
+                    for index, text in enumerate(paragraphs)
+                ]
+            )
+        session.commit()
     return bundle
 
 
@@ -260,6 +263,8 @@ def test_mobile_search_keeps_player_and_shows_filters(host, browser):
 
 
 def test_book_search_result_scrolls_to_paragraph(host, browser):
+    from trove.db.models import BookChapter, BookParagraph
+
     bundle = seed_item(
         host,
         title="书内定位",
@@ -267,23 +272,25 @@ def test_book_search_result_scrolls_to_paragraph(host, browser):
         with_audio=False,
         run_state=None,
     )
-    from trove.content_package import BookChapterDocument, BookDocument
-
-    host.runtime.package.write_book(
-        bundle.item.id,
-        BookDocument(
-            title="书内定位",
-            chapters=[
-                BookChapterDocument(
-                    chapter_index=0,
-                    title="第一章",
-                    html="<p>bookword 段落</p>",
-                    text="bookword 段落",
-                    paragraphs=["bookword 段落"],
-                )
-            ],
-        ),
-    )
+    with host.runtime.sessions() as session:
+        session.add(
+            BookChapter(
+                item_id=bundle.item.id,
+                chapter_index=0,
+                title="第一章",
+                html="<p>bookword 段落</p>",
+                text="bookword 段落",
+            )
+        )
+        session.add(
+            BookParagraph(
+                item_id=bundle.item.id,
+                chapter_index=0,
+                paragraph_index=0,
+                text="bookword 段落",
+            )
+        )
+        session.commit()
     host.runtime.search_index.index_item(bundle.item.id)
     context = _context(browser, host)
     page = context.new_page()
@@ -497,49 +504,6 @@ def test_search_input_is_usable(host, browser):
     assert box is not None and box["width"] > 200
     field.fill("记忆")
     assert field.input_value() == "记忆"
-    context.close()
-
-
-def test_pwa_service_worker_caches_only_shell_assets(host, browser):
-    context = _context(browser, host)
-    page = context.new_page()
-    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
-    page.wait_for_function(
-        "() => navigator.serviceWorker && navigator.serviceWorker.ready",
-        timeout=15000,
-    )
-    scope = page.evaluate(
-        "async () => (await navigator.serviceWorker.ready).scope"
-    )
-    assert scope == f"{host.base_url}/"
-    page.wait_for_function(
-        "async () => (await caches.keys()).some((key) => key.includes('trove-shell'))",
-        timeout=15000,
-    )
-
-    page.evaluate("fetch('/api/health').then((response) => response.status)")
-    cached = page.evaluate(
-        """async () => {
-            const paths = [];
-            for (const name of await caches.keys()) {
-                const cache = await caches.open(name);
-                for (const request of await cache.keys()) {
-                    paths.push(new URL(request.url).pathname);
-                }
-            }
-            return paths;
-        }"""
-    )
-    assert cached
-    assert all(path.startswith("/static/") for path in cached)
-    assert not any(path.startswith("/api") or path == "/library" for path in cached)
-
-    context.set_offline(True)
-    offline = page.evaluate(
-        "() => fetch('/api/health').then(() => 'ok').catch(() => 'failed')"
-    )
-    assert offline == "failed"
-    context.set_offline(False)
     context.close()
 
 

@@ -312,26 +312,6 @@ def test_reprocess_only_reruns_organizing_and_indexing(host):
 
 
 @pytest.mark.ffmpeg
-def test_reprocess_organizing_reads_package_transcript(host):
-    host.login()
-    response = host.client.post(
-        "/api/items", json={"kind": "url", "url": "https://www.youtube.com/watch?v=packageorganize"}
-    )
-    item_id = response.json()["item"]["id"]
-    host.wait_for_item(item_id)
-    calls_before = len(host.stack.organizer.calls)
-
-    reprocess = host.client.post(
-        f"/api/items/{item_id}/reprocess", json={"from_stage": "organizing"}
-    )
-    assert reprocess.status_code == 202, reprocess.text
-    host.wait_for_item(item_id)
-
-    assert len(host.stack.organizer.calls) == calls_before + 1
-    assert "为什么智能体的瓶颈不是模型" in host.stack.organizer.calls[-1]
-
-
-@pytest.mark.ffmpeg
 def test_ai_result_metadata_is_exposed(host):
     host.login()
     response = host.client.post(

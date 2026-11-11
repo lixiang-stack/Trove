@@ -42,13 +42,3 @@ Host 会绑定局域网/VPN，接收用户提供的 URL、文件和 EPUB。需�
 
 - 多用户/权限模型、WAF、云端合规；不做。
 - 物理设备安全、macOS 系统加固；由部署文档提示。
-
-## Comments
-
-2026-11-10 — Implemented the agent-side hardening: multipart uploads now validate
-EPUB structure and FFprobe media streams before creating an Item; upload metadata
-paths are confined to the upload directory; SSRF checks cover reserved/CGNAT/
-IPv4-mapped addresses and re-validate redirects; security headers include CSP,
-nosniff, frame denial, and a same-origin referrer policy. Added
-`tests/test_security.py`, `docs/security.md`, and `docs/licenses.md`; pinned
-Starlette `>=0.49.1`. Manual clean-Mac deployment checks remain for ticket 24/29.

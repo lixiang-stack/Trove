@@ -37,12 +37,3 @@ PWA 是可选 P1，依赖 HTTPS；它可以让手机浏览器更像应用，但 
 
 - 离线内容缓存、后台同步、push、V1 Android；不做。
 - 强制安装；PWA 是可选。
-
-## Comments
-
-2026-11-10 — Added a web app manifest, 180/192/512 icons, a root-scoped service
-worker that caches only `/static/` assets network-first, and non-blocking
-registration. HTML/API/media are never cached; `/sw.js` is `no-store` with
-`Service-Worker-Allowed: /`. HTTPS setup is documented in
-`docs/deployment.md`. Playwright coverage verifies registration, shell-only cache
-contents, and offline API failure.
