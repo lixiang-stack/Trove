@@ -7,8 +7,6 @@ import threading
 import time
 from typing import Any
 
-from sqlalchemy import text
-
 from trove.composition import Runtime
 from trove.db.engine import current_revision, head_revision, verify_fts5
 from trove.logging_setup import append_run_log
@@ -57,7 +55,10 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
         except Exception:  # noqa: BLE001 - the worker must survive one bad run
             logger.exception("worker failed while processing run", extra={"run_id": run_id})
             append_run_log(runtime.config, run_id, "worker crashed while processing", level="error")
-            _mark_worker_failure(runtime, run_id)
+            try:
+                runtime.processing.mark_worker_failure(run_id)
+            except Exception:  # noqa: BLE001 - the worker must survive one bad run
+                logger.debug("failed to mark run failed", exc_info=True)
         finally:
             heartbeat_stop.set()
             heartbeat_thread.join(timeout=2)
@@ -68,32 +69,9 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
 def _heartbeat_loop(runtime: Runtime, run_id: str, stop_event: threading.Event) -> None:
     while not stop_event.wait(HEARTBEAT_SECONDS):
         try:
-            with runtime.sessions() as session:
-                session.execute(
-                    text("UPDATE runs SET heartbeat_at = :now WHERE id = :run_id"),
-                    {"now": int(time.time() * 1000), "run_id": run_id},
-                )
-                session.commit()
+            runtime.processing.heartbeat(run_id)
         except Exception:  # noqa: BLE001 - heartbeat must not kill the worker
             logger.debug("heartbeat update failed", exc_info=True)
-
-
-def _mark_worker_failure(runtime: Runtime, run_id: str) -> None:
-    from trove.clock import utc_ms
-
-    try:
-        with runtime.sessions() as session:
-            session.execute(
-                text(
-                    "UPDATE runs SET state = 'failed', error_code = 'internal.error', "
-                    "error_message = 'worker exited unexpectedly', finished_at = :now "
-                    "WHERE id = :run_id"
-                ),
-                {"now": utc_ms(), "run_id": run_id},
-            )
-            session.commit()
-    except Exception:  # noqa: BLE001
-        logger.debug("failed to mark run failed", exc_info=True)
 
 
 def write_heartbeat(
