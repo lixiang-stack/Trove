@@ -1,5 +1,6 @@
 # 本地提交前检查；配置 CI 后，CI 仍是最终门禁。
 # 仅在本地拦截问题；单次跳过：git commit --no-verify（lefthook 也接受 LEFTHOOK=0）。
+output: false
 pre-commit:
   parallel: true
   commands:
@@ -7,6 +8,8 @@ pre-commit:
       run: bash scripts/git/check-commit.sh
     worktree-path:
       run: bash scripts/git/check-worktree.sh
+    whitespace:
+      run: git diff --cached --check
     docs:
       run: python3 scripts/check-docs.py --staged
     complexity:
