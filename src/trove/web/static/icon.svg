@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Trove">
+  <rect width="512" height="512" rx="112" fill="#b5462f"/>
+  <rect x="143" y="154" width="226" height="214" rx="18" fill="#fffdf8"/>
+  <rect x="249" y="154" width="14" height="214" fill="#b5462f"/>
+  <rect x="168" y="178" width="60" height="10" rx="5" fill="#e8c9bf"/>
+  <rect x="168" y="202" width="60" height="10" rx="5" fill="#e8c9bf"/>
+  <rect x="284" y="178" width="60" height="10" rx="5" fill="#e8c9bf"/>
+  <rect x="284" y="202" width="60" height="10" rx="5" fill="#e8c9bf"/>
+</svg>
