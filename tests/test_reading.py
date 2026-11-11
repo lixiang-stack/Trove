@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -76,6 +77,18 @@ def test_epub2_and_epub3_golden_books_extract_metadata_and_chapters(
     assert payload["text"] == book["chapters"][0]["text"]
     assert payload["paragraphs"] == book["chapters"][0]["paragraphs"]
     assert "<p>" in payload["html"]
+
+
+def test_chapter_api_reads_package_not_db(host):
+    item_id = _add_epub(host, FIXTURES / "aesop.epub")
+    document = host.runtime.package.read_book(item_id)
+    assert document is not None
+    document.chapters[0].paragraphs[0] = "Package wins."
+    host.runtime.package.write_book(item_id, document)
+
+    payload = host.client.get(f"/api/items/{item_id}/book/chapters/0").json()
+
+    assert payload["paragraphs"][0] == "Package wins."
 
 
 def test_reader_paginates_by_chapter_and_links_the_toc(host):
@@ -304,7 +317,7 @@ def test_font_only_encryption_is_not_treated_as_drm(host, tmp_path):
     assert host.item(item_id)["status_category"] == "ready"
 
 
-def test_cover_is_extracted_and_served(host, tmp_path):
+def _book_with_cover(tmp_path: Path) -> Path:
     png = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII="
     )
@@ -321,7 +334,11 @@ def test_cover_is_extracted_and_served(host, tmp_path):
         ),
         extra={"OEBPS/cover.png": png},
     )
-    item_id = _add_epub(host, book)
+    return book
+
+
+def test_cover_is_extracted_and_served(host, tmp_path):
+    item_id = _add_epub(host, _book_with_cover(tmp_path))
     item = host.client.get(f"/api/items/{item_id}").json()
     assert item["has_cover"] is True
     cover = host.client.get(item["cover_url"])
@@ -329,3 +346,20 @@ def test_cover_is_extracted_and_served(host, tmp_path):
     assert cover.headers["content-type"] == "image/png"
     assert cover.headers["etag"]
     assert (host.config.library_dir / item_id / "cover.png").is_file()
+
+
+def test_reprocessing_a_book_without_a_cover_removes_the_stale_cover(host, tmp_path):
+    item_id = _add_epub(host, _book_with_cover(tmp_path))
+    item = host.client.get(f"/api/items/{item_id}").json()
+    assert item["has_cover"] is True
+    cover_path = host.config.library_dir / item_id / "cover.png"
+    assert cover_path.is_file()
+
+    shutil.copyfile(FIXTURES / "aesop.epub", host.config.library_dir / item_id / "book.epub")
+    host.runtime.processing.create_run(item_id)
+    host.wait_for_item(item_id)
+
+    item = host.client.get(f"/api/items/{item_id}").json()
+    assert item["has_cover"] is False
+    assert not cover_path.exists()
+    assert host.client.get(f"/api/items/{item_id}/cover").status_code == 404

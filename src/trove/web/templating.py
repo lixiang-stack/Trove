@@ -19,7 +19,14 @@ from trove.web.urls import locate_url
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 COVER_TONES = ("vermilion", "green", "blue", "gold", "ink", "clay")
-STATIC_ASSETS = ("app.css", "player.js", "ui.js", "htmx.min.js", "pico.min.css")
+STATIC_ASSETS = (
+    "app.css",
+    "player.js",
+    "ui.js",
+    "pwa.js",
+    "htmx.min.js",
+    "pico.min.css",
+)
 
 
 def _asset_version() -> str:
