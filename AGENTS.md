@@ -37,6 +37,7 @@
 - 每个需求在 `.worktree/<需求名>` 新建分支，已合并分支不承接新需求。
 - 新建 worktree：`./scripts/git/new-worktree.sh <需求名> [base]`。
 - **仅当用户明确要求时才 push**；需改写已推送分支时用 `--force-with-lease`。
+- **禁止代理自动合并**：PR 必须由用户 review 后合并；代理不得执行 `gh pr merge`、本地 merge 或直接 push `main`，撤销/修复也要走 PR。
 
 ## 测试
 

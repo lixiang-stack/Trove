@@ -6,6 +6,10 @@ Status: pending manual execution
 This is a release checklist, not a feature backlog. Record evidence links, not
 claims. If something fails, open a follow-up issue instead of expanding this sweep.
 
+Acceptance exception (2026-11-13): all PWA and Tailscale Serve acceptance items
+are **SKIPPED** by user decision and are not release gates. Caddy/localhost HTTPS
+remains the accepted HTTPS path.
+
 ## Automated gates
 
 | Gate | Command | Result |
@@ -31,6 +35,7 @@ claims. If something fails, open a follow-up issue instead of expanding this swe
 | Restart/cancel/resume | Host tests + real restart | |
 | P0/P1 scope audit | spec + issue evidence | |
 | No unannounced P2/P3 | spec review | |
+| PWA / Tailscale acceptance | user decision 2026-11-13 | SKIPPED |
 
 ## P0 evidence
 
@@ -52,7 +57,7 @@ claims. If something fails, open a follow-up issue instead of expanding this swe
 | Content package, export zip, index rebuild | | | |
 | Security: SSRF, uploads, paths, HTML, CSP | | | |
 | JSON API / OpenAPI / Range / ETag | | | |
-| launchd auto-start and Tailscale HTTPS | | | |
+| launchd auto-start (Tailscale skipped) | | | |
 
 ## P1 shortlist evidence
 
@@ -66,7 +71,7 @@ claims. If something fails, open a follow-up issue instead of expanding this swe
 | Search result paragraph targeting | | | |
 | Export zip | | | |
 | Cancel running Run | | | |
-| PWA install (optional) | | | |
+| PWA install (optional) | | | SKIPPED |
 | Consumer Web Shell | | | Q10 |
 
 ## Known issues and limits
@@ -74,7 +79,7 @@ claims. If something fails, open a follow-up issue instead of expanding this swe
 | Issue | Impact | Follow-up |
 | ----- | ------ | --------- |
 | DNS rebinding residual in SSRF validation | loopback/Tailscale only | security follow-up if intake becomes multi-user |
-| PWA caches only static shell | no offline content | V1 |
+| PWA/Tailscale acceptance skipped | known issues stay non-blocking | user decision 2026-11-13 |
 | | | |
 
 ## Release decision
@@ -85,3 +90,6 @@ claims. If something fails, open a follow-up issue instead of expanding this swe
 ```text
 
 ```
+
+PWA and Tailscale Serve are excluded from the release decision; see the
+exception at the top of this file.

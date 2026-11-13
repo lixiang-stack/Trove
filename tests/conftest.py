@@ -102,11 +102,13 @@ def host_factory(tmp_path, fake_stack):
         stack: FakeStack | None = None,
         password: str = PASSWORD,
         home_name: str = "home",
+        configure_password: bool = True,
     ) -> Host:
         stack = stack or fake_stack
         config = Config(home=tmp_path / home_name)
         config.ensure_layout()
-        config.set_password(password)
+        if configure_password:
+            config.set_password(password)
         upgrade_database(config)
         app = create_app(config, stack.ports())
         runtime = app.state.runtime

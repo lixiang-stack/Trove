@@ -105,7 +105,12 @@ def test_upload_epub_is_copied_and_parsed(host):
     assert not (host.config.uploads_dir / upload_id).exists()
 
 
-def test_deleting_a_pending_upload_cleans_it(api_host):
+def test_deleting_a_pending_upload_cleans_it(api_host, monkeypatch):
+    monkeypatch.setattr(
+        api_host.stack.audio_extractor,
+        "probe",
+        lambda source, *, kind: None,
+    )
     api_host.login()
     upload = api_host.client.post(
         "/api/uploads",

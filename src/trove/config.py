@@ -197,7 +197,10 @@ class Config:
         if not password:
             raise ConfigError("Password cannot be empty")
         hasher = PasswordHasher()
-        self._update_config(password_hash=hasher.hash(password))
+        self._update_config(
+            password_hash=hasher.hash(password),
+            session_epoch=self.session_epoch + 1,
+        )
 
     def verify_password(self, password: str) -> bool:
         stored = self.password_hash

@@ -123,6 +123,18 @@ def test_playback_navigation_inline_and_transcript(host, browser):
     assert page.url.endswith("/library")
     assert page.locator(f'[data-inline-for="{bundle.item.id}"]').is_visible()
     assert page.evaluate("window.TrovePlayer.state.playing") is True
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{bundle.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
+    assert (
+        page.locator(
+            f'[data-inline-for="{bundle.item.id}"] [data-player-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
     metadata_title = page.evaluate(
         "() => navigator.mediaSession && navigator.mediaSession.metadata"
         " ? navigator.mediaSession.metadata.title : null"
@@ -159,8 +171,62 @@ def test_playback_navigation_inline_and_transcript(host, browser):
         lambda: host.item(bundle.item.id)["audio_position_sec"] > 0,
         timeout=5,
     )
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{bundle.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "▶"
+    )
     payload = host.item(bundle.item.id)
     assert payload["consumption_state"] == "in_progress"
+    context.close()
+
+
+def test_switching_items_plays_second_audio(host, browser):
+    first = seed_item(
+        host,
+        title="第一集",
+        source_key="seed:first-part",
+        duration=20.0,
+        audio_fixture="long.m4a",
+    )
+    second = seed_item(
+        host,
+        title="第二集",
+        source_key="seed:second-part",
+        duration=20.0,
+        audio_fixture="long.m4a",
+    )
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.click(f'[data-play-item][data-item-id="{first.item.id}"]')
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && !a.paused && a.currentTime > 0.05; }",
+        timeout=10000,
+    )
+
+    page.click(f'[data-play-item][data-item-id="{second.item.id}"]')
+    page.wait_for_function(
+        "(id) => { const a = document.querySelector('#global-audio');"
+        " return a && a.src.includes(id) && !a.paused && a.currentTime > 0.05; }",
+        arg=second.item.id,
+        timeout=10000,
+    )
+    assert page.locator("#player-error").is_hidden()
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{first.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "▶"
+    )
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{second.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
     context.close()
 
 

@@ -24,7 +24,7 @@ from trove.domain.items import (
 )
 from trove.domain.reading import parse_book_locator
 from trove.domain.tags import normalize_tag
-from trove.errors import ConflictError, NotFoundError, TroveError
+from trove.errors import ConflictError, NotFoundError, TroveError, ValidationError
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
 from trove.services.package_documents import source_document
@@ -472,7 +472,10 @@ class LibraryService:
             if title is not None:
                 title = title.strip()
                 if not title:
-                    raise ConflictError("Title cannot be empty")
+                    raise ValidationError(
+                        "Title cannot be empty",
+                        details={"code": "item.title_empty"},
+                    )
                 item.title = title
             if author is not None:
                 item.author = author.strip() or None
