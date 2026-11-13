@@ -1,7 +1,7 @@
 # Search evaluation
 
-Ticket: [27 — 50+ 条内容搜索评估](issues/27-search-evaluation.md)  
-Status: pending manual execution
+Ticket: [27 — 50+ 条内容搜索评估](27-search-evaluation.md)
+Status: archived — deferred to V1; real library has 3 Items
 
 ## Corpus
 

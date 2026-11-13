@@ -1,10 +1,11 @@
 # 27 — 50+ 条内容搜索评估
 
-Status: ready-for-human  
-Type: task  
-Milestone: M3  
-Blocked by: 14, 15  
-Spec: [spec.md](../spec.md)  
+Status: resolved
+Disposition: deferred to V1 2026-11-13 — real library has only 3 Items; 50+ corpus/30 queries not available; not a release blocker.
+Type: task
+Milestone: M3
+Blocked by: 14, 15
+Spec: [spec.md](../spec.md)
 Requirements: FR-51, FR-52, NFR-05
 
 ## Context
@@ -44,5 +45,7 @@ Requirements: FR-51, FR-52, NFR-05
 2026-11-10 — Added `scripts/evaluate-search.py` plus pure scoring helpers in
 `src/trove/evaluation.py` (recall@10, first relevant rank, misses, result types,
 and per-content-type recall).
-The pre-registration and result template is `.scratch/trove-mvp/search-evaluation.md`.
+The pre-registration and result template is `.scratch/trove-mvp/archive/search-evaluation.md`.
 The 30 real queries and manual Item judgments remain human work.
+
+2026-11-13 — 本轮不做 50+/30 query 的完整搜索质量评估：真实库当前只有 3 条内容（2 条 B 站 + 1 本 EPUB），无法满足语料要求。搜索功能和 1k 性能已有自动化/seed 证据；质量评估转为 V1 backlog，不阻塞桌面 MVP。原模板 `search-evaluation.md` 保留作 V1 使用。

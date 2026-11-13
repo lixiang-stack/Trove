@@ -1,11 +1,12 @@
 # 23 — PWA 安装壳与 HTTPS 前置
 
-Status: ready-for-agent  
+Status: resolved
+Disposition: closed 2026-11-13 — optional PWA; acceptance SKIPPED; known issues retained in acceptance.md.
 Acceptance: SKIPPED — all PWA acceptance is skipped by user decision (2026-11-13).
-Type: task  
-Milestone: M3  
-Blocked by: 11, 12, 15  
-Spec: [spec.md](../spec.md)  
+Type: task
+Milestone: M3
+Blocked by: 11, 12, 15
+Spec: [spec.md](../spec.md)
 Requirements: FR-86, NFR-14
 
 ## Context
@@ -110,3 +111,5 @@ contents, and offline API failure.
 2026-11-13 — 真机 PWA 人工验收未通过：播放稳定性、播放器状态同步、Library/Search 过滤标签布局和 Search sticky 搜索框均有问题。详细失败项见 `Manual Acceptance` 的“失败项（2026-11-13）”表。播放器相关修复已提交 `3ae489b`，需真机复测；PWA-6/PWA-7 仍需修复。
 
 2026-11-13 — 用户决定：后续所有 PWA 验收跳过，不作为 MVP 放行门控。播放器修复和界面已知问题保留记录。
+
+2026-11-13 — 关闭为可选 PWA，不再做 MVP 工作。PWA-1..PWA-5 的播放器修复已提交 `3ae489b`；PWA-6/PWA-7 作为移动 Web 已知问题记录在 `../acceptance.md`。PWA 与 Tailscale 验收均不作为放行门控。
