@@ -27,14 +27,35 @@ def test_login_logout_and_session_persistence(host_factory):
     assert first.client.get("/library").status_code == 200
     token = first.client.cookies.get("trove_session")
     assert token
-    second = host_factory(start_worker=False, home_name="persisted")
+    second = host_factory(
+        start_worker=False, home_name="persisted", configure_password=False
+    )
     second.client.cookies.set("trove_session", token)
     assert second.client.get("/library").status_code == 200
     second.client.post("/logout")
     assert second.client.get("/library").status_code == 303
-    fresh = host_factory(start_worker=False, home_name="persisted")
+    fresh = host_factory(
+        start_worker=False, home_name="persisted", configure_password=False
+    )
     fresh.client.cookies.set("trove_session", token)
     assert fresh.client.get("/library").status_code == 303
+
+
+def test_password_change_invalidates_existing_sessions(host_factory):
+    host = host_factory(start_worker=False, home_name="password-rotation")
+    host.login(PASSWORD)
+    token = host.client.cookies.get("trove_session")
+    assert token
+
+    host.config.set_password("new-password")
+
+    assert host.client.get("/library").status_code == 303
+
+    old_login = host.client.post("/login", data={"password": PASSWORD})
+    assert old_login.status_code == 401
+    new_login = host.client.post("/login", data={"password": "new-password"})
+    assert new_login.status_code == 303
+    assert host.client.get("/library").status_code == 200
 
 
 def test_session_cookie_is_signed_and_secret_persists(api_host):

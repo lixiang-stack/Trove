@@ -40,6 +40,10 @@ class NotFoundError(TroveError):
     code = "item.not_found"
 
 
+class RunNotFoundError(NotFoundError):
+    code = "run.not_found"
+
+
 class ConflictError(TroveError):
     status_code = 409
     code = "item.conflict"

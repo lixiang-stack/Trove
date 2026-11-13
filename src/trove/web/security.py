@@ -18,10 +18,11 @@ PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/login",
     "/api/openapi.json",
-    "/openapi.json",
     "/docs",
     "/docs/oauth2-redirect",
     "/redoc",
+    "/manifest.webmanifest",
+    "/sw.js",
 }
 UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 CONTENT_SECURITY_POLICY = (
@@ -136,6 +137,8 @@ def install_middleware(app) -> None:
         response = await call_next(request)
         response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "same-origin")
         if path.startswith("/static/"):
             response.headers["Cache-Control"] = "no-cache"
         else:

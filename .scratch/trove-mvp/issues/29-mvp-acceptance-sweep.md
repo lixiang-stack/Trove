@@ -1,6 +1,7 @@
 # 29 — MVP 验收总检查
 
 Status: ready-for-human  
+Acceptance exception: all PWA and Tailscale Serve acceptance items are SKIPPED by user decision (2026-11-13); they are not release gates.
 Type: task  
 Milestone: M3  
 Blocked by: 10, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28  
@@ -16,7 +17,7 @@ Requirements: 需求文档 9.1–9.5
 - 自动化：`pytest`（默认不跑网络）、Playwright、`ruff`、`mypy`、`python3 scripts/check-docs.py`。
 - 范围核对：MVP P0 + P1 短名单逐项对照实现/验收证据；P2/P3 未偷偷进入。
 - 手动门控引用：25 Q10、26 性能/存储、27 搜索评估、28 来源/Tag 质量。
-- 安全/运维：认证、SSRF、上传、路径穿越、CSP、launchd/Tailscale、重启恢复。
+- 安全/运维：认证、SSRF、上传、路径穿越、CSP、launchd、重启恢复；Tailscale/PWA 验收跳过。
 - 记录已知问题、限制、未达标项和后续 issue；不把失败藏在“完成”里。
 
 ## Acceptance Criteria
@@ -38,3 +39,13 @@ Requirements: 需求文档 9.1–9.5
 
 - V1 Android、离线、同步、云端、PDF/TTS/标注/语义检索/Topic；不做。
 - 新功能；发现缺口另开 issue。
+
+## Comments
+
+2026-11-10 — Added the release checklist at `.scratch/trove-mvp/acceptance.md`
+(automated gates, manual gates, P1 evidence, known issues, release decision). The
+full local suite currently passes (`./scripts/check.sh`, 313 tests including
+FFmpeg and Playwright; docs check passes). Q10, performance, search, and
+source/Tag evidence remain pending, so the release decision is not yet made.
+
+2026-11-13 — 用户决定：所有 PWA 和 Tailscale Serve 验收项标记为 SKIPPED，不作为 MVP 放行门控；其余验收继续。

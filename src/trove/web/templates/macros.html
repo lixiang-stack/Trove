@@ -131,7 +131,7 @@
           data-duration="{{ item.duration_sec or 0 }}"
           data-listen-url="/items/{{ item.id }}/listen"
           aria-label="播放 {{ item.title }}" title="播放">
-    <span>▶</span>
+    <span data-play-icon>▶</span>
   </button>
   {% else %}
   <span class="play-button disabled" aria-label="尚不可播放" title="尚不可播放">◌</span>

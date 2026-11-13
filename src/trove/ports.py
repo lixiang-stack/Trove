@@ -196,6 +196,8 @@ class FeedClient(Protocol):
 
 
 class AudioExtractor(Protocol):
+    def probe(self, source: Path, *, kind: str) -> None: ...
+
     def extract(
         self,
         source: Path,
