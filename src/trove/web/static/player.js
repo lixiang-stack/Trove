@@ -12,6 +12,7 @@
     saveTimer: null,
     pendingSeek: null,
     manualFinished: false,
+    playToken: 0,
   };
 
   function $(selector, root = document) {
@@ -114,67 +115,131 @@
     }
   }
 
-  function updateUI() {
+  function durationOf(player, item) {
+    return player.duration && Number.isFinite(player.duration)
+      ? player.duration
+      : (item.duration || 0);
+  }
+
+  function updateControlUI() {
     const player = audio();
     const item = state.item;
     if (!item) return;
-    const duration = player.duration && Number.isFinite(player.duration) ? player.duration : (item.duration || 0);
     $all("[data-player-title]").forEach((element) => { element.textContent = item.title; });
     $all("[data-player-meta]").forEach((element) => { element.textContent = item.author || "Trove"; });
-    $all("[data-player-current]").forEach((element) => { element.textContent = fmt(player.currentTime); });
-    $all("[data-player-duration]").forEach((element) => { element.textContent = fmt(duration); });
     $all("[data-player-icon]").forEach((element) => { element.textContent = state.playing ? "❚❚" : "▶"; });
     $all("[data-player-speed]").forEach((element) => { element.textContent = `${state.speed}×`; });
     $all("[data-player-link]").forEach((element) => { element.setAttribute("href", item.listen_url); });
-    $all("[data-player-seek]").forEach((element) => {
-      const value = duration > 0 ? Math.round((player.currentTime / duration) * 1000) : 0;
-      if (document.activeElement !== element) element.value = String(value);
-    });
-    $all("[data-inline-for]").forEach((element) => {
-      if (element.dataset.inlineFor !== item.id) return;
-      const current = $("[data-inline-current]", element);
-      const total = $("[data-inline-duration]", element);
-      const title = $("[data-inline-title]", element);
-      if (current) current.textContent = fmt(player.currentTime);
-      if (total) total.textContent = fmt(duration);
-      if (title) title.textContent = item.title;
-      const seek = $("[data-inline-seek]", element);
-      if (seek && document.activeElement !== seek) {
-        seek.value = String(duration > 0 ? Math.round((player.currentTime / duration) * 1000) : 0);
-      }
+    $all("[data-play-item]").forEach((button) => {
+      const icon = $("[data-play-icon]", button);
+      if (!icon) return;
+      const active = Boolean(state.playing && item.id === button.dataset.itemId);
+      icon.textContent = active ? "❚❚" : "▶";
     });
     const mini = $("#mini-player");
     if (mini) mini.hidden = !player.src;
   }
 
+  function updateProgressUI() {
+    const player = audio();
+    const item = state.item;
+    if (!item) return;
+    const duration = durationOf(player, item);
+    $all("[data-player-current]").forEach((element) => { element.textContent = fmt(player.currentTime); });
+    $all("[data-player-duration]").forEach((element) => { element.textContent = fmt(duration); });
+    $all("[data-player-seek]").forEach((element) => {
+      const value = duration > 0 ? Math.round((player.currentTime / duration) * 1000) : 0;
+      if (document.activeElement !== element) element.value = String(value);
+    });
+    const inline = document.querySelector(`[data-inline-for="${item.id}"]`);
+    if (inline) {
+      const current = $("[data-inline-current]", inline);
+      const total = $("[data-inline-duration]", inline);
+      const title = $("[data-inline-title]", inline);
+      if (current) current.textContent = fmt(player.currentTime);
+      if (total) total.textContent = fmt(duration);
+      if (title) title.textContent = item.title;
+      const seek = $("[data-inline-seek]", inline);
+      if (seek && document.activeElement !== seek) {
+        seek.value = String(duration > 0 ? Math.round((player.currentTime / duration) * 1000) : 0);
+      }
+    }
+  }
+
+  function updateUI() {
+    updateControlUI();
+    updateProgressUI();
+  }
+
+  let progressFrame = null;
+
+  function scheduleProgressUI() {
+    if (progressFrame !== null) return;
+    progressFrame = window.requestAnimationFrame(() => {
+      progressFrame = null;
+      updateProgressUI();
+    });
+  }
+
+  function playCurrent() {
+    const player = audio();
+    if (!player) return;
+    const token = state.playToken;
+    const attempt = () => {
+      if (token !== state.playToken) return;
+      const promise = player.play();
+      if (!promise || typeof promise.catch !== "function") return;
+      promise.catch((error) => {
+        if (token !== state.playToken || error.name === "AbortError") return;
+        if (error.name === "NotAllowedError") {
+          showError("The browser blocked autoplay; press play again.");
+          return;
+        }
+        if (player.readyState < 2) {
+          player.addEventListener("canplay", attempt, { once: true });
+          return;
+        }
+        showError("Could not play this audio.");
+      });
+    };
+    attempt();
+  }
+
   function loadItem(item, { autoplay = false } = {}) {
     const player = audio();
     if (!player || !item || !item.audio_url) return;
-    const same = state.item && state.item.id === item.id;
+    const same = Boolean(
+      state.item && state.item.id === item.id && player.getAttribute("src")
+    );
     state.item = { ...state.item, ...item };
     state.manualFinished = false;
     persistItem(state.item);
     setMediaSession(state.item);
     if (!same) {
+      state.playToken += 1;
       state.pendingSeek = Number(item.position || 0);
       player.src = item.audio_url;
       player.playbackRate = state.speed;
       player.load();
       if (state.pendingSeek > 0) {
         const apply = () => {
-          if (state.pendingSeek !== null) {
-            try { player.currentTime = state.pendingSeek; } catch (_error) { /* metadata not ready */ }
+          if (state.pendingSeek === null) return;
+          try {
+            player.currentTime = state.pendingSeek;
             state.pendingSeek = null;
+          } catch (_error) {
+            /* metadata not ready */
           }
         };
-        player.addEventListener("loadedmetadata", apply, { once: true });
-        apply();
+        if (player.readyState >= 1) {
+          apply();
+        } else {
+          player.addEventListener("loadedmetadata", apply, { once: true });
+        }
       }
     }
     updateUI();
-    if (autoplay) {
-      player.play().catch(() => showError("The browser blocked autoplay; press play again."));
-    }
+    if (autoplay) playCurrent();
   }
 
   function ensureItem() {
@@ -197,7 +262,7 @@
       return;
     }
     if (player.paused) {
-      player.play().catch(() => showError("Could not play this audio."));
+      playCurrent();
     } else {
       player.pause();
     }
@@ -272,7 +337,7 @@
     const player = audio();
     if (!player) return;
     player.addEventListener("loadedmetadata", () => updateUI());
-    player.addEventListener("timeupdate", () => updateUI());
+    player.addEventListener("timeupdate", scheduleProgressUI);
     player.addEventListener("play", () => {
       state.playing = true;
       updateUI();

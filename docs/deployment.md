@@ -1,9 +1,10 @@
-# macOS deployment: launchd + Tailscale Serve
+# macOS deployment: launchd + Caddy HTTPS
 
 MVP deployment targets the user's own Apple Silicon Mac. The API and worker run as
 two native launchd LaunchAgents; there is no Docker, cloud host, or public reverse
-proxy. The API binds `127.0.0.1` and phones reach it through Tailscale Serve (or
-Caddy with an internal CA as a fallback).
+proxy. The API binds `127.0.0.1` and phones reach it through Caddy with an internal
+CA. Tailscale Serve remains documented as an optional alternative, but its
+acceptance is skipped by user decision (2026-11-13).
 
 See [ADR-0006](adr/0006-native-launchd-tailscale.md) for the decision.
 
@@ -62,7 +63,11 @@ curl http://127.0.0.1:8765/api/health
 Open <http://127.0.0.1:8765>, sign in, and add a test item. Killing either process
 should make launchd restart it; queued and running Runs recover from SQLite.
 
-## HTTPS for phones: Tailscale Serve
+## Optional: Tailscale Serve (acceptance skipped)
+
+> Tailscale Serve remains documented as an alternative, but its acceptance is
+> skipped by user decision (2026-11-13). Use the Caddy path below for the accepted
+> HTTPS setup.
 
 Keep Trove bound to loopback. Tailscale terminates TLS and forwards from the tailnet:
 
@@ -76,7 +81,7 @@ HTTPS gives Media Session and PWA installation a secure context. Do not use
 `trove serve --lan` for daily use; it is only for a trusted LAN without HTTPS and
 does not promise Media Session/PWA behavior.
 
-### Caddy fallback (no Tailscale)
+### Caddy HTTPS (accepted path)
 
 ```bash
 brew install caddy
@@ -174,11 +179,11 @@ Use this after installing or upgrading on the real Mac:
 - [ ] Kill the worker process while idle; launchd restarts it and the heartbeat is
       fresh again.
 - [ ] Reboot the Mac; both agents start at login and the queue is available.
-- [ ] From the phone over Tailscale/Caddy HTTPS: sign in, play an item, seek, change
-      speed, lock the screen, and confirm progress resumes.
+- [ ] From the phone over Caddy HTTPS: sign in, play an item, seek, change speed,
+      lock the screen, and confirm progress resumes. Tailscale is optional and skipped.
 - [ ] Run a search from the phone and open a result to its transcript/book
       paragraph.
-- [ ] Record the versions: `trove --version`, `tailscale version`, `ffmpeg -version`.
+- [ ] Record the versions: `trove --version`, `caddy version`, `ffmpeg -version`.
 
 ## Troubleshooting
 
@@ -187,7 +192,8 @@ Use this after installing or upgrading on the real Mac:
 - If the worker restarts repeatedly, inspect
   `~/Trove/logs/com.trove.worker.log` and `~/Trove/logs/trove.log`; runs whose
   worker died are reclaimed as `queued` on the next worker start.
-- If the phone cannot install the PWA, confirm the page is served over HTTPS and
-  open the Tailscale URL, not the LAN IP.
-- If the app is reachable locally but not over Tailscale, check
-  `tailscale serve status` and that the API is still bound to `127.0.0.1`.
+- PWA installation is optional and its acceptance is skipped; HTTPS/Caddy is still
+  required for Media Session and normal browser use.
+- If the app is reachable locally but not over Caddy, check the Caddy reverse proxy
+  and that the API is still bound to `127.0.0.1`. Tailscale troubleshooting is
+  optional and its acceptance is skipped.

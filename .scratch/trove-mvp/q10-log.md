@@ -2,7 +2,7 @@
 
 Ticket: [25 — Q10 一周手机播放 Spike](issues/25-q10-phone-spike.md)  
 Status: pending manual execution  
-HTTPS setup: [deployment guide](../../docs/deployment.md)
+HTTPS setup: [deployment guide](../../docs/deployment.md) · Tailscale acceptance SKIPPED; use Caddy
 
 Use this file for the raw week-long observations. Do not replace it with a summary
 until the week is complete. Record the real device, browser, OS, Tailscale/Caddy
@@ -15,7 +15,7 @@ HTTPS method, and network on each day.
 | Phone model     |       |
 | iOS/Android     |       |
 | Browser/version |       |
-| HTTPS method    | Tailscale Serve / Caddy internal CA |
+| HTTPS method    | Caddy internal CA (Tailscale acceptance skipped) |
 | Host version    | `trove --version` |
 | Library items   | at least 5, including one ≥60 min |
 
@@ -59,3 +59,5 @@ Evidence for the decision:
 
 If FAIL, also confirm that Host Console intake, management, and search still pass
 their own acceptance; a Q10 failure is not a Host Console failure.
+
+> 2026-11-13: Tailscale Serve acceptance is skipped; record the Caddy HTTPS URL instead.

@@ -113,6 +113,25 @@ def test_run_payload_does_not_leak_home_paths(host):
     assert "<local-source>" in run["log_tail"][-1]
 
 
+def test_title_validation_and_run_state_conflict(host):
+    bundle = seed_item(host, title="Conflict semantics")
+    host.login()
+
+    invalid_title = host.client.patch(
+        f"/api/items/{bundle.item.id}", json={"title": "   "}
+    )
+    assert invalid_title.status_code == 422
+    assert invalid_title.json()["code"] == "item.title_empty"
+
+    conflict = host.client.post(f"/api/items/{bundle.item.id}/retry")
+    assert conflict.status_code == 409
+    assert conflict.json() == {
+        "code": "item.conflict",
+        "message": "The current Processing Run does not need a retry",
+        "details": None,
+    }
+
+
 def test_duplicate_add_returns_existing_item(api_host):
     api_host.login()
     payload = {"kind": "url", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}

@@ -41,19 +41,22 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (!url.pathname.startsWith("/static/")) return;
 
-  // Static assets are network-first so a deploy is visible immediately. Only
-  // these versioned shell assets are cached; HTML, API responses and media
-  // always go to the network and fail offline instead of serving stale data.
-  const cacheKey = new URL(url.pathname, url.origin).toString();
+  // Static asset URLs are versioned with ?v=<asset_version>, so serving a
+  // cached copy is safe: a deploy changes the URL. Revalidate in the
+  // background. HTML, API responses and media always go to the network and
+  // fail offline instead of serving stale data.
   event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(SHELL_CACHE).then((cache) => cache.put(cacheKey, copy));
-        }
-        return response;
-      })
-      .catch(() => caches.match(cacheKey)),
+    caches.match(request).then((cached) => {
+      const network = fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(SHELL_CACHE).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(() => cached);
+      return cached || network;
+    }),
   );
 });
