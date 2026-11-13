@@ -4,6 +4,10 @@ MVP 的 Host 是用户自己的 Mac，处理依赖 MLX/Metal，且手机端 Medi
 
 **Status**: Accepted · 2026-11-08
 
+**2026-11-13 note**: Tailscale Serve acceptance is skipped by user decision;
+Caddy internal CA is the accepted HTTPS path. launchd and localhost remain in
+scope. See [deployment](../deployment.md).
+
 ## Considered Options
 
 - Docker：macOS 容器无法使用 MLX/Metal，本地视频路径和 launchd 也更麻烦。
