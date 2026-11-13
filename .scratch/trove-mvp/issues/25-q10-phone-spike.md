@@ -1,6 +1,7 @@
 # 25 — Q10 一周手机播放 Spike
 
 Status: ready-for-human  
+Acceptance exception: Tailscale Serve acceptance is SKIPPED by user decision (2026-11-13); use Caddy HTTPS for Q10.
 Type: task  
 Milestone: M3  
 Blocked by: 11, 12, 15, 24  
@@ -13,7 +14,7 @@ Q10 是 MVP 的核心产品门控：手机浏览器能否承担主要听设备�
 
 ## Scope
 
-- 准备至少 5 条可听 Item（含 1 小时长内容），通过 Tailscale/Caddy HTTPS 在目标手机访问。
+- 准备至少 5 条可听 Item（含 1 小时长内容），通过 Caddy HTTPS 在目标手机访问（Tailscale 验收已跳过）。
 - 连续一周记录：播放/暂停/拖动/倍速、锁屏/后台、媒体通知、导航时音频是否中断、进度恢复、搜索/transcript 阅读。
 - 记录失败场景、浏览器/系统版本、网络环境、复现步骤。
 - 按 Q10 通过/失败给出决定：
@@ -26,7 +27,7 @@ Q10 是 MVP 的核心产品门控：手机浏览器能否承担主要听设备�
 - [ ] 覆盖锁屏/后台/倍速/媒体通知/导航不断音/进度恢复。
 - [ ] 形成 pass/fail 结论和依据；失败时明确下一步（桌面/native/React）。
 - [ ] 不把 Q10 失败当成 Host Console 失败；入库/管理/搜索仍验收。
-- [ ] 记录真实设备/浏览器/HTTPS 方式，便于复现。
+- [ ] 记录真实设备/浏览器/Caddy HTTPS 方式，便于复现。
 
 ## Testing
 
@@ -38,3 +39,11 @@ Q10 是 MVP 的核心产品门控：手机浏览器能否承担主要听设备�
 
 - 实现 native 播放器、离线播放、Up Next、睡眠定时；不做。
 - 公网访问/多用户；不做。
+
+## Comments
+
+2026-11-10 — Added the raw-observation template at `.scratch/trove-mvp/q10-log.md`
+(environment, seven daily rows, failure cases, pass/fail decision). No device data
+has been fabricated; the week-long phone spike remains human work.
+
+2026-11-13 — Tailscale 验收跳过；Q10 仍使用 Caddy HTTPS 执行，不因 Tailscale 跳过而取消手机播放门控。

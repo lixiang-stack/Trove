@@ -14,7 +14,7 @@ from trove.domain.urls import (
     podcast_source_key,
 )
 from trove.errors import ValidationError
-from trove.ports import BookExtractor, FeedClient
+from trove.ports import AudioExtractor, BookExtractor, FeedClient
 from trove.services.library import ItemBundle, LibraryService
 from trove.services.processing import ProcessingService
 from trove.services.uploads import UploadStore, kind_for_suffix
@@ -29,6 +29,7 @@ class IntakeService:
         processing: ProcessingService,
         feed_client: FeedClient,
         book_extractor: BookExtractor,
+        audio_extractor: AudioExtractor,
         uploads: UploadStore,
     ) -> None:
         self.config = config
@@ -37,6 +38,7 @@ class IntakeService:
         self.processing = processing
         self.feed_client = feed_client
         self.book_extractor = book_extractor
+        self.audio_extractor = audio_extractor
         self.uploads = uploads
 
     # ------------------------------------------------------------------
@@ -97,6 +99,7 @@ class IntakeService:
                 title=Path(record.filename).stem,
                 uploaded=True,
                 size=record.size,
+                validated=True,
             )
         except Exception:
             self.uploads.cleanup(upload_id)
@@ -115,14 +118,18 @@ class IntakeService:
         title: str,
         uploaded: bool,
         size: int | None = None,
+        validated: bool = False,
     ) -> tuple[ItemBundle, bool]:
         source_type = {
             "audio": SourceType.LOCAL_AUDIO,
             "video": SourceType.LOCAL_VIDEO,
             "epub": SourceType.EPUB,
         }[kind]
-        if kind == "epub":
-            self.book_extractor.validate(source_path)
+        if not validated:
+            if kind == "epub":
+                self.book_extractor.validate(source_path)
+            else:
+                self.audio_extractor.probe(source_path, kind=kind)
         existing = self._find_by_source_key(checksum)
         if existing is not None:
             return existing, True

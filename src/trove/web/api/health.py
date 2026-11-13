@@ -9,12 +9,13 @@ from fastapi.responses import JSONResponse
 from trove import __version__
 from trove.db.engine import fts5_available, migration_status
 from trove.web.deps import runtime
+from trove.web.schemas import HealthResponse
 from trove.worker import heartbeat_is_fresh, read_heartbeat
 
 router = APIRouter()
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 def health(request: Request):
     app_runtime = runtime(request)
     status: dict[str, Any] = {

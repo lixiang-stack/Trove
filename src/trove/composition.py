@@ -83,7 +83,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     sessions = create_session_factory(engine)
     package = ContentPackage(config)
     search_index: SearchIndex = FtsSearchIndex(sessions, package)
-    uploads = UploadStore(config)
+    uploads = UploadStore(config, ports.book_extractor, ports.audio_extractor)
     library = LibraryService(config, sessions, package, search_index, uploads)
     search = SearchService(sessions, search_index, library)
     processing = ProcessingService(
@@ -105,6 +105,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         processing,
         ports.feed_client,
         ports.book_extractor,
+        ports.audio_extractor,
         uploads,
     )
     playback = PlaybackService(sessions, package, library, search_index)

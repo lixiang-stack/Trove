@@ -123,6 +123,18 @@ def test_playback_navigation_inline_and_transcript(host, browser):
     assert page.url.endswith("/library")
     assert page.locator(f'[data-inline-for="{bundle.item.id}"]').is_visible()
     assert page.evaluate("window.TrovePlayer.state.playing") is True
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{bundle.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
+    assert (
+        page.locator(
+            f'[data-inline-for="{bundle.item.id}"] [data-player-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
     metadata_title = page.evaluate(
         "() => navigator.mediaSession && navigator.mediaSession.metadata"
         " ? navigator.mediaSession.metadata.title : null"
@@ -159,8 +171,62 @@ def test_playback_navigation_inline_and_transcript(host, browser):
         lambda: host.item(bundle.item.id)["audio_position_sec"] > 0,
         timeout=5,
     )
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{bundle.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "▶"
+    )
     payload = host.item(bundle.item.id)
     assert payload["consumption_state"] == "in_progress"
+    context.close()
+
+
+def test_switching_items_plays_second_audio(host, browser):
+    first = seed_item(
+        host,
+        title="第一集",
+        source_key="seed:first-part",
+        duration=20.0,
+        audio_fixture="long.m4a",
+    )
+    second = seed_item(
+        host,
+        title="第二集",
+        source_key="seed:second-part",
+        duration=20.0,
+        audio_fixture="long.m4a",
+    )
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.click(f'[data-play-item][data-item-id="{first.item.id}"]')
+    page.wait_for_function(
+        "() => { const a = document.querySelector('#global-audio');"
+        " return a && !a.paused && a.currentTime > 0.05; }",
+        timeout=10000,
+    )
+
+    page.click(f'[data-play-item][data-item-id="{second.item.id}"]')
+    page.wait_for_function(
+        "(id) => { const a = document.querySelector('#global-audio');"
+        " return a && a.src.includes(id) && !a.paused && a.currentTime > 0.05; }",
+        arg=second.item.id,
+        timeout=10000,
+    )
+    assert page.locator("#player-error").is_hidden()
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{first.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "▶"
+    )
+    assert (
+        page.locator(
+            f'[data-play-item][data-item-id="{second.item.id}"] [data-play-icon]'
+        ).inner_text()
+        == "❚❚"
+    )
     context.close()
 
 
@@ -497,6 +563,49 @@ def test_search_input_is_usable(host, browser):
     assert box is not None and box["width"] > 200
     field.fill("记忆")
     assert field.input_value() == "记忆"
+    context.close()
+
+
+def test_pwa_service_worker_caches_only_shell_assets(host, browser):
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/library", wait_until="domcontentloaded")
+    page.wait_for_function(
+        "() => navigator.serviceWorker && navigator.serviceWorker.ready",
+        timeout=15000,
+    )
+    scope = page.evaluate(
+        "async () => (await navigator.serviceWorker.ready).scope"
+    )
+    assert scope == f"{host.base_url}/"
+    page.wait_for_function(
+        "async () => (await caches.keys()).some((key) => key.includes('trove-shell'))",
+        timeout=15000,
+    )
+
+    page.evaluate("fetch('/api/health').then((response) => response.status)")
+    cached = page.evaluate(
+        """async () => {
+            const paths = [];
+            for (const name of await caches.keys()) {
+                const cache = await caches.open(name);
+                for (const request of await cache.keys()) {
+                    paths.push(new URL(request.url).pathname);
+                }
+            }
+            return paths;
+        }"""
+    )
+    assert cached
+    assert all(path.startswith("/static/") for path in cached)
+    assert not any(path.startswith("/api") or path == "/library" for path in cached)
+
+    context.set_offline(True)
+    offline = page.evaluate(
+        "() => fetch('/api/health').then(() => 'ok').catch(() => 'failed')"
+    )
+    assert offline == "failed"
+    context.set_offline(False)
     context.close()
 
 
