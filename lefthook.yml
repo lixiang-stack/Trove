@@ -1,6 +1,8 @@
 # 本地提交前检查；配置 CI 后，CI 仍是最终门禁。
 # 仅在本地拦截问题；单次跳过：git commit --no-verify（lefthook 也接受 LEFTHOOK=0）。
 output: false
+# 使用标准 ** 语义（0 层或更多目录），方便按路径过滤。
+glob_matcher: doublestar
 pre-commit:
   parallel: true
   commands:
@@ -17,7 +19,9 @@ pre-commit:
       glob: "**/*.py"
       run: python3 scripts/complexity.py --staged
     shell-syntax:
-      glob: "{scripts/*.sh,scripts/git/*.sh}"
+      glob:
+        - "scripts/*.sh"
+        - "scripts/git/*.sh"
       run: |
         for f in scripts/*.sh scripts/git/*.sh; do [ -f "$f" ] && bash -n "$f"; done
 
@@ -37,6 +41,21 @@ pre-push:
       run: bash scripts/git/check-push.sh {1}
       use_stdin: true
     complexity:
+      glob: "**/*.py"
       run: python3 scripts/complexity.py --push
-    checks:
-      run: bash scripts/check.sh
+    host-checks:
+      glob:
+        - "src/trove/**"
+        - "tests/**"
+        - "pyproject.toml"
+        - "uv.lock"
+        - "scripts/**"
+      run: ./scripts/check.sh --fast
+    android-checks:
+      glob: "android/**"
+      run: |
+        if [ -x android/gradlew ]; then
+          (cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug)
+        else
+          echo "android/gradlew missing; skipping Android checks"
+        fi
