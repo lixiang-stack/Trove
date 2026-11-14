@@ -66,7 +66,7 @@ TROVE_LLM_ENABLED=false uv run trove serve
 ./scripts/check.sh          # 提交/推送前：完整 pytest + 文档检查
 ```
 
-`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host. Network tests are excluded by default: `uv run pytest -m network`.
+`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host and Playwright's bundled Chromium headless shell (`uv run playwright install chromium` once). Tests run with 4 xdist workers by default; set `PYTEST_WORKERS=0` to run serially. Network tests are excluded by default: `uv run pytest -m network`.
 
 Diagnose search and index coverage from the terminal:
 
