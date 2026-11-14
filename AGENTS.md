@@ -45,6 +45,10 @@
 - 修 bug 先写复现测试；关键逻辑必有单元测试，覆盖边界与异常。
 - 测试数据尽量用真实 golden，不用凭空捏造的占位数据。
 
+## Android App
+
+- Android 子树的本地规范在 `android/AGENTS.md`；开发 App 前先读。根规范仍适用，包含 Google Material Design (Material 3)。
+
 ## Agent skills
 
 ### Issue tracker
