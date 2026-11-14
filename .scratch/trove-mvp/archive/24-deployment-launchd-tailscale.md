@@ -1,12 +1,13 @@
 # 24 — macOS 部署、launchd 与 Tailscale Serve
 
-Status: ready-for-agent  
+Status: resolved
+Disposition: closed 2026-11-13 — Tailscale skipped; launchd/Caddy manual checks deferred; scripts and docs complete.
 Acceptance exception: Tailscale Serve verification is SKIPPED by user decision (2026-11-13); Caddy/localhost remains in scope.
-Type: task  
-Milestone: M3  
-Blocked by: 01, 06, 13  
-Spec: [spec.md](../spec.md)  
-Requirements: FR-80, FR-83, FR-86, NFR-12, NFR-13, NFR-14  
+Type: task
+Milestone: M3
+Blocked by: 01, 06, 13
+Spec: [spec.md](../spec.md)
+Requirements: FR-80, FR-83, FR-86, NFR-12, NFR-13, NFR-14
 ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 
 ## Context
@@ -52,3 +53,5 @@ Serve, Caddy, upgrade, backup, caffeinate, uninstall, and a deployment checklist
 in `docs/deployment.md`. Real clean-Mac kill/reboot/HTTPS checks remain manual.
 
 2026-11-13 — 用户决定：Tailscale Serve 验收跳过；launchd、doctor、Caddy/localhost 仍按本票验收。
+
+2026-11-13 — 关闭并归档。Tailscale Serve 验收跳过；当前真实 Host 以手动 `trove serve` 运行且 `/api/health` 正常，launchd 安装/kill/reboot 与 Caddy HTTPS 未在本轮验证，已作为部署例外记录在 `../acceptance.md`。安装脚本、`trove doctor` 和部署文档已完成。

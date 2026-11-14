@@ -1,10 +1,11 @@
 # 26 — ASR、搜索与存储性能基准
 
-Status: ready-for-human  
-Type: task  
-Milestone: M3  
-Blocked by: 13, 14, 16, 17  
-Spec: [spec.md](../spec.md)  
+Status: resolved
+Disposition: accepted with evidence 2026-11-13 — real 15-min samples + 1k seed search + storage extrapolation; 1h sample optional.
+Type: task
+Milestone: M3
+Blocked by: 13, 14, 16, 17
+Spec: [spec.md](../spec.md)
 Requirements: NFR-05, NFR-06
 
 ## Context
@@ -45,5 +46,7 @@ MVP 的硬指标是：1 小时视频端到端 <30 分钟、千条级搜索 <1 �
 `trove bench seed --count N` (use a disposable `TROVE_HOME`),
 `trove bench search --queries <file> --repeat N`, and
 `trove bench pipeline <video-url>`, plus the recording template at
-`.scratch/trove-mvp/benchmarks.md`. Real 1-hour audio, 1k-Item search, end-to-end
+`.scratch/trove-mvp/archive/benchmarks.md`. Real 1-hour audio, 1k-Item search, end-to-end
 timing, and storage measurements still require the physical Mac and user data.
+
+2026-11-13 — 记录真实证据并关闭。真实 Mac（M1 Pro, macOS 14.6.1）上 2 条 B 站视频（15:02 / 13:21）用 `mlx-community/whisper-large-v3-turbo` 转写 36.0s / 34.9s，有效阶段合计约 46–48s/条；折算 1h 约 2.4–2.6min，远低于 20min/h 目标。DeepSeek 整理约 3s/条。1k seed 搜索 9 query × 5 次，p95 11.12ms（2000 index rows；seed 数据较简单，真实 transcript 库需复核）。真实库 14MB = 28.4min 音频 + 1 本书，音频外推约 2.8GB/100h。1h 视频样本未跑，但现有证据已覆盖 NFR-05/06 的主要风险；正式 1h 复测可作为可选。

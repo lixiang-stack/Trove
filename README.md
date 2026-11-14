@@ -24,7 +24,7 @@ uv run trove worker
 
 Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 
-For auto-start at login, Tailscale Serve HTTPS, upgrades, backups, and uninstall,
+For auto-start at login, Caddy/Tailscale HTTPS, upgrades, backups, and uninstall,
 follow [docs/deployment.md](docs/deployment.md). The security regression checklist
 is in [docs/security.md](docs/security.md); dependency licenses are listed in
 [docs/licenses.md](docs/licenses.md).
@@ -66,7 +66,7 @@ TROVE_LLM_ENABLED=false uv run trove serve
 ./scripts/check.sh          # 提交/推送前：完整 pytest + 文档检查
 ```
 
-`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host. Network tests are excluded by default: `uv run pytest -m network`.
+`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host and Playwright's bundled Chromium headless shell (`uv run playwright install chromium` once). Tests run with 4 xdist workers by default; set `PYTEST_WORKERS=0` to run serially. Network tests are excluded by default: `uv run pytest -m network`.
 
 Diagnose search and index coverage from the terminal:
 

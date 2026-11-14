@@ -1,7 +1,7 @@
 # Performance and storage benchmarks
 
-Ticket: [26 — ASR、搜索与存储性能基准](issues/26-performance-storage-benchmark.md)  
-Status: pending manual execution on the real Mac
+Ticket: [26 — ASR、搜索与存储性能基准](26-performance-storage-benchmark.md)
+Status: archived — evidence recorded in acceptance.md; 1 h sample optional
 
 Record real commands, data, machine, model versions, and dates. Do not use synthetic
 audio or a fake library for the reported numbers.
