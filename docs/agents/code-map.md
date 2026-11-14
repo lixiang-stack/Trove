@@ -3,6 +3,10 @@
 Read `GLOSSARY.md` for domain terms and `docs/adr/` for decisions. This file is
 only the "where does this change go?" map.
 
+## Android app
+
+`android/` — native Android client. Read `android/AGENTS.md` before changing it.
+
 ## HTTP surface
 
 ```text
