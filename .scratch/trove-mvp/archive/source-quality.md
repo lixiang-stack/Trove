@@ -1,7 +1,7 @@
 # Source success and Tag/summary quality
 
-Ticket: [28 — 来源成功率与 Tag/摘要质量评估](issues/28-source-tag-quality-evaluation.md)  
-Status: pending manual execution
+Ticket: [28 — 来源成功率与 Tag/摘要质量评估](28-source-tag-quality-evaluation.md)
+Status: archived — partial evidence; full matrix deferred to V1
 
 Use real content. Do not store copyrighted media in the repository; keep URLs,
 error codes, and log tails only.

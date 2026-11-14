@@ -1,8 +1,8 @@
 # Q10 phone playback spike log
 
-Ticket: [25 — Q10 一周手机播放 Spike](issues/25-q10-phone-spike.md)  
-Status: pending manual execution  
-HTTPS setup: [deployment guide](../../docs/deployment.md) · Tailscale acceptance SKIPPED; use Caddy
+Ticket: [25 — Q10 一周手机播放 Spike](25-q10-phone-spike.md)
+Status: closed — not accepted (desktop MVP)
+HTTPS setup: [deployment guide](../../../docs/deployment.md) · Tailscale acceptance SKIPPED; use Caddy
 
 Use this file for the raw week-long observations. Do not replace it with a summary
 until the week is complete. Record the real device, browser, OS, Tailscale/Caddy

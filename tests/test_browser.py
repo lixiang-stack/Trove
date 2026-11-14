@@ -18,11 +18,13 @@ def browser():
         try:
             instance = playwright.chromium.launch(
                 headless=True,
-                channel="chrome",
                 args=["--autoplay-policy=no-user-gesture-required"],
             )
         except Error as exc:
-            pytest.skip(f"Chrome is not available for Playwright: {exc}")
+            pytest.skip(
+                "Playwright Chromium headless shell is not available: "
+                f"{exc}. Run: uv run playwright install chromium"
+            )
         yield instance
         instance.close()
 

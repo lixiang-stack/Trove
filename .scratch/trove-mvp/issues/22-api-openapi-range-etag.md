@@ -1,11 +1,12 @@
 # 22 — JSON API、OpenAPI 与 Range/ETag 契约
 
-Status: ready-for-agent  
-Type: task  
-Milestone: M3  
-Blocked by: 05, 06, 11, 13, 14, 16, 17, 20  
-Spec: [spec.md](../spec.md)  
-Requirements: FR-82, FR-73, NFR-08  
+Status: resolved
+Disposition: closed 2026-11-13 — contract audit PASS; 4/4 manual checks and 8/8 HTML↔API mappings PASS.
+Type: task
+Milestone: M3
+Blocked by: 05, 06, 11, 13, 14, 16, 17, 20
+Spec: [spec.md](../spec.md)
+Requirements: FR-82, FR-73, NFR-08
 ADRs: [0008](../../../docs/adr/0008-content-package-as-source-of-truth.md)
 
 ## Context
@@ -24,12 +25,12 @@ ADRs: [0008](../../../docs/adr/0008-content-package-as-source-of-truth.md)
 
 ## Acceptance Criteria
 
-- [ ] OpenAPI 包含 spec 列出的全部 MVP 端点，schema 与实现一致。
-- [ ] 未认证、未知 Item、重复添加、校验失败、限速返回稳定状态码/错误形状。
-- [ ] 音频/文件响应带 ETag/Accept-Ranges，Range 请求返回 206；V1 manifest 所需元数据可通过 API 获取。
-- [ ] HTML 页面所需数据均可通过 API 获取；没有 web-only 的数据模型。
-- [ ] API 不返回服务器绝对路径/密钥/内部堆栈。
-- [ ] 契约测试在 Host seam 上通过。
+- [x] OpenAPI 包含 spec 列出的全部 MVP 端点，schema 与实现一致。
+- [x] 未认证、未知 Item、重复添加、校验失败、限速返回稳定状态码/错误形状。
+- [x] 音频/文件响应带 ETag/Accept-Ranges，Range 请求返回 206；V1 manifest 所需元数据可通过 API 获取。
+- [x] HTML 页面所需数据均可通过 API 获取；没有 web-only 的数据模型。
+- [x] API 不返回服务器绝对路径/密钥/内部堆栈。
+- [x] 契约测试在 Host seam 上通过。
 
 ## Testing
 
@@ -69,10 +70,10 @@ echo "$ITEM_ID"
 
 | # | 测试项 | 测试方法（最简单） | 期望结果 | 实际结果 |
 | -: | ------ | ------------------ | -------- | -------- |
-| 1 | OpenAPI 端点、schema、认证要求 | 浏览器打开 `$BASE/api/openapi.json`，对照 [spec.md](../spec.md) 第 5 节端点表检查路径、请求/响应 schema、Cookie 认证标记 | 所有 MVP 端点存在；受保护端点显示 Cookie 认证；登录/health 不需要认证；schema 字段与真实响应一致 | 待填 |
-| 2 | 409 冲突错误形状 | `curl -s -o - -w '\nHTTP %{http_code}\n' -b "$COOKIE" -X POST "$BASE/api/items/$ITEM_ID/retry"` | `409`；响应体为 `{"code":"item.conflict","message":"The current Processing Run does not need a retry","details":null}` | 待填 |
-| 3 | HTML 与 JSON API 数据对齐 | 按下方“HTML ↔ API 对照表”逐页检查；页面能看到的数据必须能从对应 API 获取 | 所有页面数据均有 API 来源；无只存在于模板的数据模型 | 待填 |
-| 4 | 真实响应不泄漏绝对路径/密钥/堆栈 | `curl -s -b "$COOKIE" "$BASE/api/items/$ITEM_ID" -o /tmp/trove-item.json; curl -s -b "$COOKIE" "$BASE/api/search?q=test" -o /tmp/trove-search.json; grep -Ei -e '/Users/' -e '/Volumes/' -e 'sk-' -e 'Traceback' -e 'session_secret' -e 'DEEPSEEK_API_KEY' -e 'api_key' /tmp/trove-item.json /tmp/trove-search.json` | 无任何匹配输出 | 待填 |
+| 1 | OpenAPI 端点、schema、认证要求 | 浏览器打开 `$BASE/api/openapi.json`，对照 [spec.md](../spec.md) 第 5 节端点表检查路径、请求/响应 schema、Cookie 认证标记 | 所有 MVP 端点存在；受保护端点显示 Cookie 认证；登录/health 不需要认证；schema 字段与真实响应一致 | ✅ |
+| 2 | 409 冲突错误形状 | `curl -s -o - -w '\nHTTP %{http_code}\n' -b "$COOKIE" -X POST "$BASE/api/items/$ITEM_ID/retry"` | `409`；响应体为 `{"code":"item.conflict","message":"The current Processing Run does not need a retry","details":null}` | ✅ |
+| 3 | HTML 与 JSON API 数据对齐 | 按下方“HTML ↔ API 对照表”逐页检查；页面能看到的数据必须能从对应 API 获取 | 所有页面数据均有 API 来源；无只存在于模板的数据模型 | ✅ |
+| 4 | 真实响应不泄漏绝对路径/密钥/堆栈 | `curl -s -b "$COOKIE" "$BASE/api/items/$ITEM_ID" -o /tmp/trove-item.json; curl -s -b "$COOKIE" "$BASE/api/search?q=test" -o /tmp/trove-search.json; grep -Ei -e '/Users/' -e '/Volumes/' -e 'sk-' -e 'Traceback' -e 'session_secret' -e 'DEEPSEEK_API_KEY' -e 'api_key' /tmp/trove-item.json /tmp/trove-search.json` | 无任何匹配输出 | ✅ |
 
 注意：`ai.model`（例如 `deepseek-flash`）是 AI 结果的模型元数据，不是密钥；泄漏扫描不应把 `deepseek` 单词本身当作失败。
 
@@ -82,26 +83,26 @@ echo "$ITEM_ID"
 
 | 页面 | 浏览器路径 | 对应 API | 检查点 | 实际结果 |
 | ---- | ---------- | -------- | ------ | -------- |
-| Library / Inbox | `/library`、`/library?state=processing,failed` | `GET /api/items?state=...` | Item 列表、状态、排序、过滤结果一致 | 待填 |
-| Continue | `/continue` | `GET /api/continue` | 续听/续读 Item、kind、进度一致 | 待填 |
-| Item 详情 / Run 状态 | `/items/{id}` | `GET /api/items/{id}`、`GET /api/runs/{run_id}` | 来源、Tag、Processing State、失败原因、日志 tail 可获取 | 待填 |
-| Listen / transcript | `/items/{id}/listen` | `GET /api/items/{id}/transcript` | 分段、时间戳、文本一致 | 待填 |
-| Read / book | `/items/{id}/read?chapter=n` | `GET /api/items/{id}/book/chapters/n` | 章节、段落、已净化 HTML 一致 | 待填 |
-| Search | `/search?q=...` | `GET /api/search?q=...` | 按 Item 聚合、证据段落、过滤参数一致 | 待填 |
-| Add feed preview | `/add` | `POST /api/feeds/preview` | feed 标题、作者、单集列表一致 | 待填 |
-| Export | `/export` | `GET /api/export` | 导出范围、zip 内容一致 | 待填 |
+| Library / Inbox | `/library`、`/library?state=processing,failed` | `GET /api/items?state=...` | Item 列表、状态、排序、过滤结果一致 | ✅ |
+| Continue | `/continue` | `GET /api/continue` | 续听/续读 Item、kind、进度一致 | ✅ |
+| Item 详情 / Run 状态 | `/items/{id}` | `GET /api/items/{id}`、`GET /api/runs/{run_id}` | 来源、Tag、Processing State、失败原因、日志 tail 可获取 | ✅ |
+| Listen / transcript | `/items/{id}/listen` | `GET /api/items/{id}/transcript` | 分段、时间戳、文本一致 | ✅ |
+| Read / book | `/items/{id}/read?chapter=n` | `GET /api/items/{id}/book/chapters/n` | 章节、段落、已净化 HTML 一致 | ✅ |
+| Search | `/search?q=...` | `GET /api/search?q=...` | 按 Item 聚合、证据段落、过滤参数一致 | ✅ |
+| Add feed preview | `/add` | `POST /api/feeds/preview` | feed 标题、作者、单集列表一致 | ✅ |
+| Export | `/export` | `GET /api/export` | 导出范围、zip 内容一致 | ✅ |
 
 ## Acceptance Record
 
 | 字段 | 值 |
 | ---- | -- |
-| 执行日期 | |
-| Host 版本 | `uv run trove --version` |
-| macOS / 浏览器 | |
-| 自动化证据 | `./scripts/check.sh` PASS；CI: <run url> |
-| 人工表结果 | 全部 PASS / 有失败项 |
-| 结论 | PASS / FAIL |
-| 失败项与 follow-up issue | |
+| 执行日期 | 2026-11-13 |
+| Host 版本 | `trove 0.1.0` |
+| macOS / 浏览器 | macOS 14.6.1 (M1 Pro) / 未记录 |
+| 自动化证据 | 本地 `./scripts/check.sh --full` PASS（323 tests） |
+| 人工表结果 | 4/4 + 8/8 PASS |
+| 结论 | PASS |
+| 失败项与 follow-up issue | 无 |
 
 任一项目 FAIL 即不通过；修复后必须重跑对应项目。不要用“其他项通过”替代失败项。
 
@@ -117,3 +118,5 @@ error/auth components, `GET /api/continue`, Item pagination (`limit`/`offset`),
 artifact metadata without server paths, run-error/log path redaction, stable
 `run.not_found`, and contract tests in `tests/test_api_contract.py`. Range/ETag
 behavior is covered together with ticket 11 playback tests.
+
+2026-11-13 — 用户在真实 Host 完成 API 契约手工验收：OpenAPI、409 错误形状、HTML↔API 数据对齐、脱敏扫描全部 PASS；旧的未提交结果已合并到本票。自动化 `./scripts/check.sh --full` 通过（323 tests）。本票关闭并归档。

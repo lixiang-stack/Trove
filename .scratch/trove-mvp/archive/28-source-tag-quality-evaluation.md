@@ -1,10 +1,11 @@
 # 28 — 来源成功率与 Tag/摘要质量评估
 
-Status: ready-for-human  
-Type: task  
-Milestone: M3  
-Blocked by: 07, 08, 09, 16, 17  
-Spec: [spec.md](../spec.md)  
+Status: resolved
+Disposition: partial 2026-11-13 — Bilibili 2/2 + EPUB 1/1 real success; YouTube/podcast/local and full Tag/summary matrix deferred to V1.
+Type: task
+Milestone: M3
+Blocked by: 07, 08, 09, 16, 17
+Spec: [spec.md](../spec.md)
 Requirements: FR-01, FR-03, FR-04, FR-25, FR-26, FR-27
 
 ## Context
@@ -42,6 +43,8 @@ Requirements: FR-01, FR-03, FR-04, FR-25, FR-26, FR-27
 ## Comments
 
 2026-11-10 — Added the source matrix and Tag/summary review template at
-`.scratch/trove-mvp/source-quality.md`. Real Bilibili/YouTube/podcast/EPUB/local
+`.scratch/trove-mvp/archive/source-quality.md`. Real Bilibili/YouTube/podcast/EPUB/local
 samples and human Tag judgments are still required; no copyrighted content is
 stored in the repository.
+
+2026-11-13 — 真实来源 smoke：B 站 2/2、EPUB 1/1 成功完成（另有 1 条 B 站 p02 也完成），摘要/Tag 由 `deepseek-flash` 生成且可读；YouTube、播客、本地文件没有真实样本，完整 10×5 来源矩阵和 20 条 Tag 质量评分未执行。按“只验证实际使用来源”的策略关闭为部分证据，完整矩阵转为 V1 backlog；原模板 `source-quality.md` 保留。
