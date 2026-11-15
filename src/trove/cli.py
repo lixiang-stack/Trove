@@ -108,6 +108,19 @@ def _build_parser() -> argparse.ArgumentParser:
     set_password.add_argument(
         "--password-stdin", action="store_true", help="read the password from stdin"
     )
+
+    device = subparsers.add_parser("device", help="manage Android device tokens")
+    device_sub = device.add_subparsers(dest="device_command", required=True)
+    device_list = device_sub.add_parser("list", help="list authorized devices")
+    device_list.add_argument("--json", action="store_true", dest="as_json")
+    device_revoke = device_sub.add_parser("revoke", help="revoke a device token")
+    device_revoke.add_argument("device_id")
+
+    sync = subparsers.add_parser("sync", help="sync administration")
+    sync_sub = sync.add_subparsers(dest="sync_command", required=True)
+    sync_sub.add_parser(
+        "reset-epoch", help="rotate the sync epoch and force all clients to resync"
+    )
     return parser
 
 
@@ -150,6 +163,10 @@ def main(argv: list[str] | None = None) -> int:
         return _service(config, args)
     if args.command == "auth":
         return _auth(config, args)
+    if args.command == "device":
+        return _device(config, args)
+    if args.command == "sync":
+        return _sync(config, args)
     parser.error("Unknown command")
     return 2
 
@@ -699,6 +716,57 @@ def _auth(config, args) -> int:
     config.set_password(password)
     config.config_path.chmod(0o600)
     print(f"Password written to {config.config_path} (mode 0600).")
+    return 0
+
+
+def _device(config, args) -> int:
+    from trove.composition import build_runtime
+    from trove.worker import ensure_migrated
+
+    runtime = build_runtime(config)
+    ensure_migrated(runtime)
+    if args.device_command == "list":
+        devices = runtime.devices.list()
+        payload = {
+            "devices": [
+                {
+                    "device_id": device.device_id,
+                    "name": device.name,
+                    "created_at": device.created_at,
+                    "last_used_at": device.last_used_at,
+                    "revoked_at": device.revoked_at,
+                }
+                for device in devices
+            ]
+        }
+        if args.as_json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
+        if not devices:
+            print("No authorized devices.")
+            return 0
+        for device in devices:
+            status = "revoked" if device.revoked_at else "active"
+            print(f"{device.device_id}  {device.name}  {status}")
+        return 0
+    revoked = runtime.devices.revoke(args.device_id)
+    if revoked is None:
+        print("Device not found.", file=sys.stderr)
+        return 1
+    print(f"Revoked {revoked.name} ({revoked.device_id}).")
+    return 0
+
+
+def _sync(config, args) -> int:
+    from trove.composition import build_runtime
+    from trove.db.sequences import reset_epoch
+    from trove.worker import ensure_migrated
+
+    runtime = build_runtime(config)
+    ensure_migrated(runtime)
+    with runtime.sessions() as session:
+        epoch = reset_epoch(session)
+    print(f"Sync epoch rotated: {epoch}")
     return 0
 
 

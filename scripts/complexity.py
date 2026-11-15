@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Incremental complexity gate for Python code.
+"""Incremental complexity gate for Python and Kotlin code.
 
 Usage:
   python3 scripts/complexity.py --changed [BASE]   # default HEAD^; manual comparison
@@ -8,6 +8,7 @@ Usage:
   python3 scripts/complexity.py --audit            # full scan; manual use
 
 Design:
+- Python uses radon; Kotlin uses lizard (via uvx when not installed).
 - Compare function-level cyclomatic complexity against the base revision.
 - Report only new functions, increased complexity, or crossings above the threshold.
 - Exit 1 when findings exist; infrastructure failures print a skip message and exit 0.
@@ -17,9 +18,12 @@ Design:
 from __future__ import annotations
 
 import argparse
+import csv
 import importlib.util
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,8 +32,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-# radon cyclomatic complexity; functions above this threshold block commit/push.
+# Cyclomatic complexity; functions above this threshold block commit/push.
 THRESHOLD = 20
+SOURCE_GLOBS = ("*.py", "*.kt")
 SKIP_PARTS = {
     ".git",
     ".worktree",
@@ -107,23 +112,27 @@ def is_scan_file(path: str) -> bool:
     name = Path(path).name
     if name == "conftest.py" or name.startswith("test_") or name.endswith("_test.py"):
         return False
-    return path.endswith(".py")
+    return path.endswith((".py", ".kt"))
 
 
 def tracked_files() -> list[str]:
-    out = git("ls-files", "--", "*.py")
+    out = git("ls-files", "--", *SOURCE_GLOBS)
     return [line for line in out.stdout.splitlines() if is_scan_file(line)]
 
 
 def changed_files(base: str) -> list[str]:
     if not base:
         return []
-    out = git("diff", "--name-only", "--diff-filter=ACMR", base, "HEAD", "--", "*.py")
+    out = git(
+        "diff", "--name-only", "--diff-filter=ACMR", base, "HEAD", "--", *SOURCE_GLOBS
+    )
     return [line for line in out.stdout.splitlines() if is_scan_file(line)]
 
 
 def staged_files() -> list[str]:
-    out = git("diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", "*.py")
+    out = git(
+        "diff", "--cached", "--name-only", "--diff-filter=ACMR", "--", *SOURCE_GLOBS
+    )
     return [line for line in out.stdout.splitlines() if is_scan_file(line)]
 
 
@@ -182,11 +191,91 @@ def python_base_metrics(files: list[str], base: str) -> dict[tuple[str, str], in
         return parse_radon(proc.stdout, temp_by_original)
 
 
+def kotlin_cmd() -> list[str] | None:
+    if shutil.which("lizard"):
+        return ["lizard", "-l", "kotlin"]
+    if shutil.which("uvx"):
+        return ["uvx", "lizard", "-l", "kotlin"]
+    return None
+
+
+def _sanitize_kotlin(source: str) -> str:
+    # Lizard's Kotlin parser conflates a `fun interface` declaration with the
+    # next class, so analyze an equivalent `interface` copy instead.
+    return re.sub(r"\bfun\s+interface\b", "interface", source)
+
+
+def _kotlin_metrics_from_sources(
+    sources: dict[str, str],
+) -> dict[tuple[str, str], int]:
+    cmd = kotlin_cmd()
+    if cmd is None or not sources:
+        return {}
+    with tempfile.TemporaryDirectory(prefix="complexity-") as tmp:
+        temp_by_original: dict[str, str] = {}
+        for index, (file, source) in enumerate(sources.items()):
+            target = Path(tmp) / f"{index}-{Path(file).name}"
+            target.write_text(_sanitize_kotlin(source), encoding="utf-8")
+            temp_by_original[str(target.resolve())] = file
+        report = Path(tmp) / "lizard.csv"
+        run([*cmd, "-o", str(report), *temp_by_original], timeout=60)
+        if not report.is_file():
+            return {}
+        return parse_lizard(report.read_text(encoding="utf-8"), temp_by_original)
+
+
+def parse_lizard(stdout: str, base_by_temp: dict[str, str]) -> dict[tuple[str, str], int]:
+    out: dict[tuple[str, str], int] = {}
+    try:
+        rows = csv.reader(io.StringIO(stdout))
+        for row in rows:
+            if len(row) < 8:
+                continue
+            try:
+                complexity = int(row[1])
+            except ValueError:
+                continue
+            file = base_by_temp.get(str(Path(row[6]).resolve()), relative_path(row[6]))
+            name = row[7] or row[5].split("@", 1)[0]
+            out[(file, name)] = complexity
+    except csv.Error:
+        return {}
+    return out
+
+
+def kotlin_metrics(files: list[str]) -> dict[tuple[str, str], int]:
+    sources = {file: Path(file).read_text(encoding="utf-8") for file in files}
+    return _kotlin_metrics_from_sources(sources)
+
+
+def kotlin_base_metrics(files: list[str], base: str) -> dict[tuple[str, str], int]:
+    if not base:
+        return {}
+    sources: dict[str, str] = {}
+    for file in files:
+        shown = git("show", f"{base}:{file}")
+        if shown.returncode == 0:
+            sources[file] = shown.stdout
+    return _kotlin_metrics_from_sources(sources)
+
+
 def collect(files: list[str], base: str, audit: bool) -> list[Finding]:
-    current = python_metrics(files)
+    python_files = [file for file in files if file.endswith(".py")]
+    kotlin_files = [file for file in files if file.endswith(".kt")]
+    current = {
+        **python_metrics(python_files),
+        **kotlin_metrics(kotlin_files),
+    }
     if not current:
         return []
-    previous = {} if audit else python_base_metrics(files, base)
+    previous = (
+        {}
+        if audit
+        else {
+            **python_base_metrics(python_files, base),
+            **kotlin_base_metrics(kotlin_files, base),
+        }
+    )
     findings: list[Finding] = []
     for (file, name), value in sorted(current.items()):
         if value <= THRESHOLD:
@@ -267,7 +356,7 @@ def main() -> int:
             mode, base = "changed", args.changed or "HEAD^"
             files = changed_files(base)
         if not files:
-            print(f"[complexity] no changed Python files since {base or 'N/A'}")
+            print(f"[complexity] no changed Python/Kotlin files since {base or 'N/A'}")
             return 0
         findings = collect(files, base, args.audit)
         report = write_report(findings, mode, base, files)

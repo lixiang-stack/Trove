@@ -1,6 +1,6 @@
 # 03 — Host 设备认证、撤销与 CLI
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02
@@ -24,11 +24,11 @@ Android 需要长期设备 token，而不是每次输入密码或复用浏览器
 
 ## Acceptance Criteria
 
-- [ ] 密码换 token 成功；Bearer 可访问受保护 API；错误密码返回稳定错误/限速。
-- [ ] 撤销后 token 立即 401/`auth.device_revoked`；密码修改使所有设备 token 失效。
-- [ ] Cookie 会话和现有登录/登出行为不回归。
-- [ ] Bearer 写请求不受 Cookie CSRF 规则误伤；Cookie 写请求仍拒绝跨站。
-- [ ] 设备列表/撤销 API 与 CLI 可用；token 不出现在响应、日志或异常里。
+- [x] 密码换 token 成功；Bearer 可访问受保护 API；错误密码返回稳定错误/限速。
+- [x] 撤销后 token 立即 401/`auth.device_revoked`；密码修改使所有设备 token 失效。
+- [x] Cookie 会话和现有登录/登出行为不回归。
+- [x] Bearer 写请求不受 Cookie CSRF 规则误伤；Cookie 写请求仍拒绝跨站。
+- [x] 设备列表/撤销 API 与 CLI 可用；token 不出现在响应、日志或异常里。
 
 ## Testing
 
@@ -40,3 +40,8 @@ Android 需要长期设备 token，而不是每次输入密码或复用浏览器
 
 - Android 客户端登录/存储；由 09 实现。
 - LAN flavor/明文 HTTP；由 20 处理。
+
+## Implementation
+
+- `POST /api/auth/device-token`, device listing/revocation, Bearer+Cookie middleware, CSRF split, session-epoch invalidation, throttled `last_used_at`.
+- `trove device list/revoke`; OpenAPI advertises `bearerAuth`; tokens are stored only as SHA-256 hashes.

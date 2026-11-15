@@ -59,16 +59,20 @@ def _openapi(app: FastAPI) -> dict:
         return app.openapi_schema
     schema = get_openapi(title=app.title, version=app.version, routes=app.routes)
     components = schema.setdefault("components", {})
-    components.setdefault("securitySchemes", {})["cookieAuth"] = {
+    schemes = components.setdefault("securitySchemes", {})
+    schemes["cookieAuth"] = {
         "type": "apiKey",
         "in": "cookie",
         "name": "trove_session",
     }
+    schemes["bearerAuth"] = {"type": "http", "scheme": "bearer"}
     for path, operations in schema.get("paths", {}).items():
         if not path.startswith("/api/") or path in PUBLIC_PATHS:
             continue
         for method, operation in operations.items():
             if method in {"get", "post", "put", "patch", "delete"}:
-                operation.setdefault("security", [{"cookieAuth": []}])
+                operation.setdefault(
+                    "security", [{"cookieAuth": []}, {"bearerAuth": []}]
+                )
     app.openapi_schema = schema
     return schema

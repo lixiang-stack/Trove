@@ -12,6 +12,7 @@ from sqlalchemy import Engine, create_engine, event, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.config import Config
+from trove.db.sequences import install_sync_tracking
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
 
@@ -36,7 +37,9 @@ def create_engine_for(config: Config) -> Engine:
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False, future=True)
+    install_sync_tracking(sessions)
+    return sessions
 
 
 def _alembic_config(config: Config) -> AlembicConfig:

@@ -41,6 +41,10 @@ class Item(Base):
     )
     book_locator: Mapped[str | None] = mapped_column(Text)
     last_consumed_at: Mapped[int | None] = mapped_column(Integer)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    deleted_at: Mapped[int | None] = mapped_column(Integer)
+    content_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    state_seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[int] = mapped_column(Integer, nullable=False)
     updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -59,6 +63,8 @@ class Item(Base):
         Index("ix_items_updated_at", "updated_at"),
         Index("ix_items_last_consumed_at", "last_consumed_at"),
         Index("ix_items_consumption_state", "consumption_state"),
+        Index("ix_items_content_seq", "content_seq"),
+        Index("ix_items_state_seq", "state_seq"),
     )
 
 
@@ -163,6 +169,48 @@ class ItemTag(Base):
     tag: Mapped[Tag] = relationship()
 
     __table_args__ = (Index("ix_item_tags_tag", "tag_id"),)
+
+
+class DeviceToken(Base):
+    __tablename__ = "device_tokens"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_used_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    revoked_at: Mapped[int | None] = mapped_column(Integer)
+    session_epoch: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class SyncSequence(Base):
+    __tablename__ = "sync_sequence"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    value: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    epoch: Mapped[str] = mapped_column(String(36), nullable=False)
+
+
+class SyncFieldClock(Base):
+    __tablename__ = "sync_field_clocks"
+
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("items.id", ondelete="CASCADE"), primary_key=True
+    )
+    field: Mapped[str] = mapped_column(String(32), primary_key=True)
+    client_updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    device_id: Mapped[str] = mapped_column(String(36), nullable=False)
+
+
+class SyncMutation(Base):
+    __tablename__ = "sync_mutations"
+
+    device_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    mutation_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    response_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (Index("ix_sync_mutations_created_at", "created_at"),)
 
 
 class AiResult(Base):

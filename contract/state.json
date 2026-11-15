@@ -1,0 +1,23 @@
+{
+  "items": [
+    {
+      "id": "5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10",
+      "state_seq": 19,
+      "audio_position_sec": 642.25,
+      "book_locator": null,
+      "consumption_state": "in_progress",
+      "last_consumed_at": 1793516400000
+    },
+    {
+      "id": "9c3b8f10-2d4e-4a6f-8b7c-1e5d9a0f3b21",
+      "state_seq": 20,
+      "audio_position_sec": 0.0,
+      "book_locator": "{\"chapter_index\":2,\"paragraph_index\":5,\"scroll_ratio\":0.42}",
+      "consumption_state": "in_progress",
+      "last_consumed_at": 1793517000000
+    }
+  ],
+  "next_cursor": "20",
+  "has_more": true,
+  "epoch": "e2a0c4f8-6b3d-4f21-9a7e-5c8d0b1a2f39"
+}

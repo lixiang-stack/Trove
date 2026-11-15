@@ -29,6 +29,30 @@ class ContinueKind(StrEnum):
     LISTEN = "listen"
 
 
+AUTO_START_MAX_SECONDS = 5.0
+AUTO_FINISH_RATIO = 0.95
+
+
+def derive_audio_consumption_state(
+    current: str, *, position: float, duration: float | None
+) -> str:
+    if duration and duration > 0:
+        if position >= duration * AUTO_FINISH_RATIO:
+            return ConsumptionState.FINISHED
+        if position >= min(AUTO_START_MAX_SECONDS, max(duration * 0.02, 1.0)):
+            return ConsumptionState.IN_PROGRESS
+        return current
+    if position > 0:
+        return ConsumptionState.IN_PROGRESS
+    return current
+
+
+def derive_reading_consumption_state(current: str, *, has_progress: bool) -> str:
+    if current != ConsumptionState.FINISHED and has_progress:
+        return ConsumptionState.IN_PROGRESS
+    return current
+
+
 class RunState(StrEnum):
     QUEUED = "queued"
     COMPLETED = "completed"

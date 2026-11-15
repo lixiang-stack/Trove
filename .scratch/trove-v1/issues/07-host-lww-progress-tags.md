@@ -1,6 +1,6 @@
 # 07 — Host LWW 进度/Tag 与幂等
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02, 03, 04
@@ -26,12 +26,12 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] 旧 `client_updated_at` 被忽略，新的生效；相同时间按 device_id 稳定决胜。
-- [ ] 一次 book 进度不覆盖更新的 audio 进度；字段独立比较。
-- [ ] Tag 写入归一化并返回 canonical Tag；旧 Tag 写被忽略。
-- [ ] 相同 Idempotency-Key 重放无重复副作用；返回第一次结果。
-- [ ] Web 写操作参与 LWW；进度写不导致 manifest 抖动。
-- [ ] 错误/时钟偏移响应稳定，不泄露内部路径。
+- [x] 旧 `client_updated_at` 被忽略，新的生效；相同时间按 device_id 稳定决胜。
+- [x] 一次 book 进度不覆盖更新的 audio 进度；字段独立比较。
+- [x] Tag 写入归一化并返回 canonical Tag；旧 Tag 写被忽略。
+- [x] 相同 Idempotency-Key 重放无重复副作用；返回第一次结果。
+- [x] Web 写操作参与 LWW；进度写不导致 manifest 抖动。
+- [x] 错误/时钟偏移响应稳定，不泄露内部路径。
 
 ## Testing
 
@@ -43,3 +43,8 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - Android 本地乐观更新/离线队列；由 16/19 实现。
 - 跨用户/多租户冲突策略；V1 单用户。
+
+## Implementation
+
+- Field clocks for audio/book progress, consumption state, and tags; `PUT /tags`; `client_updated_at` + `Idempotency-Key`; 5-minute skew normalization; canonical `applied`/clocks response.
+- Web Console writes use `host-web`; progress advances only `state_seq`, tags advance content version/sequence.

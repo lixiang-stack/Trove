@@ -1,6 +1,6 @@
 # 01 — Android toolchain smoke 与工程骨架
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: none
@@ -26,13 +26,13 @@ Readium 3.4.0 把 V1 的构建基线推到 compileSdk 37 / Gradle 9.7 / Kotlin 2
 
 ## Acceptance Criteria
 
-- [ ] `assembleDebug` 成功，Readium/Media3/Room/KSP 依赖全部解析。
-- [ ] 空壳在 Android 安装并启动，无 crash。
-- [ ] `:app` 的 unit test/lint 在 CI 通过。
-- [ ] 4 个 module 的依赖方向正确：feature 不反向依赖 app；`core` 不依赖 playback/reader。
-- [ ] `android/AGENTS.md` 存在并包含 Material 3、构建基线、测试/安全约束。
-- [ ] 未实现登录、Library、播放、阅读等产品功能。
-- [ ] 版本/兼容性问题有记录和结论。
+- [x] `assembleDebug` 成功，Readium/Media3/Room/KSP 依赖全部解析。
+- [x] 空壳在 Android 安装并启动，无 crash。
+- [x] `:app` 的 unit test/lint 在 CI 通过。
+- [x] 4 个 module 的依赖方向正确：feature 不反向依赖 app；`core` 不依赖 playback/reader。
+- [x] `android/AGENTS.md` 存在并包含 Material 3、构建基线、测试/安全约束。
+- [x] 01 范围内未实现登录、Library、播放、阅读等产品功能；登录由 09 接续实现。
+- [x] 版本/兼容性问题有记录和结论。
 
 ## Testing
 
@@ -43,3 +43,9 @@ Readium 3.4.0 把 V1 的构建基线推到 compileSdk 37 / Gradle 9.7 / Kotlin 2
 
 - 登录、Library、播放、下载、阅读、搜索；由后续 issue 实现。
 - release APK/签名/Play Store；由 20 处理。
+
+## Implementation
+
+- Android Gradle project in `android/` with `:app`, `:core`, `:playback`, `:reader`; pinned versions in `gradle/libs.versions.toml`; Compose/Material 3 shell; `:app` lint/test; `.github/workflows/android.yml`.
+- Verified `assembleDebug`, Robolectric/Compose tests, lint, and launch on the API 37 emulator, then installed and cold-started on a Android (Android 16 / API 36) without crashes.
+- Opt-out recorded in `tech-selection.md` / `android/AGENTS.md`: Robolectric tests run at SDK 36 because API 37 removed the Espresso `InputManager` path; compile/target stay 37.

@@ -1,6 +1,6 @@
 # 08 — Android Core 骨架与 App seam 测试
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 01
@@ -25,12 +25,12 @@ Android 功能需要统一的网络、数据库、DI 和测试替身。这个 is
 
 ## Acceptance Criteria
 
-- [ ] 4 个 module 依赖方向正确；`AppContainer` 可组装 fake/real 依赖。
-- [ ] Room 空库迁移成功；关键表/索引存在；schema 可测试。
-- [ ] DTO 能解析共享 fixture；错误形状 `{code,message,details?}` 正确。
-- [ ] App seam 能通过 fake API 驱动一个最小 Compose 流程并断言可见状态。
-- [ ] 不包含真实登录/Library/播放/阅读业务逻辑。
-- [ ] JVM/Robolectric 测试和 lint 在 CI 通过。
+- [x] 4 个 module 依赖方向正确；`AppContainer` 可组装 fake/real 依赖。
+- [x] Room 空库迁移成功；关键表/索引存在；schema 可测试。
+- [x] DTO 能解析共享 fixture；错误形状 `{code,message,details?}` 正确。
+- [x] App seam 能通过 fake API 驱动一个最小 Compose 流程并断言可见状态。
+- [x] 08 范围内不包含真实登录/Library/播放/阅读业务逻辑；登录由 09 接续实现。
+- [x] JVM/Robolectric 测试和 lint 在 CI 通过。
 
 ## Testing
 
@@ -42,3 +42,8 @@ Android 功能需要统一的网络、数据库、DI 和测试替身。这个 is
 
 - 真实认证、Library、播放、下载、阅读、搜索；由 09–18 实现。
 - instrumented 平台测试；由 11/14/20 补充。
+
+## Implementation
+
+- `:core` model/network/db/auth/settings scaffolds, Retrofit bearer client, Room schema export, shared `contract/` fixtures, and app test fakes/`TestAppContainer`.
+- App seam tests drive Compose through the fake API with a real in-memory Room DB; contract fixtures are validated by both Host and Android tests.

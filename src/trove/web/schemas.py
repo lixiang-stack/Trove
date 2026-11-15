@@ -9,6 +9,30 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class DeviceTokenRequest(BaseModel):
+    password: str
+    name: str
+
+
+class DeviceTokenResponse(BaseModel):
+    device_id: str
+    name: str
+    token: str
+    created_at: int
+
+
+class DeviceSchema(BaseModel):
+    device_id: str
+    name: str
+    created_at: int
+    last_used_at: int
+    revoked_at: int | None = None
+
+
+class DeviceListResponse(BaseModel):
+    devices: list[DeviceSchema]
+
+
 class ItemCreateRequest(BaseModel):
     kind: str
     url: str | None = None
@@ -35,6 +59,12 @@ class ProgressRequest(BaseModel):
     position_sec: float | None = Field(default=None, ge=0)
     consumption_state: str | None = None
     book_locator: BookLocatorRequest | None = None
+    client_updated_at: int | None = Field(default=None, ge=0)
+
+
+class TagsRequest(BaseModel):
+    tags: list[str]
+    client_updated_at: int | None = Field(default=None, ge=0)
 
 
 class FeedPreviewRequest(BaseModel):
@@ -112,6 +142,7 @@ class RunSchema(BaseModel):
 
 class ItemSchema(BaseModel):
     id: str
+    version: int
     source_key: str
     source_type: str
     source_type_label: str
@@ -165,9 +196,12 @@ class ReprocessResponse(BaseModel):
     item: ItemSchema
 
 
-class ProgressResponse(BaseModel):
+class MutationResponse(BaseModel):
     ok: bool
+    applied: bool = True
     item: ItemSchema
+    field_clocks: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class TranscriptSegmentSchema(BaseModel):
@@ -271,6 +305,69 @@ class RunDetailResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    api_version: str
+    capabilities: dict[str, bool]
     host: dict[str, Any]
     database: dict[str, Any]
     worker: dict[str, Any]
+
+
+class SyncFileSchema(BaseModel):
+    kind: str
+    sha256: str
+    size: int
+    mime: str
+    version: int
+    url: str
+
+
+class SyncItemSchema(BaseModel):
+    id: str
+    version: int
+    source_type: str
+    platform: str
+    title: str
+    author: str | None = None
+    published_at: str | None = None
+    fetched_at: int
+    language: str | None = None
+    duration_sec: float | None = None
+    summary: str | None = None
+    tags: list[str] = Field(default_factory=list)
+    processing_state: str
+    error_code: str | None = None
+    error_message: str | None = None
+    has_audio: bool
+    has_book: bool
+    files: list[SyncFileSchema] = Field(default_factory=list)
+
+
+class SyncTombstoneSchema(BaseModel):
+    id: str
+    version: int
+    deleted_at: int
+    epoch: str
+
+
+class ManifestResponse(BaseModel):
+    items: list[SyncItemSchema]
+    tombstones: list[SyncTombstoneSchema]
+    next_cursor: str
+    has_more: bool
+    epoch: str
+
+
+class SyncStateItemSchema(BaseModel):
+    id: str
+    state_seq: int
+    audio_position_sec: float
+    book_locator: str | None = None
+    consumption_state: str
+    last_consumed_at: int | None = None
+
+
+class SyncStateResponse(BaseModel):
+    items: list[SyncStateItemSchema]
+    next_cursor: str
+    has_more: bool
+    epoch: str

@@ -146,6 +146,7 @@ Spec 中的 `feature:*` 在 V1 作为 `:app` 内的 package 边界，不单独�
 
 - 用户手动输入 Host base URL；正式 release 必须是 HTTPS，去掉尾部 `/`；不要求路径前缀。`lan` flavor 允许受信任局域网 HTTP，并持续显示警告。
 - Release 默认 `usesCleartextTraffic=false`；`debug` 可对 `10.0.2.2`/localhost 开 cleartext；独立 `lan` flavor 可对受信任局域网开 cleartext 并持续警告。正式 release 不提供运行时明文开关。
+- 当前实现用 `src/debug/res/xml/network_security_config.xml` 只放行 `localhost`、`127.0.0.1`、`10.0.2.2`，主 Manifest 保持 `usesCleartextTraffic=false`。
 - Caddy 内部 CA：network security config 信任 system + user CA；Tailscale 使用公开证书，作为推荐路径。
 - 不做证书 pinning：Host 证书会随 Tailscale/Caddy 变化，pin 会制造维护问题；用标准 TLS + 用户 CA 信任。
 - Host URL 可配置，未来改云端 Host 只换 base URL，不改客户端模型。
@@ -260,6 +261,8 @@ Spec 中的 `feature:*` 在 V1 作为 `:app` 内的 package 边界，不单独�
 - JUnit 4 + Robolectric **4.17** + Compose UI Test + AndroidX Test；Turbine **1.2.1** 测 Flow；MockWebServer **5.5.1**（`mockwebserver3`）测 HTTP/Range。
 - 不使用 MockK/Hilt：用 fake `TroveApi`、fake repository、`TestAppContainer`；真实 Room + 临时文件 + Robolectric。
 - JVM/Robolectric 覆盖：DTO 契约、cursor/分页、tombstone、LWW、PendingMutation、下载续传状态机、CJK 归一化/locator 映射、UI 主流程。
+- Robolectric 单测固定 `@Config(sdk = [36])`：compileSdk/targetSdk 仍是 37，但 API 37 的 `InputManager` 移除让 Espresso/Compose UI Test 在 JVM 上无法注入事件；SDK 36 只影响单测运行时。真机/模拟器仍按 targetSdk 37 验证。
+- `:core` 的 Room schema 测试使用 framework SQLite（Robolectric 不能加载 bundled SQLite 的 Android JNI）；生产构建仍使用 `androidx.sqlite:sqlite-bundled` + FTS5。
 - Instrumented 覆盖：Media3 `MediaSessionService`/通知、WorkManager 前台下载、Readium 打开 golden EPUB；不在默认 CI 跑。
 - 共享 contract fixture：Host 测试生成/校验 manifest/state/error JSON；Android DTO/App 测试消费同一组 fixture。
 - 真实 Android 手动验收：1 小时后台/锁屏播放、媒体通知、蓝牙、飞行模式离线、断点续传、EPUB、离线搜索、Tag/进度同步、删除/重装、token 撤销。

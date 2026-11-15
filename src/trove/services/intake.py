@@ -177,7 +177,10 @@ class IntakeService:
     def _find_by_source_key(self, source_key: str) -> ItemBundle | None:
         with self.library.sessions() as session:
             item = session.execute(
-                select(Item).where(Item.source_key == source_key)
+                select(Item).where(
+                    Item.source_key == source_key,
+                    Item.deleted_at.is_(None),
+                )
             ).scalars().first()
             if item is None:
                 return None

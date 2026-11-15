@@ -77,6 +77,8 @@ python3 scripts/check-docs.py
 - **Android App seam**：通过公开 ViewModel/Compose UI 测试；fake `TroveApi` + 真实 Room/临时文件/Robolectric；共享 contract fixture。
 - 只测外部行为（HTTP/JSON/文件/可见 UI/Room 公开查询），不测私有方法、内部调用顺序或 SQL 细节。
 - 不用 MockK；用 fake API、fake repository、`TestAppContainer`。
+- Robolectric 单测固定 `@Config(sdk = [36])`（compileSdk/targetSdk 仍 37）；API 37 移除了 Espresso 依赖的 `InputManager.getInstance()`，JVM UI 测试无法在 37 上初始化。真机/模拟器仍按 targetSdk 37 验收。
+- `:core` 的 Room schema 单测使用 framework SQLite；生产 code 用 bundled SQLite + FTS5。
 - P0 功能（后台播放、下载续传、离线阅读、媒体通知）必须真机手动验收；模拟器通过不算。
 - 新增/修改契约时，先更新 Host fixture，再让 Android DTO/测试消费同一组 fixture。
 
