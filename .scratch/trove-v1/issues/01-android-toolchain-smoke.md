@@ -26,13 +26,13 @@ Readium 3.4.0 把 V1 的构建基线推到 compileSdk 37 / Gradle 9.7 / Kotlin 2
 
 ## Acceptance Criteria
 
-- [ ] `assembleDebug` 成功，Readium/Media3/Room/KSP 依赖全部解析。
-- [ ] 空壳在 Xiaomi 13 安装并启动，无 crash。
-- [ ] `:app` 的 unit test/lint 在 CI 通过。
-- [ ] 4 个 module 的依赖方向正确：feature 不反向依赖 app；`core` 不依赖 playback/reader。
-- [ ] `android/AGENTS.md` 存在并包含 Material 3、构建基线、测试/安全约束。
-- [ ] 未实现登录、Library、播放、阅读等产品功能。
-- [ ] 版本/兼容性问题有记录和结论。
+- [x] `assembleDebug` 成功，Readium/Media3/Room/KSP 依赖全部解析。
+- [x] 空壳在 Xiaomi 13 安装并启动，无 crash。
+- [x] `:app` 的 unit test/lint 在 CI 通过。
+- [x] 4 个 module 的依赖方向正确：feature 不反向依赖 app；`core` 不依赖 playback/reader。
+- [x] `android/AGENTS.md` 存在并包含 Material 3、构建基线、测试/安全约束。
+- [x] 01 范围内未实现登录、Library、播放、阅读等产品功能；登录由 09 接续实现。
+- [x] 版本/兼容性问题有记录和结论。
 
 ## Testing
 

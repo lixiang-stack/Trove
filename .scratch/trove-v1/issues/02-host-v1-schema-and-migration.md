@@ -25,11 +25,11 @@ V1 同步需要 Item 级版本/墓碑、全局同步序号、字段时钟和幂�
 
 ## Acceptance Criteria
 
-- [ ] 空库和已有 MVP 数据库都能迁移到 V1 schema；重复执行为 no-op。
-- [ ] 现有 Item 全部回填 `version`/`content_seq`/`state_seq`，无 NULL。
-- [ ] `device_tokens.token_hash`、`sync_mutations(device_id, mutation_id)` 唯一约束生效。
-- [ ] FTS5 索引和现有 Item/Run/Artifact 数据不回归。
-- [ ] 迁移失败时事务回滚；临时 `TROVE_HOME` 可重复测试。
+- [x] 空库和已有 MVP 数据库都能迁移到 V1 schema；重复执行为 no-op。
+- [x] 现有 Item 全部回填 `version`/`content_seq`/`state_seq`，无 NULL。
+- [x] `device_tokens.token_hash`、`sync_mutations(device_id, mutation_id)` 唯一约束生效。
+- [x] FTS5 索引和现有 Item/Run/Artifact 数据不回归。
+- [x] 迁移失败时事务回滚；临时 `TROVE_HOME` 可重复测试。
 
 ## Testing
 

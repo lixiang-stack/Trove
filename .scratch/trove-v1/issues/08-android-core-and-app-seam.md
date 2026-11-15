@@ -25,12 +25,12 @@ Android 功能需要统一的网络、数据库、DI 和测试替身。这个 is
 
 ## Acceptance Criteria
 
-- [ ] 4 个 module 依赖方向正确；`AppContainer` 可组装 fake/real 依赖。
-- [ ] Room 空库迁移成功；关键表/索引存在；schema 可测试。
-- [ ] DTO 能解析共享 fixture；错误形状 `{code,message,details?}` 正确。
-- [ ] App seam 能通过 fake API 驱动一个最小 Compose 流程并断言可见状态。
-- [ ] 不包含真实登录/Library/播放/阅读业务逻辑。
-- [ ] JVM/Robolectric 测试和 lint 在 CI 通过。
+- [x] 4 个 module 依赖方向正确；`AppContainer` 可组装 fake/real 依赖。
+- [x] Room 空库迁移成功；关键表/索引存在；schema 可测试。
+- [x] DTO 能解析共享 fixture；错误形状 `{code,message,details?}` 正确。
+- [x] App seam 能通过 fake API 驱动一个最小 Compose 流程并断言可见状态。
+- [x] 08 范围内不包含真实登录/Library/播放/阅读业务逻辑；登录由 09 接续实现。
+- [x] JVM/Robolectric 测试和 lint 在 CI 通过。
 
 ## Testing
 
