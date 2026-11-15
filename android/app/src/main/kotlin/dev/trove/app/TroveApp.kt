@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -32,15 +33,19 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import dev.trove.app.add.AddScreen
+import dev.trove.app.add.AddViewModel
 import dev.trove.app.download.DownloadsScreen
 import dev.trove.app.library.LibraryScreen
 import dev.trove.app.library.LibraryViewModel
 import dev.trove.app.player.PlayerScreen
 import dev.trove.app.player.PlayerViewModel
 import dev.trove.app.search.SearchScreen
+import dev.trove.app.search.SearchViewModel
 import dev.trove.app.session.LoginScreen
 import dev.trove.app.session.SessionState
 import dev.trove.app.session.SessionViewModel
+import dev.trove.app.settings.SettingsScreen
+import dev.trove.app.settings.SettingsViewModel
 import dev.trove.app.transcript.TranscriptScreen
 import dev.trove.app.transcript.TranscriptViewModel
 import dev.trove.app.ui.components.DrawerTab
@@ -48,6 +53,7 @@ import dev.trove.app.ui.components.TroveDrawer
 import dev.trove.app.ui.theme.TroveColors
 import dev.trove.app.ui.theme.TroveTheme
 import dev.trove.core.network.DeviceDto
+import dev.trove.reader.ReaderArgs
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -63,10 +69,17 @@ data object AddRoute : NavKey
 data class PlayerRoute(val itemId: String) : NavKey
 
 @Serializable
-data class TranscriptRoute(val itemId: String) : NavKey
+data class TranscriptRoute(
+    val itemId: String,
+    val focusSeq: Int? = null,
+    val query: String = "",
+) : NavKey
 
 @Serializable
 data object DownloadsRoute : NavKey
+
+@Serializable
+data object SettingsRoute : NavKey
 
 @Composable
 fun TroveApp(viewModel: SessionViewModel, container: AppContainer) {
@@ -130,14 +143,20 @@ private fun MainShell(
     onSignOut: () -> Unit,
 ) {
     val backStack = rememberNavBackStack(LibraryRoute)
+    val context = LocalContext.current
     val libraryViewModel: LibraryViewModel = viewModel(factory = LibraryViewModel.factory(container))
     val playerViewModel: PlayerViewModel = viewModel(factory = PlayerViewModel.factory(container))
     val transcriptViewModel: TranscriptViewModel = viewModel(
         factory = TranscriptViewModel.factory(container)
     )
+    val searchViewModel: SearchViewModel = viewModel(factory = SearchViewModel.factory(container))
+    val addViewModel: AddViewModel = viewModel(factory = AddViewModel.factory(container))
+    val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModel.factory(container))
     val libraryState by libraryViewModel.state.collectAsStateWithLifecycle()
     val playerState by playerViewModel.state.collectAsStateWithLifecycle()
     val transcriptState by transcriptViewModel.state.collectAsStateWithLifecycle()
+    val searchState by searchViewModel.state.collectAsStateWithLifecycle()
+    val sharedUrl by container.sharedUrl.collectAsStateWithLifecycle()
     var drawerOpen by rememberSaveable { mutableStateOf(false) }
     var drawerTab by rememberSaveable { mutableStateOf(DrawerTab.LIBRARY) }
 
@@ -154,6 +173,46 @@ private fun MainShell(
         } else {
             backStack.add(PlayerRoute(itemId))
         }
+    }
+
+    fun openReader(
+        itemId: String,
+        chapterIndex: Int? = null,
+        paragraphIndex: Int? = null,
+        epubHref: String? = null,
+        epubProgression: Double? = null,
+    ) {
+        context.startActivity(
+            ReaderArgs(
+                itemId = itemId,
+                chapterIndex = chapterIndex,
+                paragraphIndex = paragraphIndex,
+                epubHref = epubHref,
+                epubProgression = epubProgression,
+            ).toIntent(context)
+        )
+    }
+
+    fun openItem(itemId: String) {
+        val item = libraryState.allItems.firstOrNull { it.id == itemId }
+        if (item?.isBookOnly == true &&
+            item.bookArtifact?.downloadState == "completed"
+        ) {
+            openReader(itemId)
+        } else {
+            openPlayer(itemId, autoPlay = false)
+        }
+    }
+
+    fun openTranscript(itemId: String, focusSeq: Int? = null, query: String = "") {
+        backStack.add(TranscriptRoute(itemId, focusSeq, query))
+    }
+
+    LaunchedEffect(sharedUrl) {
+        val url = sharedUrl ?: return@LaunchedEffect
+        addViewModel.prefill(url)
+        root(AddRoute)
+        container.consumeSharedUrl()
     }
 
     Box(
@@ -179,11 +238,11 @@ private fun MainShell(
                         playerState = playerState.playback,
                         transcript = playerState.transcript,
                         onRefresh = libraryViewModel::refresh,
-                        onOpenItem = { openPlayer(it, autoPlay = false) },
+                        onOpenItem = ::openItem,
                         onQuickPlay = { itemId ->
                             val item = libraryState.allItems.firstOrNull { it.id == itemId }
-                            if (item?.let { it.hasBook && !it.hasAudio } == true) {
-                                openPlayer(itemId, autoPlay = false)
+                            if (item?.let { it.isBookOnly } == true) {
+                                openItem(itemId)
                             } else {
                                 playerViewModel.open(itemId, autoPlay = true)
                             }
@@ -192,7 +251,7 @@ private fun MainShell(
                         onSeek = playerViewModel::seekTo,
                         onSpeed = playerViewModel::setSpeed,
                         onTranscript = {
-                            playerState.itemId?.let { backStack.add(TranscriptRoute(it)) }
+                            playerState.itemId?.let { openTranscript(it) }
                         },
                         onDownloads = { backStack.add(DownloadsRoute) },
                         onDevices = onDevices,
@@ -206,22 +265,50 @@ private fun MainShell(
                         onConsumption = libraryViewModel::setConsumption,
                         onTag = libraryViewModel::setTag,
                         onSource = libraryViewModel::setSource,
+                        onSettings = { backStack.add(SettingsRoute) },
+                        onDismissConflict = libraryViewModel::dismissConflict,
                     )
                 }
                 entry<SearchRoute> {
                     SearchScreen(
-                        items = libraryState.allItems,
+                        state = searchState,
+                        libraryItems = libraryState.allItems,
                         onBack = { root(LibraryRoute) },
-                        onOpenItem = { openPlayer(it, autoPlay = false) },
+                        onQuery = searchViewModel::updateQuery,
+                        onFilters = searchViewModel::setFilters,
+                        onClearFilters = searchViewModel::clearFilters,
+                        onOpenItem = ::openItem,
+                        onOpenTranscript = ::openTranscript,
+                        onOpenBook = { itemId, chapter, paragraph ->
+                            val item = libraryState.allItems.firstOrNull { it.id == itemId }
+                            if (item?.bookArtifact?.downloadState == "completed") {
+                                openReader(
+                                    itemId,
+                                    chapterIndex = chapter,
+                                    paragraphIndex = paragraph,
+                                )
+                            } else {
+                                openItem(itemId)
+                            }
+                        },
                         onLibrary = { root(LibraryRoute) },
                         onAdd = { root(AddRoute) },
                     )
                 }
                 entry<AddRoute> {
                     AddScreen(
+                        viewModel = addViewModel,
                         onBack = { root(LibraryRoute) },
                         onLibrary = { root(LibraryRoute) },
                         onSearch = { root(SearchRoute) },
+                        onOpenItem = ::openItem,
+                    )
+                }
+                entry<SettingsRoute> {
+                    SettingsScreen(
+                        viewModel = settingsViewModel,
+                        onBack = { backStack.removeAt(backStack.lastIndex) },
+                        onDownloads = { backStack.add(DownloadsRoute) },
                     )
                 }
                 entry<DownloadsRoute> {
@@ -252,17 +339,21 @@ private fun MainShell(
                         onRetryDownload = playerViewModel::retryDownload,
                         onRemoveDownload = playerViewModel::removeDownload,
                         onDelete = playerViewModel::deleteItem,
-                        onTranscript = { backStack.add(TranscriptRoute(route.itemId)) },
+                        onTranscript = { openTranscript(route.itemId) },
                         onRefreshTranscript = playerViewModel::refreshTranscript,
                         onOpenDrawer = {
                             drawerTab = DrawerTab.LIBRARY
                             drawerOpen = true
                         },
+                        onTags = playerViewModel::replaceTags,
+                        onConsumption = playerViewModel::setConsumption,
+                        onClearTagError = playerViewModel::clearTagError,
+                        onRead = { openReader(it) },
                     )
                 }
                 entry<TranscriptRoute> { route ->
-                    LaunchedEffect(route.itemId) {
-                        transcriptViewModel.open(route.itemId)
+                    LaunchedEffect(route.itemId, route.focusSeq, route.query) {
+                        transcriptViewModel.open(route.itemId, route.focusSeq, route.query)
                     }
                     TranscriptScreen(
                         state = transcriptState,
@@ -281,7 +372,7 @@ private fun MainShell(
             onClose = { drawerOpen = false },
             onOpenItem = { itemId ->
                 drawerOpen = false
-                openPlayer(itemId, autoPlay = false)
+                openItem(itemId)
             },
             onInbox = libraryViewModel::setInbox,
             onConsumption = libraryViewModel::setConsumption,
@@ -289,9 +380,17 @@ private fun MainShell(
                 drawerOpen = false
                 root(AddRoute)
             },
+            onSearch = {
+                drawerOpen = false
+                root(SearchRoute)
+            },
             onDownloads = {
                 drawerOpen = false
                 backStack.add(DownloadsRoute)
+            },
+            onSettings = {
+                drawerOpen = false
+                backStack.add(SettingsRoute)
             },
             onDevices = {
                 drawerOpen = false

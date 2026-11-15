@@ -42,6 +42,35 @@ interface TroveApi {
         @Header("Idempotency-Key") idempotencyKey: String?,
     ): MutationResponseDto
 
+    @PUT("api/items/{itemId}/tags")
+    suspend fun tags(
+        @Path("itemId") itemId: String,
+        @Body body: TagsRequestDto,
+        @Header("Idempotency-Key") idempotencyKey: String?,
+    ): MutationResponseDto
+
+    @POST("api/items")
+    suspend fun createItem(@Body body: ItemCreateRequestDto): ItemCreateResponseDto
+
+    @GET("api/items/{itemId}")
+    suspend fun item(@Path("itemId") itemId: String): ItemDto
+
+    @POST("api/items/{itemId}/retry")
+    suspend fun retryItem(@Path("itemId") itemId: String): ItemDto
+
+    @POST("api/feeds/preview")
+    suspend fun previewFeed(@Body body: FeedPreviewRequestDto): FeedPreviewResponseDto
+
+    @GET("api/search")
+    suspend fun search(
+        @Query("q") query: String,
+        @Query("type") type: String?,
+        @Query("consumption") consumption: String?,
+        @Query("tag") tag: String?,
+        @Query("source") source: String?,
+        @Query("limit") limit: Int,
+    ): SearchResponseDto
+
     @DELETE("api/items/{itemId}")
     suspend fun deleteItem(@Path("itemId") itemId: String): Response<Unit>
 }

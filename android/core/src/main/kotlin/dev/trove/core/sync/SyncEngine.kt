@@ -9,18 +9,24 @@ import dev.trove.core.db.SyncCursorEntity
 import dev.trove.core.db.TagEntity
 import dev.trove.core.db.TroveDatabase
 import dev.trove.core.db.writeTransaction
+import dev.trove.core.library.ItemMutationRepository
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.MutationItemDto
 import dev.trove.core.network.ProgressRequestDto
 import dev.trove.core.network.SyncItemDto
 import dev.trove.core.network.SyncStateDto
+import dev.trove.core.network.TagsRequestDto
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveClient
 import dev.trove.core.network.TroveNetworkException
 import dev.trove.core.network.TroveTlsException
 import dev.trove.core.storage.ArtifactFileStore
+import dev.trove.core.tags.normalizeTags
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -67,11 +73,16 @@ class SyncEngine(
     private val pageSize: Int = 100,
     private val now: () -> Long = System::currentTimeMillis,
     private val nowPlayingItemId: () -> String? = { null },
+    private val onItemChanged: suspend (String) -> Unit = {},
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val mutex = Mutex()
     private val _status = MutableStateFlow<SyncStatus>(SyncStatus.Idle(null))
     val status: StateFlow<SyncStatus> = _status.asStateFlow()
+    private val _conflicts = MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val conflicts: SharedFlow<String> = _conflicts.asSharedFlow()
+
+    suspend fun currentCursor() = database.syncCursorDao().current()
 
     suspend fun sync(): SyncResult = mutex.withLock {
         val previous = database.syncCursorDao().current()?.lastSuccessAt
@@ -122,6 +133,14 @@ class SyncEngine(
     }
 
     private suspend fun pushMutation(client: TroveClient, mutation: PendingMutationEntity) {
+        if (mutation.field == ItemMutationRepository.TAGS) {
+            pushTags(client, mutation)
+        } else {
+            pushProgress(client, mutation)
+        }
+    }
+
+    private suspend fun pushProgress(client: TroveClient, mutation: PendingMutationEntity) {
         val payload = runCatching {
             json.decodeFromString<ProgressRequestDto>(mutation.payloadJson)
         }.getOrNull()
@@ -146,6 +165,7 @@ class SyncEngine(
             database.pendingMutationDao().markFailed(mutation.idempotencyKey, OFFLINE_CODE)
             throw error
         }
+        val title = database.itemDao().find(mutation.itemId)?.title
         database.writeTransaction {
             val current = database.pendingMutationDao().find(mutation.idempotencyKey)
             if (current != null) {
@@ -153,6 +173,75 @@ class SyncEngine(
                 database.pendingMutationDao().delete(mutation.idempotencyKey)
             }
         }
+        if (!response.applied) {
+            _conflicts.tryEmit(conflictMessage(title))
+        }
+        indexChanged(mutation.itemId)
+    }
+
+    private suspend fun pushTags(client: TroveClient, mutation: PendingMutationEntity) {
+        val payload = runCatching {
+            json.decodeFromString<TagsRequestDto>(mutation.payloadJson)
+        }.getOrNull()
+        if (payload == null) {
+            database.pendingMutationDao().delete(mutation.idempotencyKey)
+            return
+        }
+        val response = try {
+            client.tags(
+                itemId = mutation.itemId,
+                request = payload.copy(clientUpdatedAt = mutation.clientUpdatedAt),
+                idempotencyKey = mutation.idempotencyKey,
+            )
+        } catch (error: TroveApiException) {
+            if (error.statusCode == 404 || error.statusCode == 410) {
+                database.pendingMutationDao().delete(mutation.idempotencyKey)
+                return
+            }
+            database.pendingMutationDao().markFailed(mutation.idempotencyKey, error.code)
+            throw error
+        } catch (error: TroveNetworkException) {
+            database.pendingMutationDao().markFailed(mutation.idempotencyKey, OFFLINE_CODE)
+            throw error
+        }
+        val title = database.itemDao().find(mutation.itemId)?.title
+        database.writeTransaction {
+            val current = database.pendingMutationDao().find(mutation.idempotencyKey)
+            if (current != null) {
+                applyCanonical(response.item)
+                applyCanonicalTags(mutation.itemId, response.item.tags)
+                database.pendingMutationDao().delete(mutation.idempotencyKey)
+            }
+        }
+        if (!response.applied) {
+            _conflicts.tryEmit(conflictMessage(title))
+        }
+        indexChanged(mutation.itemId)
+    }
+
+    private suspend fun applyCanonicalTags(itemId: String, tags: List<String>) {
+        val normalized = runCatching { normalizeTags(tags) }.getOrDefault(emptyList())
+        database.tagDao().clearItemTags(itemId)
+        if (normalized.isEmpty()) return
+        database.tagDao().upsertAll(
+            normalized.map { TagEntity(normalizedName = it.normalizedName, name = it.name) }
+        )
+        database.tagDao().insertItemTags(
+            normalized.map {
+                ItemTagEntity(itemId = itemId, tagName = it.normalizedName, source = "user")
+            }
+        )
+    }
+
+    private fun conflictMessage(title: String?): String =
+        if (title.isNullOrBlank()) {
+            "已在其他设备更新，已使用最新值。"
+        } else {
+            "「$title」已在其他设备更新，已使用最新值。"
+        }
+
+    private suspend fun indexChanged(itemId: String) {
+        runCatching { onItemChanged(itemId) }
     }
 
     private suspend fun applyCanonical(item: MutationItemDto) {
@@ -265,6 +354,7 @@ class SyncEngine(
         if (needsDownload) {
             downloadQueue?.enqueue(dto.id)
         }
+        indexChanged(dto.id)
         return isNew
     }
 
@@ -310,6 +400,10 @@ class SyncEngine(
             if (file.kind == "transcript") {
                 database.transcriptSegmentDao().deleteForItem(dto.id)
             }
+            if (file.kind == "book_json") {
+                database.bookDao().deleteForItem(dto.id)
+                database.bookDao().deleteParagraphsForItem(dto.id)
+            }
             val reDownload = previous?.downloadState == "completed"
             if (reDownload) needsDownload = true
             database.artifactDao().upsert(
@@ -333,6 +427,10 @@ class SyncEngine(
             database.artifactDao().delete(dto.id, kind)
             if (kind == "transcript") {
                 database.transcriptSegmentDao().deleteForItem(dto.id)
+            }
+            if (kind == "book_json") {
+                database.bookDao().deleteForItem(dto.id)
+                database.bookDao().deleteParagraphsForItem(dto.id)
             }
             if (previous.localPath != null) {
                 filesToDelete += kind to previous.localPath
@@ -404,7 +502,11 @@ class SyncEngine(
     }
 
     private suspend fun deleteItem(id: String, maximumVersion: Int?) {
-        val existing = database.itemDao().find(id) ?: return
+        val existing = database.itemDao().find(id)
+        if (existing == null) {
+            indexChanged(id)
+            return
+        }
         if (maximumVersion != null && existing.version > maximumVersion) return
         val artifacts = database.artifactDao().forItem(id)
         val playing = nowPlayingItemId() == id
@@ -421,6 +523,7 @@ class SyncEngine(
             artifacts.forEach { fileStore.deleteArtifact(id, it.kind, it.localPath) }
             fileStore.deleteItem(id)
         }
+        indexChanged(id)
     }
 
     private suspend fun resetCursors() {

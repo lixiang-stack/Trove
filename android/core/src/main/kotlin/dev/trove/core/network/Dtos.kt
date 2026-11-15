@@ -113,10 +113,118 @@ data class SyncStateDto(
 )
 
 @Serializable
+data class BookLocatorDto(
+    val schema: Int = 2,
+    @SerialName("chapter_index") val chapterIndex: Int,
+    @SerialName("paragraph_index") val paragraphIndex: Int? = null,
+    @SerialName("scroll_ratio") val scrollRatio: Double = 0.0,
+    @SerialName("epub_href") val epubHref: String? = null,
+    @SerialName("epub_progression") val epubProgression: Double? = null,
+    @SerialName("epub_total_progression") val epubTotalProgression: Double? = null,
+)
+
+@Serializable
 data class ProgressRequestDto(
     @SerialName("position_sec") val positionSec: Double? = null,
     @SerialName("consumption_state") val consumptionState: String? = null,
+    @SerialName("book_locator") val bookLocator: BookLocatorDto? = null,
     @SerialName("client_updated_at") val clientUpdatedAt: Long? = null,
+)
+
+@Serializable
+data class TagsRequestDto(
+    val tags: List<String>,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long? = null,
+)
+
+@Serializable
+data class ItemCreateRequestDto(
+    val kind: String,
+    val url: String? = null,
+    @SerialName("feed_url") val feedUrl: String? = null,
+    @SerialName("episode_guid") val episodeGuid: String? = null,
+    @SerialName("enclosure_url") val enclosureUrl: String? = null,
+)
+
+@Serializable
+data class ItemDto(
+    val id: String,
+    val version: Int = 0,
+    @SerialName("source_type") val sourceType: String = "video_url",
+    val platform: String = "",
+    val title: String = "",
+    val author: String? = null,
+    @SerialName("published_at") val publishedAt: String? = null,
+    @SerialName("fetched_at") val fetchedAt: Long? = null,
+    val language: String? = null,
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    val summary: String? = null,
+    val tags: List<String> = emptyList(),
+    @SerialName("processing_state") val processingState: String = "queued",
+    @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+    @SerialName("has_audio") val hasAudio: Boolean = false,
+    @SerialName("has_book") val hasBook: Boolean = false,
+    @SerialName("consumption_state") val consumptionState: String = "unstarted",
+    @SerialName("audio_position_sec") val audioPositionSec: Double = 0.0,
+    @SerialName("book_locator") val bookLocator: String? = null,
+)
+
+@Serializable
+data class ItemCreateResponseDto(
+    val item: ItemDto,
+    val deduplicated: Boolean = false,
+)
+
+@Serializable
+data class FeedPreviewRequestDto(
+    val url: String,
+)
+
+@Serializable
+data class FeedEpisodeDto(
+    val guid: String? = null,
+    val title: String,
+    val author: String? = null,
+    @SerialName("published_at") val publishedAt: String? = null,
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    @SerialName("enclosure_url") val enclosureUrl: String,
+    @SerialName("enclosure_type") val enclosureType: String? = null,
+    @SerialName("enclosure_size") val enclosureSize: Long? = null,
+)
+
+@Serializable
+data class FeedPreviewResponseDto(
+    val title: String,
+    val author: String? = null,
+    val link: String? = null,
+    val episodes: List<FeedEpisodeDto> = emptyList(),
+)
+
+@Serializable
+data class SearchEvidenceDto(
+    @SerialName("doc_kind") val docKind: String,
+    val ref: String,
+    val text: String,
+    val snippet: String,
+    val score: Double = 0.0,
+    val url: String? = null,
+)
+
+@Serializable
+data class SearchResultDto(
+    val item: ItemDto,
+    val score: Double = 0.0,
+    val evidence: List<SearchEvidenceDto> = emptyList(),
+)
+
+@Serializable
+data class SearchResponseDto(
+    val query: String = "",
+    val results: List<SearchResultDto> = emptyList(),
+    val count: Int = 0,
+    val limit: Int? = null,
+    val offset: Int = 0,
 )
 
 @Serializable
@@ -126,6 +234,7 @@ data class MutationItemDto(
     @SerialName("audio_position_sec") val audioPositionSec: Double = 0.0,
     @SerialName("book_locator") val bookLocator: String? = null,
     @SerialName("consumption_state") val consumptionState: String = "unstarted",
+    val tags: List<String> = emptyList(),
 )
 
 @Serializable

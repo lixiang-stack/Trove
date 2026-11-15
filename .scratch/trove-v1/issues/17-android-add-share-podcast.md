@@ -42,3 +42,11 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - 手机上传本地文件；继续走 Host Console 浏览器。
 - RSS 自动轮询/订阅、批量导入。
+
+## Implementation
+
+- `AddViewModel` calls `POST /api/items` for video URLs and podcast episodes, `POST /api/feeds/preview` for feed preview, polls queued Items with 2 s/5 s backoff, maps request errors to Chinese, and retries failed Runs.
+- `ACTION_SEND text/plain` extracts the first URL and prefills Add; duplicate Adds open the existing Item once. The Add page keeps the DeepSeek data-flow notice visible.
+- Playlist/multi-P, unsupported platform, credentials, SSRF and host-side size errors surface Host codes as readable Chinese; processing failure messages are mapped by stable error-code prefix.
+- Automated coverage: `SharedTextTest`, `AddFlowTest` (submit/error/duplicate), `FakeTroveApi` contract methods.
+- Pending real-Host/device acceptance: share a Bilibili/YouTube URL, podcast feed preview/selection, duplicate-open, and processing completion after App close.

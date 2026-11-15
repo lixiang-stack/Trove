@@ -135,6 +135,37 @@ def test_reading_progress_is_saved_and_restored(host):
     assert "A Hare one day ridiculed" in page.text
 
 
+def test_reading_progress_accepts_epub_schema_two_locator(host):
+    item_id = _add_epub(host, FIXTURES / "aesop.epub")
+    host.login()
+    response = host.client.put(
+        f"/api/items/{item_id}/progress",
+        json={
+            "book_locator": {
+                "schema": 2,
+                "chapter_index": 1,
+                "paragraph_index": 2,
+                "scroll_ratio": 0.4,
+                "epub_href": "OEBPS/chapter2.xhtml",
+                "epub_progression": 0.35,
+                "epub_total_progression": 0.62,
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    locator = json.loads(response.json()["item"]["book_locator"])
+    assert locator["schema"] == 2
+    assert locator["chapter_index"] == 1
+    assert locator["epub_href"] == "OEBPS/chapter2.xhtml"
+    assert locator["epub_progression"] == 0.35
+    assert locator["epub_total_progression"] == 0.62
+
+    page = host.client.get(f"/items/{item_id}/read")
+    assert page.status_code == 200
+    assert 'data-reader-chapter="1"' in page.text
+    assert 'data-reader-scroll="0.4"' in page.text
+
+
 def test_reading_progress_rejects_unknown_chapter(host):
     item_id = _add_epub(host, FIXTURES / "aesop.epub")
     host.login()

@@ -4,6 +4,8 @@ import android.content.Context
 import dev.trove.app.playback.PlaybackProgressRecorder
 import dev.trove.app.session.SessionController
 import dev.trove.app.session.SessionState
+import dev.trove.app.add.firstSharedUrl
+import dev.trove.app.sync.PeriodicSyncScheduler
 import dev.trove.core.auth.KeystoreTokenStore
 import dev.trove.core.auth.TokenStore
 import dev.trove.core.db.TroveDatabase
@@ -16,20 +18,27 @@ import dev.trove.core.download.DownloadManager
 import dev.trove.core.download.DownloadSettingsStore
 import dev.trove.core.download.WorkManagerDownloadQueue
 import dev.trove.core.library.LibraryRepository
+import dev.trove.core.library.ItemMutationRepository
 import dev.trove.core.network.RetrofitTroveApiFactory
 import dev.trove.core.network.TroveApiFactory
+import dev.trove.core.reading.BookRepository
+import dev.trove.core.search.LocalSearchRepository
+import dev.trove.core.search.SearchIndex
 import dev.trove.core.settings.DataStoreSettingsStore
 import dev.trove.core.settings.SettingsStore
 import dev.trove.core.storage.ArtifactFileStore
+import dev.trove.core.storage.LocalDataRepository
 import dev.trove.core.sync.DownloadQueue
 import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
 import dev.trove.playback.MediaSessionPlayer
 import dev.trove.playback.PlaybackEnvironment
 import dev.trove.playback.PlayerGateway
+import dev.trove.reader.ReaderDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -48,7 +57,11 @@ open class AppContainer(
 ) {
     val database: TroveDatabase = databaseOverride ?: TroveDatabase.create(context)
 
+    val sharedUrl = MutableStateFlow<String?>(null)
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    val syncScheduler = PeriodicSyncScheduler(context)
 
     val sessionController: SessionController = SessionController(
         tokenStore = tokenStore,
@@ -62,6 +75,35 @@ open class AppContainer(
 
     val transcriptRepository = TranscriptRepository(database, fileStore)
 
+    val bookRepository = BookRepository(database, fileStore)
+
+    val searchIndex = SearchIndex(database)
+
+    val localSearchRepository = LocalSearchRepository(
+        database = database,
+        transcriptRepository = transcriptRepository,
+        bookRepository = bookRepository,
+        index = searchIndex,
+    )
+
+    val itemMutationRepository = ItemMutationRepository(
+        database = database,
+        onTagsChanged = { itemId -> localSearchRepository.indexItem(itemId) },
+    )
+
+    val localDataRepository = LocalDataRepository(
+        database = database,
+        fileStore = fileStore,
+        searchIndex = searchIndex,
+    )
+
+    val readerDependencies = ReaderDependencies(
+        database = database,
+        libraryRepository = libraryRepository,
+        bookRepository = bookRepository,
+        itemMutationRepository = itemMutationRepository,
+    )
+
     val downloader = ArtifactDownloader(
         database = database,
         fileStore = fileStore,
@@ -73,6 +115,7 @@ open class AppContainer(
             val playback = player.state.value
             playback.itemId?.takeIf { playback.isPlaying }
         },
+        onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
 
     val downloadManager: DownloadManager = DefaultDownloadManager(
@@ -90,9 +133,18 @@ open class AppContainer(
             val playback = player.state.value
             playback.itemId?.takeIf { playback.isPlaying }
         },
+        onItemChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
 
     val progressRecorder = PlaybackProgressRecorder(database)
+
+    fun offerSharedText(text: String?) {
+        firstSharedUrl(text)?.let { sharedUrl.value = it }
+    }
+
+    fun consumeSharedUrl() {
+        sharedUrl.value = null
+    }
 
     init {
         DownloadEnvironmentHolder.current = DownloadEnvironment(
@@ -106,20 +158,38 @@ open class AppContainer(
                 val playback = player.state.value
                 playback.itemId?.takeIf { playback.isPlaying }
             },
+            onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
         )
         PlaybackEnvironment.progressSink = progressRecorder
         PlaybackEnvironment.onUnauthorized = {
             sessionController.onUnauthorized("auth.device_token_invalid")
         }
         scope.launch {
+            if (localSearchRepository.isAvailable() && !searchIndex.hasDocuments()) {
+                localSearchRepository.rebuild()
+            }
+        }
+        scope.launch {
             sessionController.state.collect { state ->
                 PlaybackEnvironment.token = (state as? SessionState.SignedIn)?.credential?.token
+                if (state is SessionState.SignedIn) {
+                    syncScheduler.apply(settingsStore.syncPreferences.first())
+                } else {
+                    syncScheduler.cancel()
+                }
                 withContext(Dispatchers.Main) {
                     if (state is SessionState.SignedIn) {
                         player.connect()
                     } else {
                         player.release()
                     }
+                }
+            }
+        }
+        scope.launch {
+            settingsStore.syncPreferences.collect { preferences ->
+                if (sessionController.state.value is SessionState.SignedIn) {
+                    syncScheduler.apply(preferences)
                 }
             }
         }

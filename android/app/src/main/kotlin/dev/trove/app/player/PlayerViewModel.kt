@@ -8,8 +8,11 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.trove.app.AppContainer
 import dev.trove.app.session.SessionController
 import dev.trove.core.download.DownloadManager
+import dev.trove.core.library.ItemMutationRepository
 import dev.trove.core.library.LibraryItem
 import dev.trove.core.library.LibraryRepository
+import dev.trove.core.library.toUserMessage
+import dev.trove.core.search.LocalSearchRepository
 import dev.trove.core.settings.SettingsStore
 import dev.trove.core.transcript.TranscriptRepository
 import dev.trove.core.transcript.TranscriptSegment
@@ -39,6 +42,7 @@ data class PlayerUiState(
     val deleted: Boolean = false,
     val transcript: List<TranscriptSegment> = emptyList(),
     val transcriptDownloaded: Boolean = false,
+    val tagError: String? = null,
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -49,10 +53,13 @@ class PlayerViewModel(
     private val settingsStore: SettingsStore,
     private val transcriptRepository: TranscriptRepository,
     private val sessionController: SessionController,
+    private val itemMutationRepository: ItemMutationRepository,
+    private val localSearchRepository: LocalSearchRepository,
 ) : ViewModel() {
     private val selectedId = MutableStateFlow<String?>(null)
     private val errorCode = MutableStateFlow<String?>(null)
     private val deleted = MutableStateFlow(false)
+    private val tagError = MutableStateFlow<String?>(null)
 
     val state: StateFlow<PlayerUiState> = combine(
         selectedId,
@@ -63,8 +70,10 @@ class PlayerViewModel(
         selectedId.flatMapLatest { id ->
             if (id == null) flowOf(emptyList()) else transcriptRepository.observe(id)
         },
-        combine(errorCode, deleted) { error, isDeleted -> error to isDeleted },
-    ) { id, item, playback, transcript, (error, isDeleted) ->
+        combine(errorCode, deleted, tagError) { error, isDeleted, tagFailure ->
+            Triple(error, isDeleted, tagFailure)
+        },
+    ) { id, item, playback, transcript, (error, isDeleted, tagFailure) ->
         PlayerUiState(
             itemId = id,
             item = item,
@@ -74,6 +83,7 @@ class PlayerViewModel(
             deleted = isDeleted,
             transcript = transcript,
             transcriptDownloaded = item?.transcriptArtifact?.downloadState == "completed",
+            tagError = tagFailure,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -181,11 +191,35 @@ class PlayerViewModel(
                 client.deleteItem(itemId)
                 player.pause()
                 repository.deleteLocalItem(itemId)
+                runCatching { localSearchRepository.removeItem(itemId) }
                 deleted.value = true
             } catch (_: Exception) {
                 errorCode.value = "item.delete_failed"
             }
         }
+    }
+
+    fun replaceTags(tags: List<String>) {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch {
+            runCatching { itemMutationRepository.replaceTags(itemId, tags) }
+                .onSuccess { tagError.value = null }
+                .onFailure { error ->
+                    tagError.value = when (error) {
+                        is dev.trove.core.tags.InvalidTagException -> error.toUserMessage()
+                        else -> "Tag 保存失败，请重试。"
+                    }
+                }
+        }
+    }
+
+    fun clearTagError() {
+        tagError.value = null
+    }
+
+    fun setConsumption(state: String) {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { itemMutationRepository.setConsumption(itemId, state) }
     }
 
     fun refreshTranscript() {
@@ -238,6 +272,8 @@ class PlayerViewModel(
                     settingsStore = container.settingsStore,
                     transcriptRepository = container.transcriptRepository,
                     sessionController = container.sessionController,
+                    itemMutationRepository = container.itemMutationRepository,
+                    localSearchRepository = container.localSearchRepository,
                 )
             }
         }

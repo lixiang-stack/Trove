@@ -41,3 +41,11 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - 标题/作者编辑；Host Console 负责。
 - 跨用户/多租户冲突。
+
+## Implementation
+
+- Library now computes a Continue strip from in-progress Items ordered by `last_consumed_at`; tapping resumes audio or opens the downloaded book.
+- Manual finished/unstarted is available from Player/Reader. Reading progress auto-finishes at 95% and queues a schema-2 `book_progress` mutation; audio auto-completion continues through `PlaybackProgressRecorder`.
+- Tag editing is optimistic and offline-first: tags are normalized locally, written to Room, and queued as a `tags` mutation with `client_updated_at`/`Idempotency-Key`. Sync pushes Tags via `PUT /items/{id}/tags`, applies canonical Tags, and emits a non-blocking conflict notice when `applied:false`.
+- Automated coverage: `ItemMutationRepositoryTest`, `TagNormalizerTest`, `SyncEngineTest` tag conflict/canonical test, Continue UI test, Player tag/consumption wiring.
+- Pending device acceptance: offline Tag/progress edit → reconnect → Web canonical, and cross-device LWW conflict display on Xiaomi 13.

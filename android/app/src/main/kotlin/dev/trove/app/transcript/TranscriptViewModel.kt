@@ -29,29 +29,32 @@ data class TranscriptUiState(
     val totalSegments: Int = 0,
     val loadResult: TranscriptLoadResult? = null,
     val loading: Boolean = false,
+    val focusSeq: Int? = null,
 )
+
+private data class TranscriptTarget(val itemId: String, val focusSeq: Int? = null)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class TranscriptViewModel(
     private val repository: LibraryRepository,
     private val transcriptRepository: TranscriptRepository,
 ) : ViewModel() {
-    private val selectedId = MutableStateFlow<String?>(null)
+    private val target = MutableStateFlow<TranscriptTarget?>(null)
     private val query = MutableStateFlow("")
     private val loadResult = MutableStateFlow<TranscriptLoadResult?>(null)
     private val loading = MutableStateFlow(false)
 
     val state: StateFlow<TranscriptUiState> = combine(
-        selectedId.flatMapLatest { id ->
-            if (id == null) flowOf(null) else repository.observeItem(id)
+        target.flatMapLatest { value ->
+            if (value == null) flowOf(null) else repository.observeItem(value.itemId)
         },
-        selectedId.flatMapLatest { id ->
-            if (id == null) flowOf(emptyList()) else transcriptRepository.observe(id)
+        target.flatMapLatest { value ->
+            if (value == null) flowOf(emptyList()) else transcriptRepository.observe(value.itemId)
         },
-        query,
+        combine(query, target) { activeQuery, value -> activeQuery to value?.focusSeq },
         loadResult,
         loading,
-    ) { item, segments, activeQuery, result, isLoading ->
+    ) { item, segments, (activeQuery, focusSeq), result, isLoading ->
         TranscriptUiState(
             item = item,
             query = activeQuery,
@@ -59,6 +62,7 @@ class TranscriptViewModel(
             totalSegments = segments.size,
             loadResult = result,
             loading = isLoading,
+            focusSeq = focusSeq,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -66,14 +70,11 @@ class TranscriptViewModel(
         initialValue = TranscriptUiState(),
     )
 
-    fun open(itemId: String) {
-        if (selectedId.value == itemId) {
-            load()
-            return
-        }
-        selectedId.value = itemId
-        loadResult.value = null
-        query.value = ""
+    fun open(itemId: String, focusSeq: Int? = null, initialQuery: String = "") {
+        val changed = target.value?.itemId != itemId
+        target.value = TranscriptTarget(itemId, focusSeq)
+        query.value = initialQuery
+        if (changed) loadResult.value = null
         load()
     }
 
@@ -86,7 +87,7 @@ class TranscriptViewModel(
     }
 
     private fun load() {
-        val itemId = selectedId.value ?: return
+        val itemId = target.value?.itemId ?: return
         loading.value = true
         viewModelScope.launch {
             loadResult.value = transcriptRepository.ensureParsed(itemId)
