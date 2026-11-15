@@ -59,7 +59,8 @@ pre-push:
       glob: "android/**"
       run: |
         if [ -x android/gradlew ]; then
-          (cd android && ./gradlew :app:testDebugUnitTest :app:lintDebug)
+          # Keep this identical to .github/workflows/android.yml (all modules).
+          (cd android && ./gradlew assembleDebug testDebugUnitTest lintDebug)
         else
           echo "android/gradlew missing; skipping Android checks"
         fi

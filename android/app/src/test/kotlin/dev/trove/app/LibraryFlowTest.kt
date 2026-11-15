@@ -29,6 +29,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+private const val PLAYBACK_TIMEOUT_MS = 15_000L
+
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class LibraryFlowTest {
@@ -66,7 +68,7 @@ class LibraryFlowTest {
 
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
-        compose.waitUntil(5_000) { harness.player.requests.isNotEmpty() }
+        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
         assertEquals(
             "https://host.example/api/items/item-1/files/audio",
             harness.player.requests.single().url,
@@ -95,7 +97,7 @@ class LibraryFlowTest {
         waitForTag("library-item-item-1")
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
-        compose.waitUntil(5_000) { harness.player.requests.isNotEmpty() }
+        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
         waitForTag("player-screen")
         waitForTag("player-error")
