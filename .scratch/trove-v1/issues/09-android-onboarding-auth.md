@@ -26,12 +26,12 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] 正确密码登录成功并进入 App；Host URL/token 重启后保留。
-- [ ] 错误密码/限速/Host 离线/TLS 错误显示可读提示；不崩溃、不丢本地数据。
-- [ ] token 撤销或密码修改后下一次请求回登录；不无限重试。
-- [ ] 明文 HTTP Host 在正式 release 被拒绝。
-- [ ] 登出撤销 token；清除本地数据是单独确认动作。
-- [ ] token 不出现在日志/诊断/UI 明文。
+- [x] 正确密码登录成功并进入 App；Host URL/token 重启后保留。
+- [x] 错误密码/限速/Host 离线/TLS 错误显示可读提示；不崩溃、不丢本地数据。
+- [x] token 撤销或密码修改后下一次请求回登录；不无限重试。
+- [x] 明文 HTTP Host 在正式 release 被拒绝。
+- [x] 登出撤销 token；清除本地数据是单独确认动作。
+- [x] token 不出现在日志/诊断/UI 明文。
 
 ## Testing
 

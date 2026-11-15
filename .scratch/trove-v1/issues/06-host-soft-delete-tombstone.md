@@ -24,11 +24,11 @@ Android 需要知道 Host 删除了哪些 Item，才能清理本地文件和索�
 
 ## Acceptance Criteria
 
-- [ ] 删除后普通 Library/Search/Continue 不再返回 Item；Content Package 文件/FTS 被清理。
-- [ ] 下一次 manifest 返回 tombstone（含 id/version/deleted_at）。
-- [ ] 重新添加同一 URL/文件复活同一 ID，旧客户端先收到 tombstone 再收到复活 Item。
-- [ ] Export 不包含 tombstone；删除不触碰用户原始文件。
-- [ ] 现有删除/导出/搜索测试不回归。
+- [x] 删除后普通 Library/Search/Continue 不再返回 Item；Content Package 文件/FTS 被清理。
+- [x] 下一次 manifest 返回 tombstone（含 id/version/deleted_at）。
+- [x] 重新添加同一 URL/文件复活同一 ID，旧客户端先收到 tombstone 再收到复活 Item。
+- [x] Export 不包含 tombstone；删除不触碰用户原始文件。
+- [x] 现有删除/导出/搜索测试不回归。
 
 ## Testing
 

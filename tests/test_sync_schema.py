@@ -109,6 +109,46 @@ def test_mvp_database_backfills_version_and_sequences_stably(tmp_path):
     assert sequence >= max(row.state_seq for row in rows)
 
 
+def test_migration_failure_rolls_back(tmp_path, monkeypatch):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    command.upgrade(_alembic_config(config), "0003_drop_derived_content_tables")
+    engine = create_engine_for(config)
+    with engine.begin() as connection:
+        connection.execute(text(_mvp_item("rollback", 1000)))
+    engine.dispose()
+
+    from alembic import op
+
+    original = op.create_index
+
+    def fail_content_index(name: str, *args, **kwargs):
+        if name == "ix_items_content_seq":
+            raise RuntimeError("simulated migration failure")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(op, "create_index", fail_content_index)
+    with pytest.raises(RuntimeError, match="simulated migration failure"):
+        upgrade_database(config)
+
+    engine = create_engine_for(config)
+    with engine.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar()
+        columns = {
+            row.name for row in connection.execute(text("PRAGMA table_info(items)"))
+        }
+        tables = set(
+            connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type = 'table'")
+            ).scalars()
+        )
+    assert revision == "0003_drop_derived_content_tables"
+    assert "version" not in columns
+    assert "sync_sequence" not in tables
+
+
 def test_device_token_and_mutation_unique_constraints(tmp_path):
     _, _, sessions = _database(tmp_path)
     now = utc_ms()
