@@ -1,0 +1,245 @@
+package dev.trove.app.player
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
+import dev.trove.app.AppContainer
+import dev.trove.app.session.SessionController
+import dev.trove.core.download.DownloadManager
+import dev.trove.core.library.LibraryItem
+import dev.trove.core.library.LibraryRepository
+import dev.trove.core.settings.SettingsStore
+import dev.trove.core.transcript.TranscriptRepository
+import dev.trove.core.transcript.TranscriptSegment
+import dev.trove.playback.PlaybackRequest
+import dev.trove.playback.PlaybackState
+import dev.trove.playback.PlayerGateway
+import java.io.File
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+data class PlayerUiState(
+    val itemId: String? = null,
+    val item: LibraryItem? = null,
+    val playback: PlaybackState = PlaybackState(),
+    val loading: Boolean = false,
+    val errorCode: String? = null,
+    val deleted: Boolean = false,
+    val transcript: List<TranscriptSegment> = emptyList(),
+    val transcriptDownloaded: Boolean = false,
+)
+
+@OptIn(ExperimentalCoroutinesApi::class)
+class PlayerViewModel(
+    private val repository: LibraryRepository,
+    private val player: PlayerGateway,
+    private val downloadManager: DownloadManager,
+    private val settingsStore: SettingsStore,
+    private val transcriptRepository: TranscriptRepository,
+    private val sessionController: SessionController,
+) : ViewModel() {
+    private val selectedId = MutableStateFlow<String?>(null)
+    private val errorCode = MutableStateFlow<String?>(null)
+    private val deleted = MutableStateFlow(false)
+
+    val state: StateFlow<PlayerUiState> = combine(
+        selectedId,
+        selectedId.flatMapLatest { id ->
+            if (id == null) flowOf(null) else repository.observeItem(id)
+        },
+        player.state,
+        selectedId.flatMapLatest { id ->
+            if (id == null) flowOf(emptyList()) else transcriptRepository.observe(id)
+        },
+        combine(errorCode, deleted) { error, isDeleted -> error to isDeleted },
+    ) { id, item, playback, transcript, (error, isDeleted) ->
+        PlayerUiState(
+            itemId = id,
+            item = item,
+            playback = playback,
+            loading = id != null && item == null && !isDeleted,
+            errorCode = error,
+            deleted = isDeleted,
+            transcript = transcript,
+            transcriptDownloaded = item?.transcriptArtifact?.downloadState == "completed",
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.Eagerly,
+        initialValue = PlayerUiState(),
+    )
+
+    init {
+        viewModelScope.launch {
+            player.state
+                .map { it.itemId to it.isPlaying }
+                .distinctUntilChanged()
+                .collect { (itemId, playing) ->
+                    repository.cleanupPendingFiles(itemId.takeIf { playing })
+                }
+        }
+    }
+
+    fun open(itemId: String, autoPlay: Boolean) {
+        selectedId.value = itemId
+        errorCode.value = null
+        deleted.value = false
+        if (!autoPlay) {
+            val current = player.state.value
+            if (current.itemId != null && current.itemId != itemId) {
+                player.pause()
+            }
+            return
+        }
+        viewModelScope.launch {
+            val item = repository.find(itemId)
+            if (item == null) {
+                errorCode.value = "item.missing"
+                return@launch
+            }
+            val current = player.state.value
+            if (current.itemId == item.id) {
+                if (!current.isPlaying) player.toggle()
+            } else {
+                playItem(item)
+            }
+        }
+    }
+
+    fun toggle() {
+        val current = state.value
+        val item = current.item ?: return
+        when {
+            current.playback.errorCode != null -> viewModelScope.launch { playItem(item) }
+            current.playback.itemId == item.id -> player.toggle()
+            else -> viewModelScope.launch { playItem(item) }
+        }
+    }
+
+    fun retry() {
+        val item = state.value.item ?: return
+        errorCode.value = null
+        viewModelScope.launch { playItem(item) }
+    }
+
+    fun seekTo(positionMs: Long) {
+        player.seekTo(positionMs)
+    }
+
+    fun seekBy(deltaMs: Long) {
+        val playback = player.state.value
+        val target = playback.positionMs + deltaMs
+        val upper = if (playback.durationMs > 0) playback.durationMs else Long.MAX_VALUE
+        player.seekTo(target.coerceIn(0, upper))
+    }
+
+    fun setSpeed(speed: Float) {
+        player.setSpeed(speed)
+    }
+
+    fun download() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { downloadManager.enqueue(itemId) }
+    }
+
+    fun removeDownload() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { downloadManager.remove(itemId) }
+    }
+
+    fun pauseDownload() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { downloadManager.pause(itemId) }
+    }
+
+    fun retryDownload() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { downloadManager.retry(itemId) }
+    }
+
+    fun deleteItem() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch {
+            val client = sessionController.currentClient()
+                ?: run {
+                    errorCode.value = "auth.required"
+                    return@launch
+                }
+            try {
+                client.deleteItem(itemId)
+                player.pause()
+                repository.deleteLocalItem(itemId)
+                deleted.value = true
+            } catch (_: Exception) {
+                errorCode.value = "item.delete_failed"
+            }
+        }
+    }
+
+    fun refreshTranscript() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch { transcriptRepository.ensureParsed(itemId) }
+    }
+
+    private suspend fun playItem(item: LibraryItem) {
+        val audio = item.audioArtifact
+        if (audio == null) {
+            errorCode.value = "playback.no_audio"
+            return
+        }
+        val local = fileIfPresent(audio.localPath)
+        val url = local?.toURI()?.toString() ?: run {
+            val host = settingsStore.hostUrl.first()
+            if (host.isNullOrBlank()) {
+                errorCode.value = "playback.offline"
+                return
+            }
+            "${host.trimEnd('/')}/api/items/${item.id}/files/audio"
+        }
+        val artwork = fileIfPresent(item.coverArtifact?.localPath)?.toURI()?.toString()
+        val start = player.state.value.let { current ->
+            if (current.itemId == item.id) current.positionMs
+            else (item.audioPositionSec * 1000).toLong()
+        }
+        player.play(
+            PlaybackRequest(
+                itemId = item.id,
+                url = url,
+                title = item.title,
+                artist = item.author,
+                artworkUrl = artwork,
+                startPositionMs = start.coerceAtLeast(0),
+            )
+        )
+    }
+
+    private fun fileIfPresent(path: String?): File? =
+        path?.let(::File)?.takeIf { it.isFile }
+
+    companion object {
+        fun factory(container: AppContainer): ViewModelProvider.Factory = viewModelFactory {
+            initializer {
+                PlayerViewModel(
+                    repository = container.libraryRepository,
+                    player = container.player,
+                    downloadManager = container.downloadManager,
+                    settingsStore = container.settingsStore,
+                    transcriptRepository = container.transcriptRepository,
+                    sessionController = container.sessionController,
+                )
+            }
+        }
+    }
+}

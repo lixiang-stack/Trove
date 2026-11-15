@@ -16,8 +16,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        val container = (application as TroveApplication).container
         setContent {
-            TroveApp(sessionViewModel)
+            TroveApp(sessionViewModel, container)
         }
     }
 }

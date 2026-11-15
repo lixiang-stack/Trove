@@ -34,7 +34,7 @@ class AppSmokeTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = testHarness(context)
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag("host-url").fetchSemanticsNodes().isNotEmpty()
         }
