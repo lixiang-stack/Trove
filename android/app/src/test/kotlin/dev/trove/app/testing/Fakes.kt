@@ -5,16 +5,25 @@ import dev.trove.app.AppContainer
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.auth.TokenStore
 import dev.trove.core.db.TroveDatabase
+import dev.trove.core.download.DownloadManager
+import dev.trove.core.download.DownloadPreferences
+import dev.trove.core.download.DownloadSettingsStore
 import dev.trove.core.network.DeviceDto
 import dev.trove.core.network.DeviceListResponse
 import dev.trove.core.network.DeviceTokenResponse
 import dev.trove.core.network.HealthDto
 import dev.trove.core.network.ManifestDto
+import dev.trove.core.network.MutationResponseDto
+import dev.trove.core.network.ProgressRequestDto
 import dev.trove.core.network.SyncStateDto
 import dev.trove.core.network.TroveApi
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveApiFactory
 import dev.trove.core.settings.SettingsStore
+import dev.trove.core.sync.DownloadQueue
+import dev.trove.playback.PlaybackRequest
+import dev.trove.playback.PlaybackState
+import dev.trove.playback.PlayerGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import retrofit2.Response
@@ -93,6 +102,12 @@ class FakeTroveApi : TroveApi {
         hasMore = false,
         epoch = "test-epoch",
     )
+    var manifestError: Throwable? = null
+    var stateError: Throwable? = null
+    var progressError: Throwable? = null
+    val progressCalls = mutableListOf<Pair<String, ProgressRequestDto>>()
+    var deleteError: Throwable? = null
+    val deletedItems = mutableListOf<String>()
 
     override suspend fun health(): HealthDto {
         healthError?.let { throw it }
@@ -116,9 +131,135 @@ class FakeTroveApi : TroveApi {
         return Response.success(Unit)
     }
 
-    override suspend fun manifest(cursor: String?, limit: Int): ManifestDto = manifestResponse
+    override suspend fun manifest(cursor: String?, limit: Int): ManifestDto {
+        manifestError?.let { throw it }
+        return manifestResponse
+    }
 
-    override suspend fun state(cursor: String?, limit: Int): SyncStateDto = stateResponse
+    override suspend fun state(cursor: String?, limit: Int): SyncStateDto {
+        stateError?.let { throw it }
+        return stateResponse
+    }
+
+    override suspend fun progress(
+        itemId: String,
+        body: ProgressRequestDto,
+        idempotencyKey: String?,
+    ): MutationResponseDto {
+        progressError?.let { throw it }
+        progressCalls += itemId to body
+        return MutationResponseDto(
+            item = dev.trove.core.network.MutationItemDto(
+                id = itemId,
+                audioPositionSec = body.positionSec ?: 0.0,
+                consumptionState = body.consumptionState ?: "unstarted",
+            )
+        )
+    }
+
+    override suspend fun deleteItem(itemId: String): Response<Unit> {
+        deleteError?.let { throw it }
+        deletedItems += itemId
+        return Response.success(Unit)
+    }
+}
+
+class FakeDownloadSettingsStore(
+    initial: DownloadPreferences = DownloadPreferences(),
+) : DownloadSettingsStore {
+    private val state = MutableStateFlow(initial)
+    override val preferences: Flow<DownloadPreferences> = state
+
+    override suspend fun setAllowMetered(value: Boolean) {
+        state.value = state.value.copy(allowMetered = value)
+    }
+
+    override suspend fun setChargingOnly(value: Boolean) {
+        state.value = state.value.copy(chargingOnly = value)
+    }
+
+    override suspend fun setQuotaBytes(value: Long) {
+        state.value = state.value.copy(quotaBytes = value)
+    }
+}
+
+class FakeDownloadQueue : DownloadQueue {
+    val enqueued = mutableListOf<String>()
+
+    override suspend fun enqueue(itemId: String) {
+        enqueued += itemId
+    }
+}
+
+class FakeDownloadManager : DownloadManager {
+    val enqueued = mutableListOf<String>()
+    val paused = mutableListOf<String>()
+    val retried = mutableListOf<String>()
+    val removed = mutableListOf<String>()
+
+    override suspend fun enqueue(itemId: String) {
+        enqueued += itemId
+    }
+
+    override suspend fun pause(itemId: String) {
+        paused += itemId
+    }
+
+    override suspend fun retry(itemId: String) {
+        retried += itemId
+    }
+
+    override suspend fun remove(itemId: String) {
+        removed += itemId
+    }
+}
+
+class FakePlayer : PlayerGateway {
+    private val playback = MutableStateFlow(PlaybackState(connected = true))
+    override val state: kotlinx.coroutines.flow.StateFlow<PlaybackState> = playback
+    val requests = mutableListOf<PlaybackRequest>()
+    var connected = false
+    var errorOnPlay: String? = null
+    val speeds = mutableListOf<Float>()
+
+    override fun connect() {
+        connected = true
+    }
+
+    override fun release() {
+        connected = false
+        playback.value = PlaybackState()
+    }
+
+    override fun play(request: PlaybackRequest) {
+        requests += request
+        playback.value = playback.value.copy(
+            itemId = request.itemId,
+            title = request.title,
+            artist = request.artist,
+            artworkUrl = request.artworkUrl,
+            isPlaying = true,
+            positionMs = request.startPositionMs,
+            errorCode = errorOnPlay,
+        )
+    }
+
+    override fun pause() {
+        playback.value = playback.value.copy(isPlaying = false)
+    }
+
+    override fun toggle() {
+        playback.value = playback.value.copy(isPlaying = !playback.value.isPlaying)
+    }
+
+    override fun seekTo(positionMs: Long) {
+        playback.value = playback.value.copy(positionMs = positionMs)
+    }
+
+    override fun setSpeed(speed: Float) {
+        speeds += speed
+        playback.value = playback.value.copy(speed = speed)
+    }
 }
 
 class FakeTroveApiFactory(private val api: TroveApi) : TroveApiFactory {
@@ -137,12 +278,18 @@ class TestAppContainer(
     settingsStore: FakeSettingsStore = FakeSettingsStore(),
     apiFactory: FakeTroveApiFactory = FakeTroveApiFactory(api),
     allowDebugCleartext: Boolean = false,
+    val fakePlayer: FakePlayer = FakePlayer(),
+    val fakeDownloadQueue: FakeDownloadQueue = FakeDownloadQueue(),
+    val fakeDownloadSettings: FakeDownloadSettingsStore = FakeDownloadSettingsStore(),
 ) : AppContainer(
     context = context,
     tokenStore = tokenStore,
     settingsStore = settingsStore,
     apiFactory = apiFactory,
-    database = TroveDatabase.inMemory(context),
+    databaseOverride = TroveDatabase.inMemory(context),
+    downloadSettingsStore = fakeDownloadSettings,
+    downloadQueue = fakeDownloadQueue,
+    player = fakePlayer,
     allowDebugCleartext = allowDebugCleartext,
 )
 
@@ -153,6 +300,8 @@ data class TestHarness(
     val apiFactory: FakeTroveApiFactory get() = container.apiFactory as FakeTroveApiFactory
     val tokenStore: FakeTokenStore get() = container.tokenStore as FakeTokenStore
     val settingsStore: FakeSettingsStore get() = container.settingsStore as FakeSettingsStore
+    val player: FakePlayer get() = container.fakePlayer
+    val downloadQueue: FakeDownloadQueue get() = container.fakeDownloadQueue
 }
 
 fun testHarness(

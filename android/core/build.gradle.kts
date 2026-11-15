@@ -28,6 +28,7 @@ android {
     }
 
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../contract"))
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("../tests/fixtures"))
 }
 
 ksp {
@@ -40,8 +41,8 @@ dependencies {
     api(libs.retrofit)
     implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.okhttp)
-    implementation(libs.androidx.room.runtime)
-    implementation(libs.androidx.room.ktx)
+    api(libs.androidx.room.runtime)
+    api(libs.androidx.room.ktx)
     implementation(libs.androidx.sqlite.bundled)
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.work.runtime.ktx)

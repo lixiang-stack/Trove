@@ -112,24 +112,26 @@ def test_inbox_filters_processing_and_failed(host):
     assert "Failed" in inbox.text
 
 
-def test_active_status_badge_polls_and_failed_does_not(host):
+def test_active_status_badge_polls_and_failed_does_not(api_host):
+    # Use the API-only fixture so the background worker cannot advance the run
+    # between seeding and reading the status fragment.
     processing = seed_item(
-        host,
+        api_host,
         title="Processing",
         source_key="seed:poll",
         run_state="downloading",
     )
     failed = seed_item(
-        host,
+        api_host,
         title="Failed",
         source_key="seed:nopoll",
         run_state="failed",
     )
-    host.login()
-    active = host.client.get(f"/items/{processing.item.id}/status?context=row")
+    api_host.login()
+    active = api_host.client.get(f"/items/{processing.item.id}/status?context=row")
     assert "hx-trigger" in active.text
     assert "badge-processing" in active.text
-    terminal = host.client.get(f"/items/{failed.item.id}/status?context=row")
+    terminal = api_host.client.get(f"/items/{failed.item.id}/status?context=row")
     assert "hx-trigger" not in terminal.text
     assert "badge-failed" in terminal.text
 

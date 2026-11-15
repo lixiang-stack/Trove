@@ -1,6 +1,6 @@
 # 12 — Android 下载管理与离线存储
 
-Status: ready-for-agent
+Status: implemented
 Type: task
 Milestone: M1
 Blocked by: 05, 10, 11
@@ -26,11 +26,11 @@ ADRs: [0008](../../../docs/adr/0008-content-package-as-source-of-truth.md), [000
 
 ## Acceptance Criteria
 
-- [ ] 选中 Item 下载全部可用 artifact；音频/书/transcript 可离线使用。
-- [ ] 中断后续传成功；ETag 变化全量重下；sha256 不匹配可重试。
-- [ ] 下载遵守 Wi-Fi/充电约束和配额；移动网络需用户确认。
-- [ ] 移除下载保留 Host Item；删除 Item 才走 Host soft delete。
-- [ ] 下载不阻塞播放/阅读/搜索；状态和错误可见。
+- [x] 选中 Item 下载全部可用 artifact；音频/书/transcript 可离线使用。
+- [x] 中断后续传成功；ETag 变化全量重下；sha256 不匹配可重试。
+- [x] 下载遵守 Wi-Fi/充电约束和配额；移动网络需用户确认。
+- [x] 移除下载保留 Host Item；删除 Item 才走 Host soft delete。
+- [x] 下载不阻塞播放/阅读/搜索；状态和错误可见。
 - [ ] 前台通知符合 Android 14+ `dataSync` 类型。
 
 ## Testing
@@ -44,3 +44,19 @@ ADRs: [0008](../../../docs/adr/0008-content-package-as-source-of-truth.md), [000
 - 本地搜索索引；由 15 实现。
 - 整库自动下载；V1 只做选择性同步。
 - Android 15/16 超长下载的特殊优化；先按 WorkManager 重试兜底。
+
+## Implementation
+
+- `ArtifactDownloader` downloads every artifact for an item to `.part`, resumes with `Range` + `If-Range: <ETag>`, restarts on ETag change, verifies size/sha256, then atomically renames. Partial files are retained on pause/network failure and removed on download removal.
+- Quota (default 5 GB) and free-space checks run before network; errors are persisted on artifacts and shown in the UI. Mobile-network and charging-only constraints come from `DownloadSettingsStore`.
+- `DownloadWorker` is a WorkManager `CoroutineWorker` using one global unique queue (`KEEP`) and a `dataSync` foreground notification on Android 14+. `DefaultDownloadManager` implements enqueue/pause/retry/remove; removal never calls Host DELETE.
+- Sync deletes stale artifact files and defers deletion while the item is playing. Tests: `ArtifactDownloaderTest` (MockWebServer Range/If-Range/sha/quota/remove), sync artifact-change tests.
+- **Device acceptance pending**: no Android device is attached; airplane-mode resume, storage-full, and real foreground-notification smoke still need a Xiaomi 13 run.
+
+### Xiaomi 13 real-device acceptance (2026-11-15 / Android 16, API 36)
+
+- Verified a selected Item downloads `audio`, `transcript`, and `cover` into `filesDir`, with per-artifact `completed`, byte count, ETag, and local path in Room. No media file is downloaded for non-selected Items.
+- Verified WorkManager foreground download: `SystemForegroundService` was `isForeground=true` with `types=0x1` (dataSync) and channel `trove_downloads`.
+- Verified interruption/resume by force-stopping the app after ~52 MB of a 400 MB download. The `.part` file and ETag survived; WorkManager resumed after relaunch, and the final file matched the Host sha256 (`6ed5e853…`) with `completed` state.
+- Verified removing a download deletes all local files and transcript segments but keeps the Host Item; deleting the Item instead produced Host 404 + tombstone and removed local files.
+- ETag-change full restart and sha256-mismatch handling are covered by MockWebServer tests; not separately forced on device. Storage-full and metered-network confirmation were not exercised on device.
