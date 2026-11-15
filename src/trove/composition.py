@@ -26,6 +26,7 @@ from trove.ports import (
     Transcriber,
 )
 from trove.services.auth import AuthService
+from trove.services.devices import DeviceService
 from trove.services.export import ExportService
 from trove.services.intake import IntakeService
 from trove.services.library import LibraryService
@@ -33,6 +34,7 @@ from trove.services.playback import PlaybackService
 from trove.services.processing import ProcessingService
 from trove.services.reading import ReadingService
 from trove.services.search import SearchService
+from trove.services.sync import SyncService
 from trove.services.uploads import UploadStore
 
 
@@ -60,7 +62,9 @@ class Runtime:
     intake: IntakeService
     playback: PlaybackService
     export: ExportService
+    sync: SyncService
     auth: AuthService
+    devices: DeviceService
     uploads: UploadStore
     ports: Ports
 
@@ -111,7 +115,9 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     playback = PlaybackService(sessions, package, library, search_index)
     reading = ReadingService(sessions, package)
     export = ExportService(config, sessions, package)
+    sync = SyncService(config, sessions, package, library)
     auth = AuthService(config)
+    devices = DeviceService(config, sessions, auth.rate_limiter)
     return Runtime(
         config=config,
         engine=engine,
@@ -125,7 +131,9 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         intake=intake,
         playback=playback,
         export=export,
+        sync=sync,
         auth=auth,
+        devices=devices,
         uploads=uploads,
         ports=ports,
     )

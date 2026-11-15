@@ -13,3 +13,11 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+
+# Android tooling
+android/local.properties
+android/.gradle/
+android/.kotlin/
+android/**/build/
+android/.idea/
+android/captures/

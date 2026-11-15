@@ -49,7 +49,11 @@ class FtsSearchIndex:
 
     def rebuild(self) -> int:
         with self.sessions() as session:
-            item_ids = list(session.execute(text("SELECT id FROM items ORDER BY id")).scalars())
+            item_ids = list(
+                session.execute(
+                    text("SELECT id FROM items WHERE deleted_at IS NULL ORDER BY id")
+                ).scalars()
+            )
             session.execute(text("DELETE FROM search_fts"))
             session.commit()
         for item_id in item_ids:
@@ -60,7 +64,9 @@ class FtsSearchIndex:
         with self.sessions() as session:
             items = list(
                 session.execute(
-                    select(Item).order_by(Item.created_at.desc(), Item.id.desc())
+                    select(Item)
+                    .where(Item.deleted_at.is_(None))
+                    .order_by(Item.created_at.desc(), Item.id.desc())
                 ).scalars()
             )
             item_ids = {item.id for item in items}
@@ -173,7 +179,7 @@ class FtsSearchIndex:
 
     def _index_item(self, session: Session, item_id: str) -> None:
         item = session.get(Item, item_id)
-        if item is None:
+        if item is None or item.deleted_at is not None:
             return
         session.execute(
             text("DELETE FROM search_fts WHERE item_id = :item_id"), {"item_id": item_id}

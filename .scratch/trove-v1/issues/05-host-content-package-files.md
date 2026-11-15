@@ -1,6 +1,6 @@
 # 05 — Host Content Package 文件下载
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02, 03
@@ -40,3 +40,7 @@ Android 要镜像 Content Package 的音频/transcript/book/book_json/ai/cover�
 
 - Android 下载队列/断点续传；由 12 实现。
 - 修改 Content Package 布局或既有媒体响应语义。
+
+## Implementation
+
+- `GET /api/items/{item_id}/files/{kind}` for the six Content Package kinds, with ETag/Range/If-Range, private caching, MIME, and traversal protection. Existing Web media endpoints are unchanged.

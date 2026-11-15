@@ -82,7 +82,13 @@ def test_delete_removes_derived_data_but_keeps_original(host):
     assert host.client.get(f"/api/items/{bundle.item.id}").status_code == 404
     with host.runtime.sessions() as session:
         assert session.execute(text("SELECT count(*) FROM search_fts")).scalar() == 0
-        assert session.execute(text("SELECT count(*) FROM items")).scalar() == 0
+        deleted = session.execute(
+            text("SELECT deleted_at FROM items WHERE id = :id"),
+            {"id": bundle.item.id},
+        ).scalar_one()
+        assert deleted is not None
+        assert session.execute(text("SELECT count(*) FROM artifacts")).scalar() == 0
+        assert session.execute(text("SELECT count(*) FROM runs")).scalar() == 0
         assert session.execute(text("SELECT count(*) FROM artifacts")).scalar() == 0
 
 

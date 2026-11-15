@@ -1,6 +1,6 @@
 # 04 — Host 同步 Manifest/State 与 epoch
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02, 03
@@ -42,3 +42,8 @@ Android 需要增量同步 Item/Tag/文件/tombstone 和消费状态。Content �
 - LWW 写接口/幂等；由 07 实现。
 - 文件下载端点；由 05 实现。
 - soft delete/tombstone 的删除行为；由 06 实现。
+
+## Implementation
+
+- `GET /api/sync/manifest` / `state` with opaque cursor, epoch, paging, compact payloads, tombstones, and `sync.cursor_invalid`.
+- `trove sync reset-epoch`; health reports `api_version` and sync/device/file capabilities.

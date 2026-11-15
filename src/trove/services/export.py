@@ -62,14 +62,20 @@ class ExportService:
             if item_ids is None:
                 return list(
                     session.execute(
-                        select(Item).order_by(Item.created_at, Item.id)
+                        select(Item)
+                        .where(Item.deleted_at.is_(None))
+                        .order_by(Item.created_at, Item.id)
                     ).scalars()
                 )
             if not item_ids:
                 return []
             unique_ids = list(dict.fromkeys(item_ids))
             items = list(
-                session.execute(select(Item).where(Item.id.in_(unique_ids))).scalars()
+                session.execute(
+                    select(Item).where(
+                        Item.id.in_(unique_ids), Item.deleted_at.is_(None)
+                    )
+                ).scalars()
             )
             found = {item.id for item in items}
             missing = [item_id for item_id in unique_ids if item_id not in found]

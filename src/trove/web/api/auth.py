@@ -5,10 +5,39 @@ from fastapi.responses import JSONResponse
 
 from trove.services.auth import SESSION_COOKIE
 from trove.web.deps import runtime
-from trove.web.schemas import LoginRequest, OkResponse
+from trove.web.schemas import (
+    DeviceTokenRequest,
+    DeviceTokenResponse,
+    LoginRequest,
+    OkResponse,
+)
 from trove.web.security import set_session_cookie
 
 router = APIRouter()
+
+
+@router.post(
+    "/auth/device-token", response_model=DeviceTokenResponse, status_code=201
+)
+def api_device_token(request: Request, payload: DeviceTokenRequest):
+    app_runtime = runtime(request)
+    client = request.client.host if request.client else "unknown"
+    issued = app_runtime.devices.issue(
+        password=payload.password, name=payload.name, client=client
+    )
+    if issued is None:
+        return JSONResponse(
+            {"code": "auth.invalid", "message": "Incorrect password"}, status_code=401
+        )
+    return JSONResponse(
+        {
+            "device_id": issued.device_id,
+            "name": issued.name,
+            "token": issued.token,
+            "created_at": issued.created_at,
+        },
+        status_code=201,
+    )
 
 
 @router.post("/auth/login", response_model=OkResponse)

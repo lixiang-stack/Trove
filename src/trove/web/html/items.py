@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Form, Request
 from fastapi.responses import RedirectResponse
 
+from trove.domain.sync import HOST_WEB_DEVICE
 from trove.web.deps import render, run_logs, runtime
 
 router = APIRouter()
@@ -59,13 +60,13 @@ def edit_item(
 
 @router.post("/items/{item_id}/tags/add", include_in_schema=False)
 def add_tag(request: Request, item_id: str, tag: Annotated[str, Form()]):
-    runtime(request).library.add_tag(item_id, tag)
+    runtime(request).sync.add_tag(item_id, tag, device_id=HOST_WEB_DEVICE)
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
 @router.post("/items/{item_id}/tags/delete", include_in_schema=False)
 def delete_tag(request: Request, item_id: str, tag: Annotated[str, Form()]):
-    runtime(request).library.remove_tag(item_id, tag)
+    runtime(request).sync.remove_tag(item_id, tag, device_id=HOST_WEB_DEVICE)
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
@@ -77,7 +78,7 @@ def delete_item(request: Request, item_id: str):
 
 @router.post("/items/{item_id}/state", include_in_schema=False)
 def set_item_state(request: Request, item_id: str, state: Annotated[str, Form()]):
-    runtime(request).playback.set_consumption_state(item_id, state)
+    runtime(request).sync.apply_consumption_state(item_id, consumption_state=state)
     return RedirectResponse(f"/items/{item_id}", status_code=303)
 
 
