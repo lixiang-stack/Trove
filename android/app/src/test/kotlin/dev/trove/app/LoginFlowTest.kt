@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -52,12 +53,13 @@ class LoginFlowTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = testHarness(context)
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
 
         fillForm()
 
         waitForTag("trove-shell")
-        compose.onNodeWithText("Library 尚未接入").assertIsDisplayed()
+        waitForTag("library-screen")
+        compose.onNodeWithTag("library-screen").assertIsDisplayed()
         assertEquals("test-token", harness.tokenStore.credential?.token)
         assertEquals("https://host.example", harness.settingsStore.current)
     }
@@ -70,7 +72,7 @@ class LoginFlowTest {
         }
         val harness = testHarness(context, api = api)
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
 
         fillForm()
 
@@ -84,7 +86,7 @@ class LoginFlowTest {
         val api = FakeTroveApi().apply { healthError = TroveNetworkException("offline") }
         val harness = testHarness(context, api = api)
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
 
         fillForm()
 
@@ -97,7 +99,7 @@ class LoginFlowTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = testHarness(context, allowDebugCleartext = false)
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
 
         fillForm(host = "http://192.168.1.10:8765")
 
@@ -115,10 +117,11 @@ class LoginFlowTest {
             settingsStore = FakeSettingsStore("https://host.example"),
         )
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
 
         waitForTag("trove-shell")
-        compose.onNodeWithText("Library 尚未接入").assertIsDisplayed()
+        waitForTag("library-screen")
+        compose.onNodeWithTag("library-screen").assertIsDisplayed()
     }
 
     @Test
@@ -130,7 +133,7 @@ class LoginFlowTest {
             settingsStore = FakeSettingsStore("https://host.example"),
         )
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
         waitForTag("trove-shell")
 
         harness.container.sessionController.onUnauthorized("auth.device_revoked")
@@ -152,9 +155,10 @@ class LoginFlowTest {
             settingsStore = FakeSettingsStore("https://host.example"),
         )
         val viewModel = SessionViewModel(harness.container.sessionController)
-        compose.setContent { TroveApp(viewModel) }
+        compose.setContent { TroveApp(viewModel, harness.container) }
         waitForTag("trove-shell")
 
+        compose.onNodeWithContentDescription("更多").performClick()
         compose.onNodeWithText("退出登录").performClick()
 
         waitForTag("host-url")

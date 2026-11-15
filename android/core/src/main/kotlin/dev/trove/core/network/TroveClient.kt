@@ -51,6 +51,24 @@ class TroveClient(
     suspend fun state(cursor: String? = null, limit: Int = 100): SyncStateDto =
         call { api.state(cursor, limit) }
 
+    suspend fun progress(
+        itemId: String,
+        request: ProgressRequestDto,
+        idempotencyKey: String?,
+    ): MutationResponseDto =
+        call { api.progress(itemId, request, idempotencyKey) }
+
+    suspend fun deleteItem(itemId: String) {
+        val response = call { api.deleteItem(itemId) }
+        if (!response.isSuccessful) {
+            throw TroveApiException(
+                code = "http.${response.code()}",
+                message = response.message(),
+                statusCode = response.code(),
+            )
+        }
+    }
+
     private suspend fun <T> call(block: suspend () -> T): T {
         try {
             return block()

@@ -4,7 +4,9 @@ import retrofit2.Response
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.Header
 import retrofit2.http.POST
+import retrofit2.http.PUT
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -32,4 +34,14 @@ interface TroveApi {
         @Query("cursor") cursor: String?,
         @Query("limit") limit: Int,
     ): SyncStateDto
+
+    @PUT("api/items/{itemId}/progress")
+    suspend fun progress(
+        @Path("itemId") itemId: String,
+        @Body body: ProgressRequestDto,
+        @Header("Idempotency-Key") idempotencyKey: String?,
+    ): MutationResponseDto
+
+    @DELETE("api/items/{itemId}")
+    suspend fun deleteItem(@Path("itemId") itemId: String): Response<Unit>
 }

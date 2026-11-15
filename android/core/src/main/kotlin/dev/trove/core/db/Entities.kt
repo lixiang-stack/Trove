@@ -1,10 +1,13 @@
 package dev.trove.core.db
 
 import androidx.room.ColumnInfo
+import androidx.room.Embedded
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
+import androidx.room.Junction
 import androidx.room.PrimaryKey
+import androidx.room.Relation
 
 @Entity(tableName = "items")
 data class ItemEntity(
@@ -56,6 +59,9 @@ data class ArtifactEntity(
     val version: Int,
     @ColumnInfo(name = "local_path") val localPath: String?,
     @ColumnInfo(name = "download_state") val downloadState: String = "none",
+    @ColumnInfo(name = "downloaded_bytes") val downloadedBytes: Long = 0,
+    val etag: String? = null,
+    @ColumnInfo(name = "error_code") val errorCode: String? = null,
 )
 
 @Entity(
@@ -171,4 +177,26 @@ data class PendingMutationEntity(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "retry_count") val retryCount: Int = 0,
     @ColumnInfo(name = "last_error") val lastError: String? = null,
+)
+
+@Entity(tableName = "pending_deletions")
+data class PendingDeletionEntity(
+    @PrimaryKey val path: String,
+    @ColumnInfo(name = "item_id") val itemId: String,
+)
+
+data class ItemWithDetails(
+    @Embedded val item: ItemEntity,
+    @Relation(parentColumn = "id", entityColumn = "item_id")
+    val artifacts: List<ArtifactEntity>,
+    @Relation(
+        parentColumn = "id",
+        entityColumn = "normalized_name",
+        associateBy = Junction(
+            value = ItemTagEntity::class,
+            parentColumn = "item_id",
+            entityColumn = "tag_name",
+        ),
+    )
+    val tags: List<TagEntity>,
 )

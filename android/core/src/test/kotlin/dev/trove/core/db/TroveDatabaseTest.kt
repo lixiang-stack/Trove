@@ -52,11 +52,24 @@ class TroveDatabaseTest {
                     "item_tags",
                     "sync_cursor",
                     "pending_mutations",
+                    "pending_deletions",
                 )
             )
         )
         assertTrue(indexes.any { it.startsWith("index_artifacts_item_id") })
         assertTrue(indexes.any { it.startsWith("index_item_tags_tag_name") })
+
+        val artifactColumns = mutableSetOf<String>()
+        database.openHelper.readableDatabase.query("PRAGMA table_info(artifacts)").use { cursor ->
+            while (cursor.moveToNext()) {
+                artifactColumns += cursor.getString(1)
+            }
+        }
+        assertTrue(
+            artifactColumns.containsAll(
+                setOf("downloaded_bytes", "etag", "error_code")
+            )
+        )
     }
 
     @Test
