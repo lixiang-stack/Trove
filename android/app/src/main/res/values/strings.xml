@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">拾藏</string>
+    <string name="nav_library">Library</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_add">Add</string>
+    <string name="nav_library_placeholder">Library 尚未接入</string>
+    <string name="nav_search_placeholder">Search 尚未接入</string>
+    <string name="nav_add_placeholder">Add 尚未接入</string>
+    <string name="login_title">连接 Host</string>
+    <string name="login_subtitle">输入 Host 地址和设备信息，获取本机专用 token。</string>
+    <string name="login_host">Host 地址</string>
+    <string name="login_password">密码</string>
+    <string name="login_device_name">设备名称</string>
+    <string name="login_connect">连接</string>
+    <string name="login_connecting">正在连接…</string>
+    <string name="login_checking">正在检查登录状态…</string>
+    <string name="login_devices">已授权设备</string>
+    <string name="login_sign_out">退出登录</string>
+    <string name="login_close">关闭</string>
+    <string name="login_revoke">撤销</string>
+    <string name="login_revoked">已撤销</string>
+    <string name="login_this_device">本机</string>
+    <string name="error_empty_host">请输入 Host 地址</string>
+    <string name="error_invalid_host">Host 地址格式不正确</string>
+    <string name="error_cleartext_host">正式版本只允许 HTTPS Host</string>
+    <string name="error_unsupported_path">Host 地址不能包含路径</string>
+    <string name="error_invalid_password">密码错误</string>
+    <string name="error_rate_limited">尝试次数过多，请稍后再试</string>
+    <string name="error_rate_limited_seconds">尝试次数过多，请 %1$d 秒后再试</string>
+    <string name="error_host_offline">无法连接 Host，请检查地址和网络</string>
+    <string name="error_tls">TLS 证书不受信任，请检查 Host 配置或安装 CA</string>
+    <string name="error_host_incompatible">Host 版本不支持同步，请升级 Host</string>
+    <string name="error_device_revoked">登录已失效，请重新登录</string>
+    <string name="error_unknown">连接失败，请稍后重试</string>
+</resources>

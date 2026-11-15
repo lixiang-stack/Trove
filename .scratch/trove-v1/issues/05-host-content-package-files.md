@@ -1,6 +1,6 @@
 # 05 — Host Content Package 文件下载
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02, 03
@@ -24,11 +24,11 @@ Android 要镜像 Content Package 的音频/transcript/book/book_json/ai/cover�
 
 ## Acceptance Criteria
 
-- [ ] 六种 kind 均可下载；缺失 artifact 返回 404/`file.artifact_missing`。
-- [ ] 普通请求 200 + ETag；Range 请求 206 + Content-Range；If-Range 匹配续传，不匹配全量。
-- [ ] sha256 与 Artifact 元数据一致；路径穿越/任意文件请求被拒绝。
-- [ ] 未认证请求 401；Bearer 和 Cookie 都可访问。
-- [ ] 现有 Web 音频/transcript/book 行为不回归。
+- [x] 六种 kind 均可下载；缺失 artifact 返回 404/`file.artifact_missing`。
+- [x] 普通请求 200 + ETag；Range 请求 206 + Content-Range；If-Range 匹配续传，不匹配全量。
+- [x] sha256 与 Artifact 元数据一致；路径穿越/任意文件请求被拒绝。
+- [x] 未认证请求 401；Bearer 和 Cookie 都可访问。
+- [x] 现有 Web 音频/transcript/book 行为不回归。
 
 ## Testing
 
@@ -40,3 +40,7 @@ Android 要镜像 Content Package 的音频/transcript/book/book_json/ai/cover�
 
 - Android 下载队列/断点续传；由 12 实现。
 - 修改 Content Package 布局或既有媒体响应语义。
+
+## Implementation
+
+- `GET /api/items/{item_id}/files/{kind}` for the six Content Package kinds, with ETag/Range/If-Range, private caching, MIME, and traversal protection. Existing Web media endpoints are unchanged.

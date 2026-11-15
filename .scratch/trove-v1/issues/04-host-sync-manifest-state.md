@@ -1,6 +1,6 @@
 # 04 — Host 同步 Manifest/State 与 epoch
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02, 03
@@ -25,11 +25,11 @@ Android 需要增量同步 Item/Tag/文件/tombstone 和消费状态。Content �
 
 ## Acceptance Criteria
 
-- [ ] 首次全量、分页、增量 manifest 正确，无重复/遗漏；`has_more`/`next_cursor` 正确。
-- [ ] State 同步推进 `state_seq`，但 content manifest 不因播放进度抖动。
-- [ ] tombstone 出现在 manifest；已删除 Item 不出现在普通 Library/Search/Continue。
-- [ ] epoch 变化或 cursor 超界时客户端可识别并触发全量重同步。
-- [ ] compact payload 不包含 Run steps/log tail；文件清单含 kind/sha256/size/mime/version/url。
+- [x] 首次全量、分页、增量 manifest 正确，无重复/遗漏；`has_more`/`next_cursor` 正确。
+- [x] State 同步推进 `state_seq`，但 content manifest 不因播放进度抖动。
+- [x] tombstone 出现在 manifest；已删除 Item 不出现在普通 Library/Search/Continue。
+- [x] epoch 变化或 cursor 超界时客户端可识别并触发全量重同步。
+- [x] compact payload 不包含 Run steps/log tail；文件清单含 kind/sha256/size/mime/version/url。
 
 ## Testing
 
@@ -42,3 +42,8 @@ Android 需要增量同步 Item/Tag/文件/tombstone 和消费状态。Content �
 - LWW 写接口/幂等；由 07 实现。
 - 文件下载端点；由 05 实现。
 - soft delete/tombstone 的删除行为；由 06 实现。
+
+## Implementation
+
+- `GET /api/sync/manifest` / `state` with opaque cursor, epoch, paging, compact payloads, tombstones, and `sync.cursor_invalid`.
+- `trove sync reset-epoch`; health reports `api_version` and sync/device/file capabilities.

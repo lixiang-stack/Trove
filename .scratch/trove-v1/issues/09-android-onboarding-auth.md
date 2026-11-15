@@ -1,6 +1,6 @@
 # 09 — Android 连接、登录与设备 token
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 03, 08
@@ -26,12 +26,12 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] 正确密码登录成功并进入 App；Host URL/token 重启后保留。
-- [ ] 错误密码/限速/Host 离线/TLS 错误显示可读提示；不崩溃、不丢本地数据。
-- [ ] token 撤销或密码修改后下一次请求回登录；不无限重试。
-- [ ] 明文 HTTP Host 在正式 release 被拒绝。
-- [ ] 登出撤销 token；清除本地数据是单独确认动作。
-- [ ] token 不出现在日志/诊断/UI 明文。
+- [x] 正确密码登录成功并进入 App；Host URL/token 重启后保留。
+- [x] 错误密码/限速/Host 离线/TLS 错误显示可读提示；不崩溃、不丢本地数据。
+- [x] token 撤销或密码修改后下一次请求回登录；不无限重试。
+- [x] 明文 HTTP Host 在正式 release 被拒绝。
+- [x] 登出撤销 token；清除本地数据是单独确认动作。
+- [x] token 不出现在日志/诊断/UI 明文。
 
 ## Testing
 
@@ -43,3 +43,10 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - Library/同步/播放/下载；由 10–13 实现。
 - LAN flavor/证书安装引导；由 20 实现。
+
+## Implementation
+
+- Host URL validation (release HTTPS-only), login screen, device token exchange, Keystore AES-GCM + DataStore token storage, Bearer interceptor, 401 sign-out, device listing/revocation, and readable errors.
+- Token/host survive restart; logout revokes the current device but keeps local data. Robolectric tests exercise the real `KeystoreCredentialCipher` through a test-scoped AndroidKeyStore JCA provider and verify encrypted DataStore storage.
+- Xiaomi 13 real-device acceptance: login succeeded against a temporary Host over `adb reverse` + debug localhost cleartext; token survived a cold restart; Host-side revocation produced 401 → login with `登录已失效，请重新登录`; device dialog listed the device; logout revoked the token on the Host.
+- Added `src/debug/res/xml/network_security_config.xml` so debug localhost works while release keeps `usesCleartextTraffic=false`.

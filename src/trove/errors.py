@@ -44,6 +44,14 @@ class RunNotFoundError(NotFoundError):
     code = "run.not_found"
 
 
+class DeviceNotFoundError(NotFoundError):
+    code = "device.not_found"
+
+
+class ArtifactMissingError(NotFoundError):
+    code = "file.artifact_missing"
+
+
 class ConflictError(TroveError):
     status_code = 409
     code = "item.conflict"

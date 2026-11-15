@@ -7,6 +7,7 @@ from urllib.parse import quote, urlsplit
 from fastapi import Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 
+from trove.domain.sync import HOST_WEB_DEVICE
 from trove.services.auth import SESSION_COOKIE, SESSION_MAX_AGE, is_secure_request
 from trove.worker import heartbeat_is_fresh, read_heartbeat
 
@@ -17,6 +18,7 @@ PUBLIC_PATHS = {
     "/login",
     "/api/health",
     "/api/auth/login",
+    "/api/auth/device-token",
     "/api/openapi.json",
     "/docs",
     "/docs/oauth2-redirect",
@@ -104,17 +106,43 @@ def safe_next(value: str | None) -> str:
     return value
 
 
+def bearer_token(request: Request) -> str | None:
+    value = request.headers.get("authorization") or ""
+    scheme, _, token = value.partition(" ")
+    if scheme.lower() != "bearer" or not token.strip():
+        return None
+    return token.strip()
+
+
+def _authenticate(request: Request) -> tuple[bool, str | None]:
+    runtime = request.app.state.runtime
+    token = bearer_token(request)
+    if token is not None:
+        device_id, error = runtime.devices.verify(token)
+        request.state.device_id = device_id
+        request.state.auth_method = "bearer" if error is None else None
+        return error is None, error
+    request.state.auth_method = None
+    if runtime.auth.verify_token(request.cookies.get(SESSION_COOKIE)):
+        request.state.device_id = HOST_WEB_DEVICE
+        request.state.auth_method = "cookie"
+        return True, None
+    request.state.device_id = None
+    return False, None
+
+
 def install_middleware(app) -> None:
     @app.middleware("http")
     async def security_and_logging(request: Request, call_next):
         started = time.monotonic()
         runtime = app.state.runtime
-        token = request.cookies.get(SESSION_COOKIE)
-        request.state.authenticated = runtime.auth.verify_token(token)
+        request.state.authenticated, auth_error = _authenticate(request)
+        uses_bearer = bearer_token(request) is not None
 
-        csrf_response = check_csrf(request)
-        if csrf_response is not None:
-            return csrf_response
+        if not uses_bearer:
+            csrf_response = check_csrf(request)
+            if csrf_response is not None:
+                return csrf_response
 
         path = request.url.path
         public = path in PUBLIC_PATHS or any(
@@ -123,6 +151,15 @@ def install_middleware(app) -> None:
         if path == "/" or path == "":
             public = True
         if not request.state.authenticated and not public:
+            if auth_error is not None:
+                message = (
+                    "Device authorization has been revoked"
+                    if auth_error == "auth.device_revoked"
+                    else "Device token is invalid"
+                )
+                return JSONResponse(
+                    {"code": auth_error, "message": message}, status_code=401
+                )
             return unauthorized(request)
         if request.state.authenticated and path == "/login" and request.method == "GET":
             return RedirectResponse("/library", status_code=303)

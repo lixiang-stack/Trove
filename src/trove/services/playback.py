@@ -9,13 +9,9 @@ from sqlalchemy.orm import sessionmaker
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage, sha256_file
 from trove.db.models import Artifact, Item
-from trove.domain.items import ConsumptionState
 from trove.errors import NotFoundError, ValidationError
 from trove.ports import SearchIndex
-from trove.services.library import ItemBundle, LibraryService
-
-AUTO_START_MAX_SECONDS = 5.0
-AUTO_FINISH_RATIO = 0.95
+from trove.services.library import LibraryService
 
 
 class PlaybackService:
@@ -34,7 +30,7 @@ class PlaybackService:
     def audio_artifact(self, item_id: str) -> Artifact:
         with self.sessions() as session:
             item = session.get(Item, item_id)
-            if item is None:
+            if item is None or item.deleted_at is not None:
                 raise NotFoundError("Content not found")
             artifact = session.execute(
                 select(Artifact).where(Artifact.item_id == item_id, Artifact.kind == "audio")
@@ -53,71 +49,10 @@ class PlaybackService:
             raise NotFoundError("Audio file not found")
         return path
 
-    def update_progress(
-        self,
-        item_id: str,
-        *,
-        position_sec: float,
-        consumption_state: str | None = None,
-    ) -> ItemBundle:
-        if position_sec < 0:
-            raise ValidationError(
-                "Playback position cannot be negative", details={"code": "progress.invalid"}
-            )
-        if consumption_state is not None and consumption_state not in {
-            ConsumptionState.UNSTARTED,
-            ConsumptionState.IN_PROGRESS,
-            ConsumptionState.FINISHED,
-        }:
-            raise ValidationError(
-                "Invalid consumption state", details={"code": "progress.invalid_state"}
-            )
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
-            duration = item.duration_sec
-            position = float(position_sec)
-            if duration and duration > 0:
-                position = min(position, duration)
-            item.audio_position_sec = position
-            item.last_consumed_at = utc_ms()
-            if consumption_state is not None:
-                item.consumption_state = consumption_state
-            elif duration and duration > 0:
-                if position >= duration * AUTO_FINISH_RATIO:
-                    item.consumption_state = ConsumptionState.FINISHED
-                elif position >= min(AUTO_START_MAX_SECONDS, max(duration * 0.02, 1.0)):
-                    item.consumption_state = ConsumptionState.IN_PROGRESS
-            elif position > 0:
-                item.consumption_state = ConsumptionState.IN_PROGRESS
-            item.updated_at = utc_ms()
-            session.commit()
-            return self.library.get(item_id)
-
-    def set_consumption_state(self, item_id: str, state: str) -> ItemBundle:
-        if state not in {
-            ConsumptionState.UNSTARTED,
-            ConsumptionState.IN_PROGRESS,
-            ConsumptionState.FINISHED,
-        }:
-            raise ValidationError(
-                "Invalid consumption state", details={"code": "progress.invalid_state"}
-            )
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
-            item.consumption_state = state
-            item.last_consumed_at = utc_ms()
-            item.updated_at = utc_ms()
-            session.commit()
-        return self.library.get(item_id)
-
     def transcript(self, item_id: str) -> list[dict[str, Any]]:
         with self.sessions() as session:
             item = session.get(Item, item_id)
-            if item is None:
+            if item is None or item.deleted_at is not None:
                 raise NotFoundError("Content not found")
         document = self.package.read_transcript(item_id)
         if document is None:
@@ -142,7 +77,7 @@ class PlaybackService:
             )
         with self.sessions() as session:
             item = session.get(Item, item_id)
-            if item is None:
+            if item is None or item.deleted_at is not None:
                 raise NotFoundError("Content not found")
             document = self.package.read_transcript(item_id)
             if document is None:

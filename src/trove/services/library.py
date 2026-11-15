@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import ColumnElement, false, func, or_, select
+from sqlalchemy import ColumnElement, delete, false, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -199,8 +199,20 @@ class LibraryService:
             existing = session.execute(
                 select(Item).where(Item.source_key == source_key)
             ).scalars().first()
-            if existing is not None:
+            if existing is not None and existing.deleted_at is None:
                 return item_bundle(session, existing), True
+            if existing is not None:
+                self.package.ensure(existing.id)
+                self.package.write_source(
+                    existing.id,
+                    source_document(
+                        existing, base=self.package.read_source(existing.id)
+                    ),
+                )
+                existing.deleted_at = None
+                existing.updated_at = now
+                session.commit()
+                return item_bundle(session, existing), False
         item = Item(
             id=str(uuid.uuid4()),
             source_key=source_key,
@@ -247,7 +259,7 @@ class LibraryService:
     def get(self, item_id: str) -> ItemBundle:
         with self.sessions() as session:
             item = session.get(Item, item_id)
-            if item is None:
+            if item is None or item.deleted_at is not None:
                 raise NotFoundError("Content not found")
             return item_bundle(session, item)
 
@@ -263,7 +275,7 @@ class LibraryService:
         limit: int | None = None,
     ) -> list[ItemBundle]:
         with self.sessions() as session:
-            statement = select(Item)
+            statement = select(Item).where(Item.deleted_at.is_(None))
             for condition in self._filter_conditions(
                 item_type=item_type, platform=platform, tag=tag
             ):
@@ -291,6 +303,7 @@ class LibraryService:
                 session.execute(
                     select(Item)
                     .where(
+                        Item.deleted_at.is_(None),
                         Item.consumption_state != ConsumptionState.FINISHED,
                         or_(
                             Item.audio_position_sec > 0,
@@ -322,7 +335,7 @@ class LibraryService:
         tag: str | None = None,
     ) -> set[str]:
         with self.sessions() as session:
-            statement = select(Item)
+            statement = select(Item).where(Item.deleted_at.is_(None))
             for condition in self._filter_conditions(
                 item_type=item_type, platform=platform, tag=tag
             ):
@@ -366,6 +379,8 @@ class LibraryService:
             rows = session.execute(
                 select(Tag.name, func.count(ItemTag.item_id).label("count"))
                 .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .join(Item, Item.id == ItemTag.item_id)
+                .where(Item.deleted_at.is_(None))
                 .group_by(Tag.id)
                 .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
             )
@@ -374,31 +389,14 @@ class LibraryService:
     # ------------------------------------------------------------------
     # Mutations
     # ------------------------------------------------------------------
-    def add_tag(self, item_id: str, raw: str) -> ItemBundle:
-        display, normalized = normalize_tag(raw)
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
-            tag = session.execute(
-                select(Tag).where(Tag.normalized_name == normalized)
-            ).scalars().first()
-            if tag is None:
-                tag = Tag(name=display, normalized_name=normalized)
-                session.add(tag)
-                session.flush()
-            row = session.get(ItemTag, (item_id, tag.id))
-            if row is None:
-                session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="user"))
-            else:
-                row.source = "user"
-            item.updated_at = utc_ms()
-            session.commit()
-            bundle = item_bundle(session, item)
-        self.search_index.index_item(item_id)
-        return bundle
-
-    def replace_tags(self, item_id: str, raw_tags: list[str]) -> ItemBundle:
+    @staticmethod
+    def replace_tags_in_session(
+        session: Session,
+        item: Item,
+        raw_tags: list[str],
+        *,
+        mark_all_user: bool = True,
+    ) -> None:
         normalized_tags: list[tuple[str, str]] = []
         seen: set[str] = set()
         for raw in raw_tags:
@@ -407,68 +405,36 @@ class LibraryService:
                 continue
             seen.add(normalized)
             normalized_tags.append((display, normalized))
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
-            attached = {
-                row.tag_id: row
-                for row in session.execute(
-                    select(ItemTag).where(ItemTag.item_id == item_id)
-                ).scalars()
-            }
-            keep: set[int] = set()
-            for display, normalized in normalized_tags:
-                tag = session.execute(
-                    select(Tag).where(Tag.normalized_name == normalized)
-                ).scalars().first()
-                if tag is None:
-                    tag = Tag(name=display, normalized_name=normalized)
-                    session.add(tag)
-                    session.flush()
-                row = attached.get(tag.id)
-                if row is None:
-                    session.add(ItemTag(item_id=item_id, tag_id=tag.id, source="user"))
-                else:
-                    row.source = "user"
-                keep.add(tag.id)
-            for tag_id, row in attached.items():
-                if tag_id not in keep:
-                    session.delete(row)
-            item.updated_at = utc_ms()
-            session.commit()
-            bundle = item_bundle(session, item)
-        self.search_index.index_item(item_id)
-        return bundle
-
-    def remove_tag(self, item_id: str, raw: str) -> ItemBundle:
-        _, normalized = normalize_tag(raw)
-        with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
+        attached = {
+            row.tag_id: row
+            for row in session.execute(
+                select(ItemTag).where(ItemTag.item_id == item.id)
+            ).scalars()
+        }
+        keep: set[int] = set()
+        for display, normalized in normalized_tags:
             tag = session.execute(
                 select(Tag).where(Tag.normalized_name == normalized)
             ).scalars().first()
-            row = (
-                session.get(ItemTag, (item_id, tag.id)) if tag is not None else None
-            )
+            if tag is None:
+                tag = Tag(name=display, normalized_name=normalized)
+                session.add(tag)
+                session.flush()
+            row = attached.get(tag.id)
             if row is None:
-                raise NotFoundError("Tag not found", details={"code": "tag.not_found"})
-            session.delete(row)
-            item.updated_at = utc_ms()
-            session.commit()
-            bundle = item_bundle(session, item)
-        self.search_index.index_item(item_id)
-        return bundle
+                session.add(ItemTag(item_id=item.id, tag_id=tag.id, source="user"))
+            elif mark_all_user:
+                row.source = "user"
+            keep.add(tag.id)
+        for tag_id, row in attached.items():
+            if tag_id not in keep:
+                session.delete(row)
 
     def update_metadata(
         self, item_id: str, *, title: str | None, author: str | None
     ) -> ItemBundle:
         with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
+            item = _require_visible(session, item_id)
             if title is not None:
                 title = title.strip()
                 if not title:
@@ -493,11 +459,15 @@ class LibraryService:
 
     def delete(self, item_id: str) -> None:
         with self.sessions() as session:
-            item = session.get(Item, item_id)
-            if item is None:
-                raise NotFoundError("Content not found")
+            item = _require_visible(session, item_id)
             source_path = Path(item.source_path) if item.source_path else None
-            session.delete(item)
+            now = utc_ms()
+            item.deleted_at = now
+            item.updated_at = now
+            session.execute(delete(Artifact).where(Artifact.item_id == item_id))
+            session.execute(delete(ItemTag).where(ItemTag.item_id == item_id))
+            session.execute(delete(AiResult).where(AiResult.item_id == item_id))
+            session.execute(delete(Run).where(Run.item_id == item_id))
             session.commit()
         self.search_index.delete_item(item_id)
         self.package.remove(item_id)
@@ -513,6 +483,7 @@ class LibraryService:
         tags = [tag.name for tag in bundle.tags]
         payload: dict[str, Any] = {
             "id": item.id,
+            "version": item.version,
             "source_key": item.source_key,
             "source_type": item.source_type,
             "source_type_label": SOURCE_TYPE_LABELS.get(item.source_type, item.source_type),
@@ -589,7 +560,7 @@ class LibraryService:
             "label": STAGE_LABELS.get(run.state, run.state),
             "current_stage": run.current_stage,
             "error_code": run.error_code,
-            "error_message": self._public_text(
+            "error_message": self.public_text(
                 run.error_message, source_path=bundle.item.source_path
             ),
             "cancel_requested": run.cancel_requested_at is not None,
@@ -603,7 +574,7 @@ class LibraryService:
                     "state": step.state,
                     "attempt": step.attempt,
                     "error_code": step.error_code,
-                    "error_message": self._public_text(
+                    "error_message": self.public_text(
                         step.error_message, source_path=bundle.item.source_path
                     ),
                     "started_at": step.started_at,
@@ -612,12 +583,12 @@ class LibraryService:
                 for step in bundle.steps
             ],
             "log_tail": [
-                self._public_text(line, source_path=bundle.item.source_path)
+                self.public_text(line, source_path=bundle.item.source_path)
                 for line in tail_run_log(self.config, run.id)
             ],
         }
 
-    def _public_text(
+    def public_text(
         self, value: str | None, *, source_path: str | None = None
     ) -> str | None:
         if value is None:
@@ -625,6 +596,13 @@ class LibraryService:
         if source_path:
             value = value.replace(source_path, LOCAL_SOURCE_PLACEHOLDER)
         return value.replace(str(self.config.home), HOME_PLACEHOLDER)
+
+
+def _require_visible(session: Session, item_id: str) -> Item:
+    item = session.get(Item, item_id)
+    if item is None or item.deleted_at is not None:
+        raise NotFoundError("Content not found")
+    return item
 
 
 def _matches_states(bundle: ItemBundle, states: set[str]) -> bool:
