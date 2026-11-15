@@ -141,6 +141,9 @@ class SessionController(
         }
     }
 
+    fun currentClient(): TroveClient? =
+        (_state.value as? SessionState.SignedIn)?.let(::authenticatedClient)
+
     override fun onUnauthorized(code: String) {
         scope.launch {
             val current = _state.value

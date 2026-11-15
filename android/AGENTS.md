@@ -6,7 +6,8 @@
 2. [产品 spec](../.scratch/trove-v1/spec.md)
 3. [技术选型](../.scratch/trove-v1/tech-selection.md)
 4. [ADR-0009](../docs/adr/0009-native-android-client-app-managed-sync.md)
-5. 本文件
+5. [手机壳原型](../.scratch/trove-mvp/prototype/mobile-shell.html) — 已选 UI 方向：**C 队列列表 + B Now Playing**
+6. 本文件
 
 如果本文件与 spec/tech selection 冲突，以 spec/tech selection 为准，并先修正文档再改代码。
 
@@ -22,6 +23,7 @@
 - 禁止动态版本（`+`、`latest.release`、range）；升级版本前先做 toolchain smoke，并更新技术选型/ADR。
 - 当前基线：Kotlin 2.4.21、AGP 9.5.1、Gradle 9.7.0、JDK 21、compileSdk/targetSdk 37、minSdk 26。
 - 不要为了“更新”而单独升级 Gradle/Kotlin/Compose/Readium；它们是兼容链，必须整体验证。
+- 本机 Android SDK：`$HOME/Library/Android/sdk`；`adb` 不在默认 PATH，使用 `scripts/android/adb.sh` 或 `$HOME/Library/Android/sdk/platform-tools/adb`。
 
 ## 3. Module 与依赖方向
 
@@ -43,24 +45,34 @@
 
 ## 5. Material 3 与交互
 
+### 5.1 原型驱动（硬性）
+
+涉及 App 页面展示或交互时，先读 [手机壳原型](../.scratch/trove-mvp/prototype/mobile-shell.html)，以已选方向 **C（队列列表）+ B（Now Playing）** 为基线：
+
+- 页面结构、信息层级、可点击区域、内联播放/抽屉/transcript 展开方式以原型为准；Material 3 是组件与无障碍基线，不是替代原型的默认视觉语言。
+- 新页面或原型未覆盖的重大交互，**先向用户确认选型/范围，再写代码**；不要默默选一种布局实现后再让用户验收。
+- 视觉 token 复用 `ui/theme/Theme.kt` 与 `ui/components/`（paper/ink/accent、宋体标题、封面占位、圆角、底栏），不要在页面里散落新色值。
+- UI 完成标准包含真机截图对比：受影响页面至少截 Library、Now Playing、抽屉/transcript；原型差异要么修正，要么在交付说明中明确列出。
+
 - **遵循 Google Material Design 3（Material 3）**：使用 Material 3 的 color roles、typography、shape、elevation、motion。
 - 优先使用 Material 3 组件：`Scaffold`、`TopAppBar`、`NavigationBar`、`Card`、`ListItem`、`BottomSheet`、`Dialog`、`Snackbar` 等。
 - 自定义组件必须复用主题 token（颜色/字号/间距/圆角），不要散落硬编码颜色和魔法值。
-- 支持浅色/深色主题；不引入 iOS/Cupertino 风格或与 Material 3 冲突的第三方设计系统。
+- 颜色/主题以原型选型为准；原型只定义一种视觉语言时，不要自行扩展成系统深色版本，先向用户确认。不引入 iOS/Cupertino 风格或与 Material 3 冲突的第三方设计系统。
 - 无障碍：主要触控目标 ≥48dp、contentDescription、对比度、字体缩放、TalkBack 可读。
 - 手机优先布局；不做平板/折叠屏专门布局，不引入多套设计语言。
 
 ## 6. 构建与测试命令
 
-在 `android/` 下：
+在 `android/` 下（与 CI 一致，覆盖全部 module）：
 
 ```bash
-./gradlew :app:assembleDebug
-./gradlew :app:testDebugUnitTest
-./gradlew :app:lintDebug
-./gradlew :app:connectedDebugAndroidTest   # 需要模拟器/真机
-./gradlew :app:assembleRelease             # R8/release smoke
+./gradlew assembleDebug testDebugUnitTest lintDebug
+./gradlew :core:connectedDebugAndroidTest   # 生产 bundled SQLite 事务冒烟；需要真机/模拟器
+./gradlew :app:assembleRelease               # R8/release smoke
 ```
+
+`scripts/android/device-check.sh` 会安装 debug APK 并跑 `:core:connectedDebugAndroidTest`。
+`scripts/android/ui-dump.py` 一次输出当前页面的 text/content-desc/bounds，并可同时截图。
 
 在仓库根目录：
 
@@ -69,7 +81,7 @@ python3 scripts/check-docs.py
 ./scripts/check.sh --fast                  # Host 侧回归
 ```
 
-提交前至少：Android unit test/lint 绿；涉及 Host 改动时 Host 测试绿；文档检查绿。pre-push 只跑与改动路径相关的检查；`./scripts/check.sh --full` 留给 release/验收，不要求每次 push。
+提交前至少：根 Gradle 命令 `assembleDebug testDebugUnitTest lintDebug` 绿；涉及 Host 改动时 Host 测试绿；文档检查绿。pre-push 对 `android/**` 改动运行同一组 Gradle 任务；`./scripts/check.sh --full` 留给 release/验收，不要求每次 push。
 
 ## 7. 测试缝
 

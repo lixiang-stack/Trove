@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -38,6 +39,8 @@ android {
         isCoreLibraryDesugaringEnabled = true
     }
 
+    sourceSets.getByName("test").resources.srcDir(rootProject.file("../tests/fixtures"))
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
         unitTests.all {
@@ -64,6 +67,7 @@ dependencies {
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     coreLibraryDesugaring(libs.desugar.jdk.libs)

@@ -1,6 +1,6 @@
 # 11 — Android Media3 播放与后台服务
 
-Status: ready-for-agent
+Status: implemented
 Type: task
 Milestone: M1
 Blocked by: 05, 10
@@ -27,11 +27,11 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 ## Acceptance Criteria
 
 - [ ] 后台/锁屏连续播放 ≥60 分钟；媒体通知/锁屏控制可用。
-- [ ] 播放/暂停/seek/倍速/恢复位置正确；切换页面不中断。
+- [x] 播放/暂停/seek/倍速/恢复位置正确；切换页面不中断。
 - [ ] 音频焦点/耳机拔出/来电行为合理；不会两个声音同时播放。
-- [ ] 本地/流式播放都能工作；Bearer 流式请求不带 token 到 URL。
-- [ ] 播放结束自动标记完成；手动状态由 16 接入。
-- [ ] 无队列/睡眠定时；不实现 transcript 跳转。
+- [x] 本地/流式播放都能工作；Bearer 流式请求不带 token 到 URL。
+- [x] 播放结束自动标记完成；手动状态由 16 接入。
+- [x] 无队列/睡眠定时；不实现 transcript 跳转。
 
 ## Testing
 
@@ -44,3 +44,19 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 - 下载/离线存储；由 12 实现。
 - transcript 阅读/搜索；由 13 实现。
 - Up Next、睡眠定时、视频播放。
+
+## Implementation
+
+- `:playback` now has `TrovePlaybackService` (Media3 `MediaSessionService` + ExoPlayer, mediaPlayback foreground type) and `MediaSessionPlayer` (`MediaController` wrapper + `PlayerGateway`).
+- Audio attributes request audio focus; noisy/headphone removal is handled by ExoPlayer. Streaming uses `ResolvingDataSource` to add `Authorization: Bearer` per HTTP request, so the token never enters the URL. Downloaded audio is played from the local file.
+- Position is saved every 5 seconds and on pause/end/seek/item switch through `PlaybackProgressSink`; `PlaybackProgressRecorder` writes Room first and coalesces a `PendingMutation` for the next sync. End-of-playback marks the item finished.
+- Playback state/error is exposed to the Compose player; speed choices are 1×/1.25×/1.5×/2×. Tests: `PlayerViewModelTest`, `PlaybackProgressRecorderTest`, `LibraryFlowTest` (playback error message).
+- **Device acceptance pending**: no Android device is attached in this environment, so the 60-minute background/lockscreen, Bluetooth, and media-notification checks still need a Android run.
+
+### Android real-device acceptance (2026-11-15 / Android 16, API 36)
+
+- Verified play/pause, seek (slider to 0), 1x/2x speed, and navigation from Player to Library/Transcript without stopping the Media3 session. Returning from transcript while paused did not restart playback.
+- Verified `TrovePlaybackService` is a media-playback foreground service (`types=0x2`), media notification exists with transport actions, and `MediaMetadata` carries the real title/author; session state was PLAYING with the queued Item as the only media item.
+- Verified local-file playback with Host and Wi-Fi/data unavailable; position advanced and was persisted to Room.
+- Streaming playback against the Host worked before download; `Authorization` is applied by the data source, not the URL.
+- **Not completed:** the 60-minute continuous background run was interrupted after ~3 minutes by a physical device interaction that switched to another Item; it needs a clean rerun. Bluetooth output, headphone unplug, and incoming-call/audio-focus behavior were not testable without external hardware/calls. End-of-file completion was covered by unit tests but not waited out on device.

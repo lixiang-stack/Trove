@@ -111,3 +111,27 @@ data class SyncStateDto(
     @SerialName("has_more") val hasMore: Boolean,
     val epoch: String,
 )
+
+@Serializable
+data class ProgressRequestDto(
+    @SerialName("position_sec") val positionSec: Double? = null,
+    @SerialName("consumption_state") val consumptionState: String? = null,
+    @SerialName("client_updated_at") val clientUpdatedAt: Long? = null,
+)
+
+@Serializable
+data class MutationItemDto(
+    val id: String,
+    val version: Int = 0,
+    @SerialName("audio_position_sec") val audioPositionSec: Double = 0.0,
+    @SerialName("book_locator") val bookLocator: String? = null,
+    @SerialName("consumption_state") val consumptionState: String = "unstarted",
+)
+
+@Serializable
+data class MutationResponseDto(
+    val ok: Boolean = true,
+    val applied: Boolean = true,
+    val item: MutationItemDto,
+    val warnings: List<String> = emptyList(),
+)
