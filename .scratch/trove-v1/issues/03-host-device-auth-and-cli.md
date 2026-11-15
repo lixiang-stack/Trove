@@ -1,6 +1,6 @@
 # 03 — Host 设备认证、撤销与 CLI
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 02
@@ -40,3 +40,8 @@ Android 需要长期设备 token，而不是每次输入密码或复用浏览器
 
 - Android 客户端登录/存储；由 09 实现。
 - LAN flavor/明文 HTTP；由 20 处理。
+
+## Implementation
+
+- `POST /api/auth/device-token`, device listing/revocation, Bearer+Cookie middleware, CSRF split, session-epoch invalidation, throttled `last_used_at`.
+- `trove device list/revoke`; OpenAPI advertises `bearerAuth`; tokens are stored only as SHA-256 hashes.

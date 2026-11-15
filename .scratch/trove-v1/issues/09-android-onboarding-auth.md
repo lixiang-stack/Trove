@@ -1,6 +1,6 @@
 # 09 — Android 连接、登录与设备 token
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 03, 08
@@ -43,3 +43,10 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - Library/同步/播放/下载；由 10–13 实现。
 - LAN flavor/证书安装引导；由 20 实现。
+
+## Implementation
+
+- Host URL validation (release HTTPS-only), login screen, device token exchange, Keystore AES-GCM + DataStore token storage, Bearer interceptor, 401 sign-out, device listing/revocation, and readable errors.
+- Token/host survive restart; logout revokes the current device but keeps local data. Robolectric tests exercise the real `KeystoreCredentialCipher` through a test-scoped AndroidKeyStore JCA provider and verify encrypted DataStore storage.
+- Xiaomi 13 real-device acceptance: login succeeded against a temporary Host over `adb reverse` + debug localhost cleartext; token survived a cold restart; Host-side revocation produced 401 → login with `登录已失效，请重新登录`; device dialog listed the device; logout revoked the token on the Host.
+- Added `src/debug/res/xml/network_security_config.xml` so debug localhost works while release keeps `usesCleartextTraffic=false`.

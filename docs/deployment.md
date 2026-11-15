@@ -140,6 +140,26 @@ index. The content package under `~/Trove/library/<item-id>/` is the portable fa
 source; `uv run trove index rebuild` rebuilds search from it. Original local files
 are never moved or deleted by Trove.
 
+## Android devices and resync
+
+Android uses revocable device tokens instead of the browser session:
+
+```bash
+uv run trove device list
+uv run trove device revoke <device-id>
+```
+
+Revoking a token takes effect on the next request; changing the Host password
+invalidates every device token. After restoring an older database backup, rotate
+the sync epoch so phones discard their cursors and perform a full resync:
+
+```bash
+uv run trove sync reset-epoch
+```
+
+The Host backfills `version`, `content_seq`, and `state_seq` for existing Items
+during `trove db upgrade`, so back up the database before upgrading.
+
 ## Logs and sleep
 
 The application log rotates at 10 MB with five backups:

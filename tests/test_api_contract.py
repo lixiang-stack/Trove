@@ -27,6 +27,13 @@ SPEC_PATHS = {
     "/api/feeds/preview",
     "/api/auth/login",
     "/api/auth/logout",
+    "/api/auth/device-token",
+    "/api/devices",
+    "/api/devices/{device_id}",
+    "/api/sync/manifest",
+    "/api/sync/state",
+    "/api/items/{item_id}/files/{kind}",
+    "/api/items/{item_id}/tags",
     "/api/health",
 }
 
@@ -43,8 +50,16 @@ def test_openapi_covers_mvp_endpoints_and_security(api_host):
         "in": "cookie",
         "name": "trove_session",
     }
-    assert schema["paths"]["/api/items"]["get"]["security"] == [{"cookieAuth": []}]
+    assert schema["components"]["securitySchemes"]["bearerAuth"] == {
+        "type": "http",
+        "scheme": "bearer",
+    }
+    assert schema["paths"]["/api/items"]["get"]["security"] == [
+        {"cookieAuth": []},
+        {"bearerAuth": []},
+    ]
     assert "security" not in schema["paths"]["/api/auth/login"]["post"]
+    assert "security" not in schema["paths"]["/api/auth/device-token"]["post"]
     assert "security" not in schema["paths"]["/api/health"]["get"]
 
     item_schema = schema["components"]["schemas"]["ItemSchema"]["properties"]

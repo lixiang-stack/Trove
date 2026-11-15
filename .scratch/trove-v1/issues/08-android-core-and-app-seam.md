@@ -1,6 +1,6 @@
 # 08 — Android Core 骨架与 App seam 测试
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: 01
@@ -42,3 +42,8 @@ Android 功能需要统一的网络、数据库、DI 和测试替身。这个 is
 
 - 真实认证、Library、播放、下载、阅读、搜索；由 09–18 实现。
 - instrumented 平台测试；由 11/14/20 补充。
+
+## Implementation
+
+- `:core` model/network/db/auth/settings scaffolds, Retrofit bearer client, Room schema export, shared `contract/` fixtures, and app test fakes/`TestAppContainer`.
+- App seam tests drive Compose through the fake API with a real in-memory Room DB; contract fixtures are validated by both Host and Android tests.

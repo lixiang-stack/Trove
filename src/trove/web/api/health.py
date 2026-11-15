@@ -19,6 +19,12 @@ router = APIRouter()
 def health(request: Request):
     app_runtime = runtime(request)
     status: dict[str, Any] = {
+        "api_version": __version__,
+        "capabilities": {
+            "sync": True,
+            "device_tokens": True,
+            "file_download": True,
+        },
         "host": {"status": "ok", "version": __version__, "pid": os.getpid()},
         "database": {"status": "ok"},
         "worker": {"status": "unknown"},

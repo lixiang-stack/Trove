@@ -1,6 +1,6 @@
 # 01 — Android toolchain smoke 与工程骨架
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: none
@@ -43,3 +43,9 @@ Readium 3.4.0 把 V1 的构建基线推到 compileSdk 37 / Gradle 9.7 / Kotlin 2
 
 - 登录、Library、播放、下载、阅读、搜索；由后续 issue 实现。
 - release APK/签名/Play Store；由 20 处理。
+
+## Implementation
+
+- Android Gradle project in `android/` with `:app`, `:core`, `:playback`, `:reader`; pinned versions in `gradle/libs.versions.toml`; Compose/Material 3 shell; `:app` lint/test; `.github/workflows/android.yml`.
+- Verified `assembleDebug`, Robolectric/Compose tests, lint, and launch on the API 37 emulator, then installed and cold-started on a Xiaomi 13 (Android 16 / API 36) without crashes.
+- Opt-out recorded in `tech-selection.md` / `android/AGENTS.md`: Robolectric tests run at SDK 36 because API 37 removed the Espresso `InputManager` path; compile/target stay 37.

@@ -70,7 +70,7 @@ class SearchService:
                 if allowed_ids is not None and result.item_id not in allowed_ids:
                     continue
                 item = session.get(Item, result.item_id)
-                if item is None:
+                if item is None or item.deleted_at is not None:
                     continue
                 evidence = [
                     SearchEvidenceView(

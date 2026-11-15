@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse, Response
@@ -15,12 +15,13 @@ from trove.web.schemas import (
     ItemListResponse,
     ItemPatchRequest,
     ItemSchema,
+    MutationResponse,
     ProgressRequest,
-    ProgressResponse,
     ReprocessRequest,
     ReprocessResponse,
     TagListResponse,
     TagRequest,
+    TagsRequest,
     TranscriptResponse,
 )
 
@@ -110,7 +111,12 @@ def api_patch_item(request: Request, item_id: str, payload: ItemPatchRequest):
             author=payload.author if "author" in fields else None,
         )
     if "tags" in fields:
-        bundle = app_runtime.library.replace_tags(item_id, payload.tags or [])
+        app_runtime.sync.replace_tags(
+            item_id,
+            tags=payload.tags or [],
+            device_id=request.state.device_id,
+        )
+        bundle = app_runtime.library.get(item_id)
     return app_runtime.library.payload(bundle)
 
 
@@ -122,16 +128,35 @@ def api_delete_item(request: Request, item_id: str):
 
 @router.post("/items/{item_id}/tags", response_model=ItemSchema)
 def api_add_tag(request: Request, item_id: str, payload: TagRequest):
-    app_runtime = runtime(request)
-    bundle = app_runtime.library.add_tag(item_id, payload.tag)
-    return app_runtime.library.payload(bundle)
+    result = runtime(request).sync.add_tag(
+        item_id,
+        payload.tag,
+        device_id=request.state.device_id,
+    )
+    return result["item"]
+
+
+@router.put("/items/{item_id}/tags", response_model=MutationResponse)
+def api_replace_tags(
+    request: Request, item_id: str, payload: TagsRequest
+):
+    return runtime(request).sync.replace_tags(
+        item_id,
+        tags=payload.tags,
+        client_updated_at=payload.client_updated_at,
+        device_id=request.state.device_id,
+        idempotency_key=request.headers.get("idempotency-key"),
+    )
 
 
 @router.delete("/items/{item_id}/tags/{tag:path}", response_model=ItemSchema)
 def api_delete_tag(request: Request, item_id: str, tag: str):
-    app_runtime = runtime(request)
-    bundle = app_runtime.library.remove_tag(item_id, tag)
-    return app_runtime.library.payload(bundle)
+    result = runtime(request).sync.remove_tag(
+        item_id,
+        tag,
+        device_id=request.state.device_id,
+    )
+    return result["item"]
 
 
 @router.get("/tags", response_model=TagListResponse)
@@ -170,32 +195,27 @@ def api_book_chapter(request: Request, item_id: str, chapter_index: int):
     }
 
 
-@router.put("/items/{item_id}/progress", response_model=ProgressResponse)
+@router.put("/items/{item_id}/progress", response_model=MutationResponse)
 def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     app_runtime = runtime(request)
-    bundle: Any = None
-    if payload.book_locator is not None:
-        app_runtime.reading.save_progress(
-            item_id,
-            BookLocator(
-                chapter_index=payload.book_locator.chapter_index,
-                paragraph_index=payload.book_locator.paragraph_index,
-                scroll_ratio=payload.book_locator.scroll_ratio,
-            ),
-            consumption_state=payload.consumption_state,
+    locator = (
+        BookLocator(
+            chapter_index=payload.book_locator.chapter_index,
+            paragraph_index=payload.book_locator.paragraph_index,
+            scroll_ratio=payload.book_locator.scroll_ratio,
         )
-        bundle = app_runtime.library.get(item_id)
-    if payload.position_sec is not None:
-        bundle = app_runtime.playback.update_progress(
-            item_id,
-            position_sec=payload.position_sec,
-            consumption_state=payload.consumption_state,
-        )
-    if bundle is None:
-        raise ValidationError(
-            "Missing progress position", details={"code": "progress.missing"}
-        )
-    return {"ok": True, "item": app_runtime.library.payload(bundle)}
+        if payload.book_locator is not None
+        else None
+    )
+    return app_runtime.sync.apply_progress(
+        item_id,
+        position_sec=payload.position_sec,
+        book_locator=locator,
+        consumption_state=payload.consumption_state,
+        client_updated_at=payload.client_updated_at,
+        device_id=request.state.device_id,
+        idempotency_key=request.headers.get("idempotency-key"),
+    )
 
 
 @router.post("/items/{item_id}/retry", response_model=ItemSchema)

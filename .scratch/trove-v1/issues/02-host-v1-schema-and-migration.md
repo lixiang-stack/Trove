@@ -1,6 +1,6 @@
 # 02 — Host V1 Schema 与迁移
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M0
 Blocked by: none
@@ -41,3 +41,9 @@ V1 同步需要 Item 级版本/墓碑、全局同步序号、字段时钟和幂�
 
 - 设备 token API、manifest/state API、soft delete、LWW 写接口；由 03–07 实现。
 - 修改 Content Package 的 `source.json` 或文件布局。
+
+## Implementation
+
+- Alembic `0004_v1_sync_schema` adds Item versions/cursors/tombstone, device tokens, sequence/epoch, field clocks, and mutations with stable backfill.
+- `db/sequences.py` assigns sequences through SQLAlchemy flush tracking so future write paths cannot forget content/state cursors.
+- Tests cover empty/MVP databases, repeat upgrade, backfill order, and unique constraints.
