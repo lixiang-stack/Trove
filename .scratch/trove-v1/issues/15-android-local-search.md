@@ -42,3 +42,11 @@ ADRs: [0003](../../../docs/adr/0003-sqlite-fts5-cjk-search.md), [0009](../../../
 
 - 语义检索、推荐、Topic/实体。
 - Host 搜索实现；由 MVP 已有功能覆盖。
+
+## Implementation
+
+- Added `SearchQuery` (Host-identical NFKC/CJK-bigram/porter query construction), `SearchIndex` over bundled SQLite FTS5, and `LocalSearchRepository` indexing downloaded item metadata plus parsed transcript/book text.
+- Search UI calls Host `/api/search` when online and falls back to the local index when offline or the network fails; results are grouped by Item with up to 3 evidence snippets. Transcript results open the matching transcript segment; book results open the Reader at the matching chapter/paragraph. Filters cover type, consumption, Tag and Source.
+- Index is rebuilt on first launch when empty and can be manually rebuilt from Settings; FTS5 absence degrades to online-only search without blocking playback/reading.
+- Automated coverage: `SearchQueryTest`, `SearchIndexTest` (JVM skips framework SQLite without FTS5), `SearchIndexDeviceTest` (instrumented bundled SQLite), `SearchFlowTest`, `LocalSearchRepository.kt`/Host contract fixtures `contract/search.json` and `contract/search-query.json`.
+- Pending: 1,000-item p95 benchmark on a real device.

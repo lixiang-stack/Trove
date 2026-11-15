@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from trove.web.schemas import ErrorResponse, ManifestResponse, SyncFileSchema, SyncStateResponse
+from trove.domain.search import document_tokens
+from trove.web.schemas import (
+    ErrorResponse,
+    ManifestResponse,
+    SearchResponse,
+    SyncFileSchema,
+    SyncStateResponse,
+)
 
 CONTRACT = Path(__file__).resolve().parent.parent / "contract"
 
@@ -34,6 +41,22 @@ def test_state_contract_fixture_matches_host_schema():
     assert state.items[0].consumption_state == "in_progress"
     assert state.items[1].book_locator is not None
     assert state.has_more is True
+
+
+def test_search_contract_fixture_matches_host_schema():
+    search = SearchResponse.model_validate(_load("search.json"))
+    assert search.query
+    assert search.count == 1
+    evidence = search.results[0].evidence[0]
+    assert evidence.doc_kind == "transcript"
+    assert evidence.ref == "3:65000"
+    assert evidence.snippet
+    assert search.results[0].item.tags == ["AI", "记忆"]
+
+
+def test_search_query_contract_fixture_matches_host_tokenizer():
+    fixture = _load("search-query.json")
+    assert document_tokens(fixture["query"]) == fixture["tokens"]
 
 
 def test_error_contract_fixture_matches_host_schema():

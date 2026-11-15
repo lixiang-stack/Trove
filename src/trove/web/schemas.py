@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
@@ -50,9 +50,15 @@ class ItemPatchRequest(BaseModel):
 
 
 class BookLocatorRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    schema_version: int = Field(default=2, alias="schema")
     chapter_index: int = Field(ge=0)
     paragraph_index: int | None = Field(default=None, ge=0)
     scroll_ratio: float = Field(default=0.0, ge=0, le=1)
+    epub_href: str | None = None
+    epub_progression: float | None = Field(default=None, ge=0, le=1)
+    epub_total_progression: float | None = Field(default=None, ge=0, le=1)
 
 
 class ProgressRequest(BaseModel):

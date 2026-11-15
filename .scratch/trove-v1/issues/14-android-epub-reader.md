@@ -42,3 +42,11 @@ V1 阅读要覆盖完整可重排 EPUB（图片、脚注/内部链接、书内�
 
 - 标注/笔记、PDF、TTS、书内购买/DRM。
 - 完整 EPUB 渲染的 Web 版本；Web 仍用薄阅读器。
+
+## Implementation
+
+- `:reader` now hosts `ReaderActivity` around Readium 3.4 classic `EpubNavigatorFragment`; Library/Player/Search open downloaded `book.epub` files, with chapter TOC, in-book search + highlight, font/line-height/light-sepia-dark settings, and a finished toggle.
+- `BookRepository` parses `book.json` into Room chapter/paragraph tables; `BookLocator` schema 2 keeps legacy chapter/paragraph/scroll plus `epub_href`/`epub_progression`/`epub_total_progression`. Host accepts/validates schema 2 and still serializes legacy-only writes for the Web Shell.
+- Reader progress is saved locally and queued as a `book_progress` mutation; offline reads and restores from the last EPUB locator.
+- Security: external navigation is disabled, WebViews get `blockNetworkLoads`, mixed-content/window/popup settings are locked down. Automated coverage: `ReaderLocatorMappingTest`, `BookLocatorTest`, Host `test_reading` schema-2 test.
+- Pending device acceptance: Readium golden EPUB flip/search with images/footnotes, malicious EPUB smoke, Android offline reader/locator restore. No instrumented reader test was added in this pass.

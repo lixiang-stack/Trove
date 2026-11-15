@@ -41,3 +41,11 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - Play Store 设置/账号体系。
 - 多 Host/多用户。
+
+## Implementation
+
+- Added Settings with Host/device/API info, sync status + last success, periodic sync toggle/interval, manual refresh, download Wi-Fi/charging/quota controls, storage usage/queue, notification and battery-optimization entries, sanitized diagnostics, local-data clear confirmation, and logout that keeps downloads.
+- Added WorkManager `SyncWorker` + `PeriodicSyncScheduler`; periodic sync is scheduled only while signed in and is controlled by persisted settings. Search index rebuild is available from diagnostics.
+- Diagnostics show masked Host, capability list, cursor prefixes, epoch prefix, download queue/bytes and error code; no token/password/Cookie/full paths.
+- Automated coverage: `SettingsViewModelTest`, `SettingsFlowTest`; `./gradlew assembleDebug testDebugUnitTest lintDebug` and Host `./scripts/check.sh --fast`/docs are green.
+- Pending Android acceptance: notification permission, battery-optimization page, storage usage/clear, and periodic-sync behavior under OEM background limits.

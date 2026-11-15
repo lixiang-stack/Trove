@@ -80,6 +80,54 @@ class LibraryFlowTest {
 
 
     @Test
+    fun continueStripResumesInProgressItem() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = signedInHarness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("item-1", "进行中的内容", "completed"),
+                syncItem("item-2", "已完成的内容", "completed"),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        harness.api.stateResponse = dev.trove.core.network.SyncStateDto(
+            items = listOf(
+                dev.trove.core.network.SyncStateItemDto(
+                    id = "item-1",
+                    stateSeq = 2,
+                    audioPositionSec = 20.0,
+                    consumptionState = "in_progress",
+                    lastConsumedAt = 2,
+                ),
+                dev.trove.core.network.SyncStateItemDto(
+                    id = "item-2",
+                    stateSeq = 3,
+                    audioPositionSec = 100.0,
+                    consumptionState = "finished",
+                    lastConsumedAt = 1,
+                ),
+            ),
+            nextCursor = "3",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag("continue-item-1")
+        compose.onNodeWithTag("continue-item-1").performClick()
+        compose.waitForIdle()
+        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
+        assertEquals(
+            "https://host.example/api/items/item-1/files/audio",
+            harness.player.requests.single().url,
+        )
+    }
+
+    @Test
     fun playbackErrorShowsReadableMessage() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = signedInHarness(context)

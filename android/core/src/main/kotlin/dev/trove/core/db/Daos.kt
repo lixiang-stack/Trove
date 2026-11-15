@@ -92,6 +92,36 @@ interface ItemDao {
     @Query(
         """
         UPDATE items SET
+            book_locator = :bookLocator,
+            consumption_state = :consumptionState,
+            last_consumed_at = :lastConsumedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun applyLocalBookProgress(
+        id: String,
+        bookLocator: String,
+        consumptionState: String,
+        lastConsumedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE items SET
+            consumption_state = :consumptionState,
+            last_consumed_at = :lastConsumedAt
+        WHERE id = :id
+        """
+    )
+    suspend fun applyLocalConsumption(
+        id: String,
+        consumptionState: String,
+        lastConsumedAt: Long,
+    )
+
+    @Query(
+        """
+        UPDATE items SET
             version = :version,
             audio_position_sec = :positionSec,
             book_locator = :bookLocator,
@@ -192,6 +222,9 @@ interface TranscriptSegmentDao {
     @Query("SELECT * FROM transcript_segments WHERE item_id = :itemId ORDER BY seq")
     fun observeForItem(itemId: String): Flow<List<TranscriptSegmentEntity>>
 
+    @Query("SELECT * FROM transcript_segments WHERE item_id = :itemId ORDER BY seq")
+    suspend fun forItem(itemId: String): List<TranscriptSegmentEntity>
+
     @Query("SELECT COUNT(*) FROM transcript_segments WHERE item_id = :itemId")
     suspend fun countForItem(itemId: String): Int
 
@@ -200,6 +233,40 @@ interface TranscriptSegmentDao {
 
     @Query("DELETE FROM transcript_segments WHERE item_id = :itemId")
     suspend fun deleteForItem(itemId: String)
+}
+
+@Dao
+interface BookDao {
+    @Query("SELECT * FROM book_chapters WHERE item_id = :itemId ORDER BY chapter_index")
+    fun observeChapters(itemId: String): Flow<List<BookChapterEntity>>
+
+    @Query("SELECT * FROM book_chapters WHERE item_id = :itemId ORDER BY chapter_index")
+    suspend fun chapters(itemId: String): List<BookChapterEntity>
+
+    @Query(
+        "SELECT * FROM book_chapters WHERE item_id = :itemId AND chapter_index = :chapterIndex"
+    )
+    suspend fun chapter(itemId: String, chapterIndex: Int): BookChapterEntity?
+
+    @Query("SELECT COUNT(*) FROM book_chapters WHERE item_id = :itemId")
+    suspend fun chapterCount(itemId: String): Int
+
+    @Query(
+        "SELECT * FROM book_paragraphs WHERE item_id = :itemId ORDER BY chapter_index, paragraph_index"
+    )
+    suspend fun paragraphs(itemId: String): List<BookParagraphEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertChapters(chapters: List<BookChapterEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertParagraphs(paragraphs: List<BookParagraphEntity>)
+
+    @Query("DELETE FROM book_chapters WHERE item_id = :itemId")
+    suspend fun deleteForItem(itemId: String)
+
+    @Query("DELETE FROM book_paragraphs WHERE item_id = :itemId")
+    suspend fun deleteParagraphsForItem(itemId: String)
 }
 
 @Dao

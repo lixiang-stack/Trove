@@ -33,6 +33,7 @@ class DownloadEnvironment(
     val clientFactory: (String?) -> OkHttpClient = { TroveHttpClients.create(it, 60) },
     val onUnauthorized: (String) -> Unit = {},
     val nowPlayingItemId: () -> String? = { null },
+    val onItemFilesChanged: suspend (String) -> Unit = {},
 ) {
     fun downloader(): ArtifactDownloader = ArtifactDownloader(
         database = database,
@@ -43,6 +44,7 @@ class DownloadEnvironment(
         clientFactory = clientFactory,
         onUnauthorized = onUnauthorized,
         nowPlayingItemId = nowPlayingItemId,
+        onItemFilesChanged = onItemFilesChanged,
     )
 }
 

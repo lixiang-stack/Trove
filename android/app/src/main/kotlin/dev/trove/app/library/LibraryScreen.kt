@@ -29,6 +29,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -110,6 +111,8 @@ fun LibraryScreen(
     onConsumption: (String?) -> Unit,
     onTag: (String?) -> Unit,
     onSource: (String?) -> Unit,
+    onSettings: () -> Unit,
+    onDismissConflict: () -> Unit,
 ) {
     LifecycleResumeEffect(Unit) {
         onRefresh()
@@ -190,6 +193,13 @@ fun LibraryScreen(
                             },
                         )
                         DropdownMenuItem(
+                            text = { Text("设置") },
+                            onClick = {
+                                menuOpen = false
+                                onSettings()
+                            },
+                        )
+                        DropdownMenuItem(
                             text = { Text(stringResource(R.string.login_devices)) },
                             onClick = {
                                 menuOpen = false
@@ -207,6 +217,24 @@ fun LibraryScreen(
                 }
             }
             SyncStrip(state = state, onRefresh = onRefresh)
+            if (state.conflictNotice != null) {
+                ConflictStrip(
+                    message = state.conflictNotice,
+                    onDismiss = onDismissConflict,
+                )
+            }
+            if (state.continueItems.isNotEmpty()) {
+                ContinueStrip(
+                    items = state.continueItems,
+                    onContinue = { item ->
+                        if (item.isBookOnly) {
+                            onOpenItem(item.id)
+                        } else {
+                            onQuickPlay(item.id)
+                        }
+                    },
+                )
+            }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -364,12 +392,104 @@ private fun LibraryFilters.quickFilter(): QuickFilter = when {
 }
 
 @Composable
+private fun ConflictStrip(message: String, onDismiss: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 2.dp)
+            .background(TroveColors.AccentSoft.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+            .padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            message,
+            style = MaterialTheme.typography.labelSmall,
+            color = TroveColors.Ink,
+            modifier = Modifier.weight(1f),
+        )
+        Surface(
+            onClick = onDismiss,
+            shape = CircleShape,
+            color = Color.Transparent,
+            contentColor = TroveColors.Muted,
+        ) {
+            Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                androidx.compose.material3.Icon(
+                    Icons.Filled.Close,
+                    contentDescription = "关闭提示",
+                    modifier = Modifier.size(15.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ContinueStrip(items: List<LibraryItem>, onContinue: (LibraryItem) -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(
+            "继续",
+            style = MaterialTheme.typography.labelMedium,
+            color = TroveColors.Muted,
+        )
+        items.forEach { item ->
+            val isBook = item.isBookOnly
+            Surface(
+                onClick = { onContinue(item) },
+                shape = RoundedCornerShape(14.dp),
+                color = TroveColors.Paper2,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("continue-${item.id}"),
+            ) {
+                Row(
+                    modifier = Modifier.padding(9.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    TroveCover(item, size = 40.dp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            item.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = TroveColors.Ink,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "${(progressFraction(item) * 100).roundToInt()}% · " +
+                                if (isBook) "继续读" else "继续听",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TroveColors.Accent,
+                        )
+                    }
+                    androidx.compose.material3.Icon(
+                        if (isBook) Icons.AutoMirrored.Filled.MenuBook else Icons.Filled.PlayArrow,
+                        contentDescription = if (isBook) "继续阅读" else "继续播放",
+                        tint = TroveColors.Ink,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SyncStrip(state: LibraryUiState, onRefresh: () -> Unit) {
-    if (!state.syncing && !state.offline && state.errorCode == null) return
+    if (!state.syncing && !state.offline && state.errorCode == null && state.lastSuccessAt == null) {
+        return
+    }
     val text = when {
         state.syncing -> stringResource(R.string.library_syncing)
         state.offline -> stringResource(R.string.library_offline)
-        else -> stringResource(R.string.library_sync_failed, state.errorCode.orEmpty())
+        state.errorCode != null -> stringResource(R.string.library_sync_failed, state.errorCode)
+        else -> "已同步"
     }
     val color = when {
         state.errorCode != null -> TroveColors.Danger
@@ -415,7 +535,7 @@ private fun QueueRow(
     onOpen: () -> Unit,
     onPlay: () -> Unit,
 ) {
-    val isBook = item.hasBook && !item.hasAudio
+    val isBook = item.isBookOnly
     val ready = item.processingState in setOf("completed", "failed", "cancelled") ||
         item.artifacts.isNotEmpty()
     Row(
@@ -627,10 +747,10 @@ private fun progressLine(item: LibraryItem): String {
     }
     if (item.isInbox) return processingLabel(item.processingState)
     return when (item.consumptionState) {
-        "finished" -> if (item.hasBook && !item.hasAudio) "已读完" else "已听完"
+        "finished" -> if (item.isBookOnly) "已读完" else "已听完"
         "in_progress" -> {
             val pct = (progressFraction(item) * 100).roundToInt()
-            if (item.hasBook && !item.hasAudio) "$pct% 已读" else "$pct% 已听"
+            if (item.isBookOnly) "$pct% 已读" else "$pct% 已听"
         }
 
         else -> "未开始"
@@ -646,11 +766,14 @@ private fun statusColor(item: LibraryItem): Color = when {
 }
 
 private fun progressFraction(item: LibraryItem): Float {
-    if (item.hasBook && !item.hasAudio) {
+    if (item.isBookOnly) {
         val locator = item.bookLocator ?: return 0f
         return runCatching {
-            org.json.JSONObject(locator).optDouble("scroll_ratio", 0.0).toFloat()
-        }.getOrDefault(0f).coerceIn(0f, 1f)
+            val json = org.json.JSONObject(locator)
+            json.optDouble("epub_total_progression", Double.NaN)
+                .takeIf { !it.isNaN() }
+                ?: json.optDouble("scroll_ratio", 0.0)
+        }.getOrDefault(0.0).toFloat().coerceIn(0f, 1f)
     }
     val duration = item.durationSec ?: return 0f
     if (duration <= 0) return 0f
