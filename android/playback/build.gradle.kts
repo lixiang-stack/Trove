@@ -22,6 +22,7 @@ android {
 
 dependencies {
     api(project(":core"))
+    implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.datasource)
