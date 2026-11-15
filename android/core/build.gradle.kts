@@ -10,6 +10,7 @@ android {
 
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     compileOptions {
@@ -55,4 +56,8 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.sqlite.framework)
+
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
