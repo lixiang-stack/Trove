@@ -84,6 +84,10 @@ class SyncEngine(
 
     suspend fun currentCursor() = database.syncCursorDao().current()
 
+    suspend fun pendingMutationCount(): Int = database.pendingMutationDao().count()
+
+    suspend fun lastPendingError(): String? = database.pendingMutationDao().lastError()
+
     suspend fun sync(): SyncResult = mutex.withLock {
         val previous = database.syncCursorDao().current()?.lastSuccessAt
         val client = clientProvider.client()
@@ -113,11 +117,14 @@ class SyncEngine(
         }
 
     private suspend fun syncAttempt(client: TroveClient): SyncResult {
-        pushPending(client)
+        val pushError = pushPending(client)
         syncManifest(client)
         val remaining = database.pendingMutationDao().count()
-        if (remaining == 0) {
+        if (remaining == 0 && pushError == null) {
             syncState(client)
+        }
+        if (pushError != null) {
+            throw pushError
         }
         val successAt = now()
         saveCursor(lastSuccessAt = successAt, errorCode = null)
@@ -125,11 +132,22 @@ class SyncEngine(
         return SyncResult(success = true, pendingMutations = remaining)
     }
 
-    private suspend fun pushPending(client: TroveClient) {
+    /**
+     * Pushes every queued mutation, keeping failures for the next sync instead of
+     * letting one poisoned mutation block content/tombstone pulls.
+     */
+    private suspend fun pushPending(client: TroveClient): TroveApiException? {
+        var firstFailure: TroveApiException? = null
         val mutations = database.pendingMutationDao().pending()
         for (mutation in mutations) {
-            pushMutation(client, mutation)
+            try {
+                pushMutation(client, mutation)
+            } catch (error: TroveApiException) {
+                if (error.statusCode == 401 || error.statusCode == 403) throw error
+                if (firstFailure == null) firstFailure = error
+            }
         }
+        return firstFailure
     }
 
     private suspend fun pushMutation(client: TroveClient, mutation: PendingMutationEntity) {
@@ -169,10 +187,11 @@ class SyncEngine(
         database.writeTransaction {
             val current = database.pendingMutationDao().find(mutation.idempotencyKey)
             if (current != null) {
-                applyCanonical(response.item)
                 database.pendingMutationDao().delete(mutation.idempotencyKey)
+                applyCanonicalProgress(response.item, payload)
             }
         }
+        notifyWarnings(response.warnings)
         if (!response.applied) {
             _conflicts.tryEmit(conflictMessage(title))
         }
@@ -208,11 +227,18 @@ class SyncEngine(
         database.writeTransaction {
             val current = database.pendingMutationDao().find(mutation.idempotencyKey)
             if (current != null) {
-                applyCanonical(response.item)
-                applyCanonicalTags(mutation.itemId, response.item.tags)
                 database.pendingMutationDao().delete(mutation.idempotencyKey)
+                if (response.item.version > 0) {
+                    database.itemDao().applyVersion(mutation.itemId, response.item.version)
+                }
+                if (!database.pendingMutationDao()
+                        .hasPending(mutation.itemId, ItemMutationRepository.TAGS)
+                ) {
+                    applyCanonicalTags(mutation.itemId, response.item.tags)
+                }
             }
         }
+        notifyWarnings(response.warnings)
         if (!response.applied) {
             _conflicts.tryEmit(conflictMessage(title))
         }
@@ -244,14 +270,42 @@ class SyncEngine(
         runCatching { onItemChanged(itemId) }
     }
 
-    private suspend fun applyCanonical(item: MutationItemDto) {
-        database.itemDao().applyCanonical(
-            id = item.id,
-            version = item.version,
-            positionSec = item.audioPositionSec,
-            bookLocator = item.bookLocator,
-            consumptionState = item.consumptionState,
-        )
+    private fun notifyWarnings(warnings: List<String>) {
+        if ("sync.clock_skew" in warnings) {
+            _conflicts.tryEmit("设备时钟与 Host 相差较大，已按 Host 时间合并。")
+        }
+    }
+
+    /**
+     * Applies only the fields carried by the mutation and only when no newer
+     * local mutation for the same field is still queued.
+     */
+    private suspend fun applyCanonicalProgress(
+        item: MutationItemDto,
+        payload: ProgressRequestDto,
+    ) {
+        if (item.version > 0) {
+            database.itemDao().applyVersion(item.id, item.version)
+        }
+        val pending = database.pendingMutationDao().fieldsForItem(item.id).toSet()
+        val statePending = pending.any {
+            it == ItemMutationRepository.AUDIO_PROGRESS ||
+                it == ItemMutationRepository.BOOK_PROGRESS ||
+                it == ItemMutationRepository.CONSUMPTION_STATE
+        }
+        if (payload.positionSec != null &&
+            ItemMutationRepository.AUDIO_PROGRESS !in pending
+        ) {
+            database.itemDao().applyCanonicalAudioPosition(item.id, item.audioPositionSec)
+        }
+        if (payload.bookLocator != null &&
+            ItemMutationRepository.BOOK_PROGRESS !in pending
+        ) {
+            database.itemDao().applyCanonicalBookLocator(item.id, item.bookLocator)
+        }
+        if (payload.consumptionState != null && !statePending) {
+            database.itemDao().applyCanonicalConsumption(item.id, item.consumptionState)
+        }
     }
 
     private suspend fun syncManifest(client: TroveClient) {
@@ -267,10 +321,16 @@ class SyncEngine(
             epoch = page.epoch
             newItemSeen = applyManifestPage(page, seen) || newItemSeen
             contentCursor = page.nextCursor
-            saveCursor(contentCursor = contentCursor, epoch = epoch)
+            // A full snapshot is only durable once every page has been applied:
+            // otherwise a later page failure would turn the next sync into an
+            // incremental one and skip deletion reconciliation.
+            if (!full) {
+                saveCursor(contentCursor = contentCursor, epoch = epoch)
+            }
             if (!page.hasMore) break
         }
         if (full) {
+            saveCursor(contentCursor = contentCursor, epoch = epoch)
             reconcileDeletedItems(seen)
         }
         if (newItemSeen) {
@@ -343,7 +403,9 @@ class SyncEngine(
                     lastSyncedAt = now,
                 )
             )
-            applyTags(dto)
+            if (!database.pendingMutationDao().hasPending(dto.id, ItemMutationRepository.TAGS)) {
+                applyTags(dto)
+            }
             val existingArtifacts = database.artifactDao().forItem(dto.id).associateBy { it.kind }
             val kinds = dto.files.map { it.kind }.toSet()
             val outcome = applyArtifacts(dto, existingArtifacts, kinds)
@@ -359,18 +421,15 @@ class SyncEngine(
     }
 
     private suspend fun applyTags(dto: SyncItemDto) {
-        val normalized = dto.tags
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-            .distinctBy { it.lowercase() }
+        val normalized = runCatching { normalizeTags(dto.tags) }.getOrDefault(emptyList())
         database.tagDao().clearItemTags(dto.id)
         if (normalized.isEmpty()) return
         database.tagDao().upsertAll(
-            normalized.map { TagEntity(normalizedName = it.lowercase(), name = it) }
+            normalized.map { TagEntity(normalizedName = it.normalizedName, name = it.name) }
         )
         database.tagDao().insertItemTags(
             normalized.map {
-                ItemTagEntity(itemId = dto.id, tagName = it.lowercase(), source = "user")
+                ItemTagEntity(itemId = dto.id, tagName = it.normalizedName, source = "user")
             }
         )
     }
@@ -382,6 +441,7 @@ class SyncEngine(
     ): ArtifactOutcome {
         val filesToDelete = mutableListOf<Pair<String, String?>>()
         var needsDownload = false
+        val itemSelected = existing.values.any { it.downloadState != "none" }
         for (file in dto.files) {
             val previous = existing[file.kind]
             if (previous != null && previous.sha256 == file.sha256) {
@@ -404,8 +464,10 @@ class SyncEngine(
                 database.bookDao().deleteForItem(dto.id)
                 database.bookDao().deleteParagraphsForItem(dto.id)
             }
-            val reDownload = previous?.downloadState == "completed"
-            if (reDownload) needsDownload = true
+            // Keep an explicit selection across sha changes and newly added
+            // artifacts for an Item the user already chose to download.
+            val selected = previous?.downloadState?.let { it != "none" } ?: itemSelected
+            if (selected) needsDownload = true
             database.artifactDao().upsert(
                 ArtifactEntity(
                     itemId = dto.id,
@@ -415,7 +477,7 @@ class SyncEngine(
                     mime = file.mime,
                     version = file.version,
                     localPath = null,
-                    downloadState = if (reDownload) "queued" else "none",
+                    downloadState = if (selected) "queued" else "none",
                     downloadedBytes = 0,
                     etag = null,
                     errorCode = null,
@@ -464,6 +526,7 @@ class SyncEngine(
             val page = fetchState(client, stateCursor)
             if (epoch != null && page.epoch != epoch) throw FullResyncRequired()
             epoch = page.epoch
+            if (database.pendingMutationDao().count() > 0) return
             applyStatePage(page)
             stateCursor = page.nextCursor
             saveCursor(stateCursor = stateCursor, epoch = epoch)
@@ -482,6 +545,8 @@ class SyncEngine(
     private suspend fun applyStatePage(page: SyncStateDto) {
         database.writeTransaction {
             for (item in page.items) {
+                val pending = database.pendingMutationDao().fieldsForItem(item.id)
+                if (pending.any { it != ItemMutationRepository.TAGS }) continue
                 database.itemDao().applyState(
                     id = item.id,
                     positionSec = item.audioPositionSec,

@@ -7,7 +7,7 @@
         "version": 7,
         "source_key": "youtube:dQw4w9WgXcQ",
         "source_type": "video_url",
-        "source_type_label": "视频",
+        "source_type_label": "Video",
         "platform": "youtube",
         "platform_label": "YouTube",
         "source_url_raw": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -25,13 +25,13 @@
           {"name": "记忆", "source": "user"}
         ],
         "consumption_state": "in_progress",
-        "consumption_label": "进行中",
+        "consumption_label": "In progress",
         "audio_position_sec": 642.25,
         "book_locator": null,
         "created_at": 1793516300000,
         "updated_at": 1793517000000,
         "processing_state": "completed",
-        "processing_label": "已完成",
+        "processing_label": "Completed",
         "status_category": "ready",
         "has_audio": true,
         "has_book": false,
@@ -45,7 +45,15 @@
             "size": 184320,
             "mime": "audio/mp4",
             "duration_sec": 642.25,
-            "url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/files/audio"
+            "url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/audio"
+          },
+          {
+            "kind": "cover",
+            "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "size": 24576,
+            "mime": "image/jpeg",
+            "duration_sec": null,
+            "url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/cover"
           }
         ],
         "ai": null,
@@ -59,7 +67,7 @@
           "text": "人工智能正在改变记忆方式",
           "snippet": "人工智能正在改变记忆方式",
           "score": 3.5,
-          "url": "/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/listen"
+          "url": "/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/listen#segment-3"
         }
       ]
     }

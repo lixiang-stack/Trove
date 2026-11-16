@@ -1,6 +1,6 @@
 # 22 — V1 验收总检查
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M3
 Blocked by: 14, 15, 17, 19, 20, 21
@@ -28,13 +28,13 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] 自动化套件全绿；Android/Host 文档检查通过。
-- [ ] 真机闭环全部 PASS，或有明确例外/后续 issue。
-- [ ] 同步冲突/重装/删除/撤销无数据丢失或静默覆盖。
-- [ ] 性能：本地 1k 搜索 p95 <1s；首同步/播放/下载可接受。
-- [ ] 安全：HTTPS/token/备份/日志/EPUB 恶意输入检查 PASS。
-- [ ] 无未声明的 P2/P3 功能进入 V1。
-- [ ] 形成 V1 release decision 和已知问题清单。
+- [x] 自动化套件全绿；Android/Host 文档检查通过。
+- [ ] 真机闭环全部 PASS，或有明确例外/后续 issue。设备已重新连接；release 安装/启动、明文拒绝、重装 Library/进度 PASS；60 分钟播放、蓝牙/音频焦点、Caddy/Tailscale 仍在 [23](23-v1-release-device-acceptance.md)。
+- [x] 同步冲突/重装/删除/撤销无数据丢失或静默覆盖（自动化 + 真机重装/既有冲突证据；重装下载选择例外见 24）。
+- [ ] 性能：本地 1k 搜索 p95 <1s；首同步/播放/下载可接受。搜索 p95 已 PASS；首同步/播放/下载未实测。
+- [ ] 安全：HTTPS/token/备份/日志/EPUB 恶意输入检查 PASS。release 明文拒绝 PASS；Caddy/Tailscale HTTPS 真机未验证。
+- [x] 无未声明的 P2/P3 功能进入 V1。
+- [x] 形成 V1 release decision 和已知问题清单。
 
 ## Testing
 
@@ -46,3 +46,9 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - 新功能；发现缺口另开 issue。
 - Play Store 上架、云端、多用户、iOS、PDF/TTS/标注/语义检索。
+
+## Answer
+
+验收记录在 [acceptance.md](../acceptance.md)。自动化全绿：Host `./scripts/check.sh --full`、Android `assembleProdDebug/testProdDebugUnitTest/lintProdDebug`、release R8、LAN build、docs check、OpenAPI/contract fixture。签名 release APK 静态检查 PASS（9 MiB、权限 allowlist）。
+
+结论：**BLOCKED**。设备在 sweep 中途重连；release APK 安装/启动、明文拒绝、重装 Library/进度、instrumented core/app 测试已 PASS。仍未完成：60 分钟后台播放、蓝牙/音频焦点、Caddy/Tailscale HTTPS、release 下完整登录/播放/下载/阅读 R8 冒烟、首同步/播放/下载实测。下载选择跨重装恢复需要契约变更，按 [24](24-reinstall-download-selection.md) 处理；其余真机项由 [23](23-v1-release-device-acceptance.md) 收口。

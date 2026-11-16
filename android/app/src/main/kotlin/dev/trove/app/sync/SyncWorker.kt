@@ -4,7 +4,9 @@ import android.content.Context
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -19,6 +21,7 @@ class SyncWorker(
 ) : CoroutineWorker(appContext, params) {
     override suspend fun doWork(): Result {
         val application = applicationContext as? TroveApplication ?: return Result.failure()
+        application.container.sessionController.restore()
         val result = application.container.syncEngine.sync()
         return when (result.errorCode) {
             null -> Result.success()
@@ -55,7 +58,22 @@ class PeriodicSyncScheduler(private val context: Context) {
         }
     }
 
+    fun syncNow() {
+        runCatching {
+            val request = OneTimeWorkRequestBuilder<SyncWorker>()
+                .setConstraints(
+                    Constraints.Builder()
+                        .setRequiredNetworkType(NetworkType.CONNECTED)
+                        .build()
+                )
+                .build()
+            WorkManager.getInstance(context.applicationContext)
+                .enqueueUniqueWork(NAME_NOW, ExistingWorkPolicy.KEEP, request)
+        }
+    }
+
     private companion object {
         const val NAME = "trove-periodic-sync"
+        const val NAME_NOW = "trove-sync-now"
     }
 }

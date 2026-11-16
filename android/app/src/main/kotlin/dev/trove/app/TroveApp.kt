@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +12,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -85,38 +87,60 @@ data object SettingsRoute : NavKey
 fun TroveApp(viewModel: SessionViewModel, container: AppContainer) {
     TroveTheme {
         val state by viewModel.session.collectAsStateWithLifecycle()
-        when (val current = state) {
-            SessionState.Checking -> CheckingScreen()
-            is SessionState.SignedOut -> {
-                val form by viewModel.form.collectAsStateWithLifecycle()
-                LoginScreen(
-                    form = form,
-                    sessionReason = current.reason,
-                    onHostChange = viewModel::updateHost,
-                    onPasswordChange = viewModel::updatePassword,
-                    onDeviceNameChange = viewModel::updateDeviceName,
-                    onSubmit = viewModel::submit,
-                )
+        Column(modifier = Modifier.fillMaxSize()) {
+            if (BuildConfig.ALLOW_LAN_CLEARTEXT) {
+                LanWarningBanner()
             }
+            Box(modifier = Modifier.weight(1f)) {
+                when (val current = state) {
+                    SessionState.Checking -> CheckingScreen()
+                    is SessionState.SignedOut -> {
+                        val form by viewModel.form.collectAsStateWithLifecycle()
+                        LoginScreen(
+                            form = form,
+                            sessionReason = current.reason,
+                            onHostChange = viewModel::updateHost,
+                            onPasswordChange = viewModel::updatePassword,
+                            onDeviceNameChange = viewModel::updateDeviceName,
+                            onSubmit = viewModel::submit,
+                        )
+                    }
 
-            is SessionState.SignedIn -> {
-                val devicesOpen by viewModel.devicesOpen.collectAsStateWithLifecycle()
-                val devices by viewModel.devices.collectAsStateWithLifecycle()
-                MainShell(
-                    container = container,
-                    onDevices = viewModel::openDevices,
-                    onSignOut = viewModel::signOut,
-                )
-                if (devicesOpen) {
-                    DevicesDialog(
-                        devices = devices,
-                        currentDeviceId = current.credential.deviceId,
-                        onDismiss = viewModel::closeDevices,
-                        onRevoke = viewModel::revokeDevice,
-                    )
+                    is SessionState.SignedIn -> {
+                        val devicesOpen by viewModel.devicesOpen.collectAsStateWithLifecycle()
+                        val devices by viewModel.devices.collectAsStateWithLifecycle()
+                        MainShell(
+                            container = container,
+                            onDevices = viewModel::openDevices,
+                            onSignOut = viewModel::signOut,
+                        )
+                        if (devicesOpen) {
+                            DevicesDialog(
+                                devices = devices,
+                                currentDeviceId = current.credential.deviceId,
+                                onDismiss = viewModel::closeDevices,
+                                onRevoke = viewModel::revokeDevice,
+                            )
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun LanWarningBanner() {
+    Surface(color = MaterialTheme.colorScheme.errorContainer) {
+        Text(
+            text = stringResource(R.string.lan_warning),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp)
+                .testTag("lan-warning"),
+            color = MaterialTheme.colorScheme.onErrorContainer,
+            style = MaterialTheme.typography.labelMedium,
+        )
     }
 }
 

@@ -202,11 +202,16 @@ class ReprocessResponse(BaseModel):
     item: ItemSchema
 
 
+class FieldClockSchema(BaseModel):
+    client_updated_at: int
+    device_id: str
+
+
 class MutationResponse(BaseModel):
     ok: bool
     applied: bool = True
     item: ItemSchema
-    field_clocks: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    field_clocks: dict[str, FieldClockSchema] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
 
 

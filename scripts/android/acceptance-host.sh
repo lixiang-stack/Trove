@@ -55,8 +55,8 @@ curl -fsS -m 2 "http://127.0.0.1:${port}/api/health" >/dev/null
 "$root/scripts/android/adb.sh" reverse "tcp:${port}" "tcp:${port}"
 
 if [ "$install_app" -eq 1 ]; then
-  apk="$root/android/app/build/outputs/apk/debug/app-debug.apk"
-  (cd "$root/android" && ./gradlew :app:assembleDebug)
+  apk="$root/android/app/build/outputs/apk/prod/debug/app-prod-debug.apk"
+  (cd "$root/android" && ./gradlew :app:assembleProdDebug)
   "$root/scripts/android/adb.sh" install -r "$apk" >/dev/null
 fi
 

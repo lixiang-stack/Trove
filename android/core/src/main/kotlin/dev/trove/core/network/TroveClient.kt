@@ -5,6 +5,7 @@ import javax.net.ssl.SSLException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import retrofit2.HttpException
+import retrofit2.Response
 
 class TroveApiException(
     val code: String,
@@ -42,7 +43,8 @@ class TroveClient(
     suspend fun devices(): DeviceListResponse = call { api.devices() }
 
     suspend fun revokeDevice(deviceId: String) {
-        call { api.revokeDevice(deviceId) }
+        val response = call { api.revokeDevice(deviceId) }
+        throwIfUnsuccessful(response)
     }
 
     suspend fun manifest(cursor: String? = null, limit: Int = 100): ManifestDto =
@@ -88,13 +90,24 @@ class TroveClient(
 
     suspend fun deleteItem(itemId: String) {
         val response = call { api.deleteItem(itemId) }
-        if (!response.isSuccessful) {
-            throw TroveApiException(
-                code = "http.${response.code()}",
-                message = response.message(),
-                statusCode = response.code(),
-            )
+        throwIfUnsuccessful(response)
+    }
+
+    private fun throwIfUnsuccessful(response: Response<Unit>) {
+        if (response.isSuccessful) return
+        val parsed = response.errorBody()?.string()?.let {
+            runCatching { json.decodeFromString<ApiErrorBody>(it) }.getOrNull()
         }
+        val code = parsed?.code?.takeIf { it.isNotBlank() } ?: "http.${response.code()}"
+        if (response.code() == 401) {
+            unauthorizedListener.onUnauthorized(code)
+        }
+        throw TroveApiException(
+            code = code,
+            message = parsed?.message?.takeIf { it.isNotBlank() } ?: "Request failed",
+            statusCode = response.code(),
+            details = parsed?.details,
+        )
     }
 
     private suspend fun <T> call(block: suspend () -> T): T {

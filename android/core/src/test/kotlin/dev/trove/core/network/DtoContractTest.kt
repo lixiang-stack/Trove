@@ -36,6 +36,10 @@ class DtoContractTest {
         assertTrue(state.items[1].bookLocator!!.contains("chapter_index"))
         assertEquals("20", state.nextCursor)
         assertTrue(state.hasMore)
+        assertEquals("e2a0c4f8-6b3d-4f21-9a7e-5c8d0b1a2f39", state.epoch)
+        assertEquals("in_progress", state.items.first().consumptionState)
+        assertEquals(19L, state.items.first().stateSeq)
+        assertEquals(1793516400000, state.items.first().lastConsumedAt)
     }
 
     @Test
@@ -62,6 +66,38 @@ class DtoContractTest {
         assertEquals(listOf("AI", "记忆"), result.item.tags)
         assertEquals("transcript", result.evidence.single().docKind)
         assertEquals("3:65000", result.evidence.single().ref)
+        assertEquals(
+            "/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/listen#segment-3",
+            result.evidence.single().url,
+        )
+        assertEquals("Video", result.item.sourceTypeLabel)
+        assertEquals("In progress", result.item.consumptionLabel)
+        assertEquals("Completed", result.item.processingLabel)
+        assertTrue(result.item.hasCover)
+        assertEquals(setOf("audio", "cover"), result.item.artifacts.map { it.kind }.toSet())
+        assertEquals(
+            "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/audio",
+            result.item.artifacts.first { it.kind == "audio" }.url,
+        )
         assertEquals(1, search.count)
+    }
+
+    @Test
+    fun mutationFixtureParsesCanonicalFieldsAndClocks() {
+        val mutation = json.decodeFromString<MutationResponseDto>(resource("mutation.json"))
+        assertEquals(false, mutation.applied)
+        assertEquals(8, mutation.item.version)
+        assertEquals("host-wins", mutation.item.tags.last())
+        assertEquals("device-1", mutation.fieldClocks["tags"]!!.deviceId)
+        assertEquals(listOf("sync.clock_skew"), mutation.warnings)
+    }
+
+    @Test
+    fun healthFixtureParsesCapabilities() {
+        val health = json.decodeFromString<HealthDto>(resource("health.json"))
+        assertEquals("0.1.0", health.apiVersion)
+        assertEquals(true, health.capabilities["sync"])
+        assertEquals(true, health.capabilities["device_tokens"])
+        assertEquals(true, health.capabilities["file_download"])
     }
 }

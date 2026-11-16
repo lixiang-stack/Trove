@@ -21,3 +21,6 @@ android/.kotlin/
 android/**/build/
 android/.idea/
 android/captures/
+*.jks
+*.keystore
+keystore.properties

@@ -66,15 +66,18 @@
 在 `android/` 下（与 CI 一致，覆盖全部 module）：
 
 ```bash
-./gradlew assembleDebug testDebugUnitTest lintDebug
-./gradlew :core:connectedDebugAndroidTest   # 生产 bundled SQLite 事务 + FTS5 冒烟；需要真机/模拟器
-./gradlew :app:assembleRelease               # R8/release smoke
+./gradlew :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
+  :core:testDebugUnitTest :core:lintDebug :playback:lintDebug :reader:lintDebug
+./gradlew :core:connectedDebugAndroidTest :app:connectedProdDebugAndroidTest   # bundled SQLite + 平台 manifest；需要真机/模拟器
+./gradlew :app:assembleProdRelease               # R8/resource shrink smoke
+./gradlew :app:assembleLanDebug                  # LAN 明文调试包
 ```
 
-`scripts/android/device-check.sh` 会安装 debug APK 并跑 `:core:connectedDebugAndroidTest`。
-修改 FTS5、Readium 或 WorkManager 原生路径时，除 `assembleDebug testDebugUnitTest lintDebug` 外必须跑 `scripts/android/device-check.sh`；JVM/Robolectric 不覆盖 bundled SQLite 的 FTS5 与真机原生路径。
+`scripts/android/device-check.sh` 会安装 `prodDebug` APK，并跑 `:core:connectedDebugAndroidTest` + `:app:connectedProdDebugAndroidTest`。
+修改 FTS5、Readium 或 WorkManager 原生路径时，除上述 debug 构建/测试/lint 外必须跑 `scripts/android/device-check.sh`；JVM/Robolectric 不覆盖 bundled SQLite 的 FTS5 与真机原生路径。
 真机 UI 验收可用 `scripts/android/acceptance-host.sh`（默认带 worker，`--no-worker` 可关闭）和 `scripts/android/seed_acceptance.py`（含音频、EPUB、失败 Run）。
 `scripts/android/ui-dump.py` 一次输出当前页面的 text/content-desc/bounds，并可同时截图。
+Release 签名从环境变量读取（`TROVE_RELEASE_*`），不要提交 keystore；构建后用 `scripts/android/release-check.sh` 检查签名、权限和包体。
 
 在仓库根目录：
 
@@ -83,7 +86,7 @@ python3 scripts/check-docs.py
 ./scripts/check.sh --fast                  # Host 侧回归
 ```
 
-提交前至少：根 Gradle 命令 `assembleDebug testDebugUnitTest lintDebug` 绿；涉及 Host 改动时 Host 测试绿；文档检查绿。pre-push 对 `android/**` 改动运行同一组 Gradle 任务；`./scripts/check.sh --full` 留给 release/验收，不要求每次 push。
+提交前至少：上面的 prod debug 构建/单测/lint 命令绿；涉及 Host 改动时 Host 测试绿；文档检查绿。pre-push 对 `android/**` 改动运行同一组 Gradle 任务；`./scripts/check.sh --full` 留给 release/验收，不要求每次 push（它只跑 Host 侧）。
 
 ## 7. 测试缝
 

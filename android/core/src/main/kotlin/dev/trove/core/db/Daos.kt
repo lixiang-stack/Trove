@@ -119,23 +119,17 @@ interface ItemDao {
         lastConsumedAt: Long,
     )
 
-    @Query(
-        """
-        UPDATE items SET
-            version = :version,
-            audio_position_sec = :positionSec,
-            book_locator = :bookLocator,
-            consumption_state = :consumptionState
-        WHERE id = :id
-        """
-    )
-    suspend fun applyCanonical(
-        id: String,
-        version: Int,
-        positionSec: Double,
-        bookLocator: String?,
-        consumptionState: String,
-    )
+    @Query("UPDATE items SET version = :version WHERE id = :id")
+    suspend fun applyVersion(id: String, version: Int)
+
+    @Query("UPDATE items SET audio_position_sec = :positionSec WHERE id = :id")
+    suspend fun applyCanonicalAudioPosition(id: String, positionSec: Double)
+
+    @Query("UPDATE items SET book_locator = :bookLocator WHERE id = :id")
+    suspend fun applyCanonicalBookLocator(id: String, bookLocator: String?)
+
+    @Query("UPDATE items SET consumption_state = :state WHERE id = :id")
+    suspend fun applyCanonicalConsumption(id: String, state: String)
 }
 
 @Dao
@@ -288,6 +282,19 @@ interface PendingMutationDao {
 
     @Query("SELECT COUNT(*) FROM pending_mutations")
     suspend fun count(): Int
+
+    @Query(
+        "SELECT last_error FROM pending_mutations WHERE last_error IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+    )
+    suspend fun lastError(): String?
+
+    @Query("SELECT DISTINCT field FROM pending_mutations WHERE item_id = :itemId")
+    suspend fun fieldsForItem(itemId: String): List<String>
+
+    @Query(
+        "SELECT COUNT(*) FROM pending_mutations WHERE item_id = :itemId AND field = :field"
+    )
+    suspend fun hasPending(itemId: String, field: String): Boolean
 
     @Upsert
     suspend fun upsert(mutation: PendingMutationEntity)

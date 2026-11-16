@@ -49,12 +49,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.trove.app.BuildConfig
 import dev.trove.app.library.formatBytes
 import dev.trove.app.ui.components.TroveChip
 import dev.trove.app.ui.theme.TroveColors
@@ -148,6 +148,10 @@ fun SettingsScreen(
                     value = state.deviceId.take(12).ifBlank { "未知" },
                 )
                 SettingsRow(label = "API 版本", value = state.diagnostics.apiVersion)
+                SettingsRow(
+                    label = "App 版本",
+                    value = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                )
             }
             SettingsSection(title = "同步") {
                 SettingsRow(
@@ -266,6 +270,11 @@ fun SettingsScreen(
                         )
                     },
                 ) { Text("打开电池优化设置") }
+                Text(
+                    "小米/红米：请在系统设置中允许自启动，并将省电策略设为「无限制」，否则后台播放和同步可能被系统清理。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TroveColors.Muted,
+                )
             }
             SettingsSection(title = "诊断") {
                 SettingsRow(label = "Host", value = maskHost(state.hostUrl))
@@ -276,6 +285,18 @@ fun SettingsScreen(
                 SettingsRow(
                     label = "同步错误",
                     value = state.diagnostics.errorCode ?: "无",
+                )
+                SettingsRow(
+                    label = "待同步改动",
+                    value = if (state.diagnostics.pendingMutations > 0) {
+                        "${state.diagnostics.pendingMutations} 项"
+                    } else {
+                        "无"
+                    },
+                )
+                SettingsRow(
+                    label = "待同步错误",
+                    value = state.diagnostics.pendingErrorCode ?: "无",
                 )
                 SettingsRow(
                     label = "Epoch",

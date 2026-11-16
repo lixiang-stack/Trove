@@ -102,8 +102,12 @@ caddy start --config ~/Caddyfile
 ```
 
 Install Caddy's internal root certificate on the phone and use
-`https://trove.local` with local DNS/mDNS resolution. Caddy is only a TLS
-terminator; authentication, CSP, and Range handling still come from Trove.
+`https://trove.local` with local DNS/mDNS resolution. On Android, install the root
+as a user CA under Settings → Security → Encryption & credentials → Install a
+certificate → CA certificate; the app's network security config trusts user CAs.
+Tailscale with a public certificate is simpler if you do not want a user CA. Caddy
+is only a TLS terminator; authentication, CSP, and Range handling still come from
+Trove. See [android.md](android.md) for the Android steps.
 
 ## Upgrade
 

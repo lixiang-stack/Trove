@@ -107,4 +107,41 @@ class TroveClientTest {
             assertEquals(30L, error.retryAfterSeconds)
         }
     }
+
+    @Test
+    fun deleteItemKeepsStableHostErrorCode() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(404)
+                .addHeader("Content-Type", "application/json")
+                .body("""{"code":"item.not_found","message":"Item not found"}""")
+                .build()
+        )
+        val client = TroveClient(RetrofitTroveApiFactory().create(baseUrl(), "token"))
+        try {
+            client.deleteItem("missing")
+            fail("expected an API exception")
+        } catch (error: TroveApiException) {
+            assertEquals("item.not_found", error.code)
+            assertEquals(404, error.statusCode)
+        }
+    }
+
+    @Test
+    fun revokeDeviceFailureIsNotSilentlyIgnored() = runBlocking {
+        server.enqueue(
+            MockResponse.Builder()
+                .code(401)
+                .addHeader("Content-Type", "application/json")
+                .body("""{"code":"auth.device_revoked","message":"Revoked"}""")
+                .build()
+        )
+        val client = TroveClient(RetrofitTroveApiFactory().create(baseUrl(), "token"))
+        try {
+            client.revokeDevice("device-1")
+            fail("expected an API exception")
+        } catch (error: TroveApiException) {
+            assertEquals("auth.device_revoked", error.code)
+        }
+    }
 }

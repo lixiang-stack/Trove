@@ -150,7 +150,10 @@ class SearchViewModel(
                 }
                 return@launch
             } catch (error: Exception) {
-                android.util.Log.e("TroveSearch", "local search failed", error)
+                android.util.Log.e(
+                    "TroveSearch",
+                    "local search failed: ${error::class.java.simpleName}",
+                )
                 _state.update {
                     it.copy(
                         loading = false,

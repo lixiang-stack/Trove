@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
@@ -8,6 +10,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from trove.errors import RateLimitedError, TroveError
 from trove.web.deps import error_page, render
 from trove.web.security import wants_json
+
+logger = logging.getLogger("trove.request")
 
 
 def install_exception_handlers(app) -> None:
@@ -64,4 +68,26 @@ def install_exception_handlers(app) -> None:
                 "code": f"http.{exc.status_code}",
             },
             status_code=exc.status_code,
+        )
+
+    @app.exception_handler(Exception)
+    async def unhandled_handler(request: Request, exc: Exception):
+        logger.error(
+            "unhandled error",
+            extra={"error_type": type(exc).__name__},
+        )
+        if wants_json(request):
+            return JSONResponse(
+                {"code": "internal.error", "message": "Internal error"},
+                status_code=500,
+            )
+        return render(
+            request,
+            "error.html",
+            {
+                "status": 500,
+                "message": "Internal error",
+                "code": "internal.error",
+            },
+            status_code=500,
         )

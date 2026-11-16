@@ -41,4 +41,15 @@ class AppSmokeTest {
         compose.onNodeWithTag("host-url").assertIsDisplayed()
         compose.onNodeWithText("连接 Host").assertIsDisplayed()
     }
+
+    @Test
+    fun lanWarningBannerIsVisible() {
+        compose.setContent {
+            dev.trove.app.ui.theme.TroveTheme {
+                LanWarningBanner()
+            }
+        }
+        compose.onNodeWithTag("lan-warning").assertIsDisplayed()
+        compose.onNodeWithText("LAN 调试版", substring = true).assertIsDisplayed()
+    }
 }

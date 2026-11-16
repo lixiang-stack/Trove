@@ -1,6 +1,8 @@
 package dev.trove.app
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
 import dev.trove.app.playback.PlaybackProgressRecorder
 import dev.trove.app.session.SessionController
 import dev.trove.app.session.SessionState
@@ -54,6 +56,7 @@ open class AppContainer(
     downloadQueue: DownloadQueue = WorkManagerDownloadQueue(context, downloadSettingsStore),
     val player: PlayerGateway = MediaSessionPlayer(context),
     allowDebugCleartext: Boolean = BuildConfig.DEBUG,
+    private val backgroundSyncEnabled: Boolean = true,
 ) {
     val database: TroveDatabase = databaseOverride ?: TroveDatabase.create(context)
 
@@ -68,6 +71,7 @@ open class AppContainer(
         settingsStore = settingsStore,
         apiFactory = apiFactory,
         allowDebugCleartext = allowDebugCleartext,
+        allowLanCleartext = BuildConfig.ALLOW_LAN_CLEARTEXT,
         scope = scope,
     )
 
@@ -112,8 +116,7 @@ open class AppContainer(
         preferencesProvider = { downloadSettingsStore.preferences.first() },
         onUnauthorized = sessionController::onUnauthorized,
         nowPlayingItemId = {
-            val playback = player.state.value
-            playback.itemId?.takeIf { playback.isPlaying }
+            player.state.value.itemId
         },
         onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
@@ -130,8 +133,7 @@ open class AppContainer(
         fileStore = fileStore,
         downloadQueue = downloadQueue,
         nowPlayingItemId = {
-            val playback = player.state.value
-            playback.itemId?.takeIf { playback.isPlaying }
+            player.state.value.itemId
         },
         onItemChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
@@ -155,14 +157,16 @@ open class AppContainer(
             tokenStore = tokenStore,
             onUnauthorized = sessionController::onUnauthorized,
             nowPlayingItemId = {
-                val playback = player.state.value
-                playback.itemId?.takeIf { playback.isPlaying }
+                player.state.value.itemId
             },
             onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
         )
         PlaybackEnvironment.progressSink = progressRecorder
         PlaybackEnvironment.onUnauthorized = {
             sessionController.onUnauthorized("auth.device_token_invalid")
+        }
+        scope.launch {
+            sessionController.restore()
         }
         scope.launch {
             if (localSearchRepository.isAvailable() && !searchIndex.hasDocuments()) {
@@ -174,6 +178,7 @@ open class AppContainer(
                 PlaybackEnvironment.token = (state as? SessionState.SignedIn)?.credential?.token
                 if (state is SessionState.SignedIn) {
                     syncScheduler.apply(settingsStore.syncPreferences.first())
+                    if (backgroundSyncEnabled) syncScheduler.syncNow()
                 } else {
                     syncScheduler.cancel()
                 }
@@ -192,6 +197,21 @@ open class AppContainer(
                     syncScheduler.apply(preferences)
                 }
             }
+        }
+        runCatching {
+            context.applicationContext
+                .getSystemService(ConnectivityManager::class.java)
+                ?.registerDefaultNetworkCallback(
+                    object : ConnectivityManager.NetworkCallback() {
+                        override fun onAvailable(network: Network) {
+                            if (backgroundSyncEnabled &&
+                                sessionController.state.value is SessionState.SignedIn
+                            ) {
+                                syncScheduler.syncNow()
+                            }
+                        }
+                    }
+                )
         }
     }
 }

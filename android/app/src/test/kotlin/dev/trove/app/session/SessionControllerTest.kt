@@ -77,6 +77,20 @@ class SessionControllerTest {
     }
 
     @Test
+    fun lanBuildAllowsPrivateCleartextHost() = runTest {
+        val factory = FakeTroveApiFactory(FakeTroveApi())
+        val controller = SessionController(
+            FakeTokenStore(), FakeSettingsStore(), factory,
+            allowDebugCleartext = true,
+            allowLanCleartext = true,
+            scope = this,
+        )
+        val outcome = controller.login("http://192.168.1.10:8765/", "pw", "Pixel")
+        assertNull(outcome.error)
+        assertEquals("http://192.168.1.10:8765", factory.requests.single().first)
+    }
+
+    @Test
     fun wrongPasswordIsReported() = runTest {
         val api = FakeTroveApi().apply {
             tokenError = TroveApiException("auth.invalid", "Incorrect password", 401)

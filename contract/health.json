@@ -1,0 +1,28 @@
+{
+  "api_version": "0.1.0",
+  "capabilities": {
+    "sync": true,
+    "device_tokens": true,
+    "file_download": true
+  },
+  "host": {
+    "status": "ok",
+    "version": "0.1.0",
+    "pid": 1234
+  },
+  "database": {
+    "status": "ok",
+    "migration": {
+      "current": "0010",
+      "head": "0010",
+      "up_to_date": true
+    },
+    "fts5": true
+  },
+  "worker": {
+    "status": "ok",
+    "state": "idle",
+    "run_id": null,
+    "updated_at": 1793517000000
+  }
+}

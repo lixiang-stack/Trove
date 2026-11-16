@@ -62,6 +62,7 @@ class PlayerViewModel(
     private val errorCode = MutableStateFlow<String?>(null)
     private val deleted = MutableStateFlow(false)
     private val tagError = MutableStateFlow<String?>(null)
+    private var hasLoadedItem = false
 
     val state: StateFlow<PlayerUiState> = combine(
         selectedId,
@@ -95,11 +96,24 @@ class PlayerViewModel(
 
     init {
         viewModelScope.launch {
+            selectedId
+                .flatMapLatest { id ->
+                    if (id == null) flowOf(null) else repository.observeItem(id)
+                }
+                .collect { item ->
+                    if (item != null) {
+                        hasLoadedItem = true
+                    } else if (selectedId.value != null && hasLoadedItem) {
+                        deleted.value = true
+                    }
+                }
+        }
+        viewModelScope.launch {
             player.state
-                .map { it.itemId to it.isPlaying }
+                .map { it.itemId }
                 .distinctUntilChanged()
-                .collect { (itemId, playing) ->
-                    repository.cleanupPendingFiles(itemId.takeIf { playing })
+                .collect { itemId ->
+                    repository.cleanupPendingFiles(itemId)
                 }
         }
     }
@@ -108,6 +122,7 @@ class PlayerViewModel(
         selectedId.value = itemId
         errorCode.value = null
         deleted.value = false
+        hasLoadedItem = false
         if (!autoPlay) {
             val current = player.state.value
             if (current.itemId != null && current.itemId != itemId) {

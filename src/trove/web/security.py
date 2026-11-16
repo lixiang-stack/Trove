@@ -38,6 +38,21 @@ CONTENT_SECURITY_POLICY = (
     "base-uri 'none'; "
     "frame-ancestors 'none'"
 )
+DOCS_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "script-src 'self' https://cdn.jsdelivr.net https://cdn.redoc.ly; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: https://fastapi.tiangolo.com; "
+    "connect-src 'self' https://cdn.jsdelivr.net https://cdn.redoc.ly; "
+    "object-src 'none'; "
+    "base-uri 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+def is_docs_path(path: str) -> bool:
+    return path in {"/docs", "/redoc", "/docs/oauth2-redirect"}
 
 
 def is_api(path: str) -> bool:
@@ -172,7 +187,8 @@ def install_middleware(app) -> None:
             )
 
         response = await call_next(request)
-        response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+        policy = DOCS_SECURITY_POLICY if is_docs_path(path) else CONTENT_SECURITY_POLICY
+        response.headers.setdefault("Content-Security-Policy", policy)
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "same-origin")

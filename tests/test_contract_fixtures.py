@@ -3,14 +3,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from trove.domain.items import CONSUMPTION_LABELS, SOURCE_TYPE_LABELS
 from trove.domain.search import document_tokens
 from trove.web.schemas import (
     ErrorResponse,
+    HealthResponse,
     ManifestResponse,
+    MutationResponse,
     SearchResponse,
     SyncFileSchema,
     SyncStateResponse,
 )
+
+from .conftest import seed_item
 
 CONTRACT = Path(__file__).resolve().parent.parent / "contract"
 
@@ -47,11 +52,65 @@ def test_search_contract_fixture_matches_host_schema():
     search = SearchResponse.model_validate(_load("search.json"))
     assert search.query
     assert search.count == 1
+    item = search.results[0].item
+    assert item.source_type_label == "Video"
+    assert item.consumption_label == "In progress"
+    assert item.processing_label == "Completed"
+    assert item.audio_url and item.audio_url.endswith("/audio")
+    assert item.cover_url and item.cover_url.endswith("/cover")
+    assert item.has_cover is True
+    assert {artifact.kind for artifact in item.artifacts} == {"audio", "cover"}
+    for artifact in item.artifacts:
+        assert artifact.url and artifact.url.endswith(f"/{artifact.kind}")
     evidence = search.results[0].evidence[0]
     assert evidence.doc_kind == "transcript"
     assert evidence.ref == "3:65000"
+    assert evidence.url.endswith("/listen#segment-3")
     assert evidence.snippet
     assert search.results[0].item.tags == ["AI", "记忆"]
+
+
+def test_mutation_contract_fixture_matches_host_schema():
+    mutation = MutationResponse.model_validate(_load("mutation.json"))
+    assert mutation.ok is True
+    assert mutation.applied is False
+    clock = mutation.field_clocks["tags"]
+    assert clock.device_id == "device-1"
+    assert clock.client_updated_at > 0
+    assert mutation.warnings == ["sync.clock_skew"]
+    assert mutation.item.version == 8
+
+
+def test_health_contract_fixture_matches_host_schema():
+    health = HealthResponse.model_validate(_load("health.json"))
+    assert health.capabilities["sync"] is True
+    assert health.capabilities["device_tokens"] is True
+    assert health.capabilities["file_download"] is True
+    assert health.database["fts5"] is True
+
+
+def test_live_search_payload_keeps_fixture_labels_and_urls(api_host):
+    bundle = seed_item(
+        api_host,
+        title="记忆与智能",
+        source_type="video_url",
+        platform="youtube",
+        tags=["AI", "记忆"],
+        consumption_state="in_progress",
+    )
+    api_host.runtime.search_index.index_item(bundle.item.id)
+    api_host.login()
+    payload = api_host.client.get("/api/search", params={"q": "记忆"}).json()
+    item = payload["results"][0]["item"]
+    assert item["source_type_label"] == SOURCE_TYPE_LABELS[item["source_type"]]
+    assert item["consumption_label"] == CONSUMPTION_LABELS[item["consumption_state"]]
+    assert item["processing_label"] == "Completed"
+    assert item["audio_url"].endswith("/audio")
+    for artifact in item["artifacts"]:
+        if artifact["kind"] in {"audio", "cover"}:
+            assert artifact["url"].endswith(f"/{artifact['kind']}")
+        else:
+            assert artifact["url"] is None
 
 
 def test_search_query_contract_fixture_matches_host_tokenizer():
