@@ -24,4 +24,11 @@ if [ -e "$target" ]; then
 fi
 
 git worktree add "$target" -b "$name" "$base"
+
+# Android builds need a local SDK pointer; keep it out of git like the main checkout.
+sdk_dir="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
+if [ -d "$sdk_dir" ] && [ ! -f "$target/android/local.properties" ]; then
+  printf 'sdk.dir=%s\n' "$sdk_dir" > "$target/android/local.properties"
+fi
+
 printf '%s\n' "$target"

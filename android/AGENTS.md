@@ -67,11 +67,13 @@
 
 ```bash
 ./gradlew assembleDebug testDebugUnitTest lintDebug
-./gradlew :core:connectedDebugAndroidTest   # 生产 bundled SQLite 事务冒烟；需要真机/模拟器
+./gradlew :core:connectedDebugAndroidTest   # 生产 bundled SQLite 事务 + FTS5 冒烟；需要真机/模拟器
 ./gradlew :app:assembleRelease               # R8/release smoke
 ```
 
 `scripts/android/device-check.sh` 会安装 debug APK 并跑 `:core:connectedDebugAndroidTest`。
+修改 FTS5、Readium 或 WorkManager 原生路径时，除 `assembleDebug testDebugUnitTest lintDebug` 外必须跑 `scripts/android/device-check.sh`；JVM/Robolectric 不覆盖 bundled SQLite 的 FTS5 与真机原生路径。
+真机 UI 验收可用 `scripts/android/acceptance-host.sh`（默认带 worker，`--no-worker` 可关闭）和 `scripts/android/seed_acceptance.py`（含音频、EPUB、失败 Run）。
 `scripts/android/ui-dump.py` 一次输出当前页面的 text/content-desc/bounds，并可同时截图。
 
 在仓库根目录：
