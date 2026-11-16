@@ -17,6 +17,41 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("prod") {
+            dimension = "distribution"
+            buildConfigField("boolean", "ALLOW_LAN_CLEARTEXT", "false")
+        }
+        create("lan") {
+            dimension = "distribution"
+            applicationIdSuffix = ".lan"
+            versionNameSuffix = "-lan"
+            buildConfigField("boolean", "ALLOW_LAN_CLEARTEXT", "true")
+        }
+    }
+
+    signingConfigs {
+        val storePath = providers.environmentVariable("TROVE_RELEASE_STORE_FILE").orNull
+            ?: providers.gradleProperty("troveReleaseStoreFile").orNull
+        val storePassword = providers.environmentVariable("TROVE_RELEASE_STORE_PASSWORD").orNull
+            ?: providers.gradleProperty("troveReleaseStorePassword").orNull
+        val keyAlias = providers.environmentVariable("TROVE_RELEASE_KEY_ALIAS").orNull
+            ?: providers.gradleProperty("troveReleaseKeyAlias").orNull
+        val keyPassword = providers.environmentVariable("TROVE_RELEASE_KEY_PASSWORD").orNull
+            ?: providers.gradleProperty("troveReleaseKeyPassword").orNull
+        if (storePath != null && storePassword != null &&
+            keyAlias != null && keyPassword != null
+        ) {
+            create("release") {
+                storeFile = file(storePath)
+                this.storePassword = storePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -25,6 +60,17 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            signingConfigs.findByName("release")?.let { signingConfig = it }
+        }
+    }
+
+    androidComponents {
+        beforeVariants(selector().all()) { variant ->
+            if (variant.buildType == "release" &&
+                variant.productFlavors.any { it.second == "lan" }
+            ) {
+                variant.enable = false
+            }
         }
     }
 
@@ -84,4 +130,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }

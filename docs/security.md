@@ -57,6 +57,24 @@ not a penetration-test report.
       secrets, API keys, or request bodies.
 - [x] Default bind is `127.0.0.1`; `--lan` prints a trusted-LAN warning.
 
+## Android client
+
+- [x] Release rejects cleartext HTTP; a separate `lanDebug` flavor allows private
+      LAN hosts with a persistent warning and is not shipped as a release.
+- [x] Device tokens are stored through Android Keystore AES-GCM + DataStore; no
+      token, Authorization header, Cookie, or full local path is logged.
+- [x] `allowBackup=false`; media and Room data live in the app-private directory.
+- [x] The release network security config trusts system and user-installed CAs for
+      Caddy, without pinning or bypassing certificate validation.
+- [x] EPUB/WebView content is treated as untrusted; remote resources, scripts, and
+      external navigation are blocked.
+- [x] Release R8/resource shrinking is checked by `:app:assembleProdRelease`;
+      `scripts/android/release-check.sh` verifies signature, permissions, and size.
+- [ ] Residual: trusting user CAs broadens the trust store for all app traffic.
+      Remove the user anchor if you switch to Tailscale public certificates.
+
+See [android.md](android.md) for build, signing, Caddy, and OEM steps.
+
 ## Dependencies and deployment
 
 - [x] Starlette is pinned to `>=0.49.1`, which includes the Range DoS fix

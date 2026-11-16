@@ -116,20 +116,28 @@ class FakeTroveApi : TroveApi {
         hasMore = false,
         epoch = "test-epoch",
     )
+    val manifestPages = ArrayDeque<ManifestDto>()
+    val requestedManifestCursors = mutableListOf<String?>()
     var stateResponse = SyncStateDto(
         items = emptyList(),
         nextCursor = "0",
         hasMore = false,
         epoch = "test-epoch",
     )
+    val statePages = ArrayDeque<SyncStateDto>()
     var manifestError: Throwable? = null
     var stateError: Throwable? = null
     var progressError: Throwable? = null
+    var progressFailuresRemaining = 0
+    var progressResponse: MutationResponseDto? = null
     val progressCalls = mutableListOf<Pair<String, ProgressRequestDto>>()
+    val progressKeys = mutableListOf<String?>()
     var deleteError: Throwable? = null
     val deletedItems = mutableListOf<String>()
     val tagCalls = mutableListOf<Pair<String, List<String>>>()
+    val tagKeys = mutableListOf<String?>()
     var tagsError: Throwable? = null
+    var tagsResponse: MutationResponseDto? = null
     var createResponse: ItemCreateResponseDto? = null
     var createError: Throwable? = null
     val createCalls = mutableListOf<ItemCreateRequestDto>()
@@ -163,13 +171,14 @@ class FakeTroveApi : TroveApi {
     }
 
     override suspend fun manifest(cursor: String?, limit: Int): ManifestDto {
+        requestedManifestCursors += cursor
         manifestError?.let { throw it }
-        return manifestResponse
+        return if (manifestPages.isEmpty()) manifestResponse else manifestPages.removeFirst()
     }
 
     override suspend fun state(cursor: String?, limit: Int): SyncStateDto {
         stateError?.let { throw it }
-        return stateResponse
+        return if (statePages.isEmpty()) stateResponse else statePages.removeFirst()
     }
 
     override suspend fun progress(
@@ -177,9 +186,14 @@ class FakeTroveApi : TroveApi {
         body: ProgressRequestDto,
         idempotencyKey: String?,
     ): MutationResponseDto {
-        progressError?.let { throw it }
         progressCalls += itemId to body
-        return MutationResponseDto(
+        progressKeys += idempotencyKey
+        if (progressFailuresRemaining > 0) {
+            progressFailuresRemaining -= 1
+            throw TroveApiException("server.error", "boom", 500)
+        }
+        progressError?.let { throw it }
+        return progressResponse ?: MutationResponseDto(
             item = dev.trove.core.network.MutationItemDto(
                 id = itemId,
                 audioPositionSec = body.positionSec ?: 0.0,
@@ -201,7 +215,8 @@ class FakeTroveApi : TroveApi {
     ): MutationResponseDto {
         tagsError?.let { throw it }
         tagCalls += itemId to body.tags
-        return MutationResponseDto(
+        tagKeys += idempotencyKey
+        return tagsResponse ?: MutationResponseDto(
             item = MutationItemDto(
                 id = itemId,
                 tags = body.tags,
@@ -401,16 +416,20 @@ class TestAppContainer(
     val fakePlayer: FakePlayer = FakePlayer(),
     val fakeDownloadQueue: FakeDownloadQueue = FakeDownloadQueue(),
     val fakeDownloadSettings: FakeDownloadSettingsStore = FakeDownloadSettingsStore(),
+    databaseOverride: TroveDatabase? = null,
+    fileStore: dev.trove.core.storage.ArtifactFileStore? = null,
 ) : AppContainer(
     context = context,
     tokenStore = tokenStore,
     settingsStore = settingsStore,
     apiFactory = apiFactory,
-    databaseOverride = TroveDatabase.inMemory(context),
+    databaseOverride = databaseOverride ?: TroveDatabase.inMemory(context),
+    fileStore = fileStore ?: dev.trove.core.storage.ArtifactFileStore(context.filesDir),
     downloadSettingsStore = fakeDownloadSettings,
     downloadQueue = fakeDownloadQueue,
     player = fakePlayer,
     allowDebugCleartext = allowDebugCleartext,
+    backgroundSyncEnabled = false,
 )
 
 data class TestHarness(

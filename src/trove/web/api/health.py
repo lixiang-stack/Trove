@@ -15,7 +15,11 @@ from trove.worker import heartbeat_is_fresh, read_heartbeat
 router = APIRouter()
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get(
+    "/health",
+    response_model=HealthResponse,
+    responses={503: {"model": HealthResponse, "description": "Host is not ready"}},
+)
 def health(request: Request):
     app_runtime = runtime(request)
     status: dict[str, Any] = {

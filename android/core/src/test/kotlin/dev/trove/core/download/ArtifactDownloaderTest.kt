@@ -276,6 +276,38 @@ class ArtifactDownloaderTest {
     }
 
     @Test
+    fun redownloadClearsDeferredDeletionForTheSamePath() = runBlocking {
+        val bytes = fixtureBytes()
+        seedItem(bytes, kind = "audio")
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(Buffer().write(bytes))
+                .build()
+        )
+        val downloader = downloader(nowPlaying = { "item-1" })
+        downloader.downloadItem("item-1")
+        val artifact = database.artifactDao().find("item-1", "audio")!!
+        val file = fileStore.existingFile("item-1", "audio", artifact.localPath)!!
+        downloader.removeDownload("item-1")
+        assertEquals(1, database.pendingDeletionDao().all().size)
+
+        val manager = DefaultDownloadManager(database, downloader, FakeQueue())
+        manager.enqueue("item-1")
+        server.enqueue(
+            MockResponse.Builder()
+                .code(200)
+                .body(Buffer().write(bytes))
+                .build()
+        )
+        downloader.downloadItem("item-1")
+
+        assertEquals(0, database.pendingDeletionDao().all().size)
+        assertEquals("completed", database.artifactDao().find("item-1", "audio")?.downloadState)
+        assertTrue(file.exists())
+    }
+
+    @Test
     fun managerQueuesPausesAndRemovesItem() = runBlocking {
         seedItem(fixtureBytes(), kind = "transcript")
         val queue = FakeQueue()

@@ -40,6 +40,8 @@ data class SettingsDiagnostics(
     val apiVersion: String = "未知",
     val capabilities: List<String> = emptyList(),
     val errorCode: String? = null,
+    val pendingMutations: Int = 0,
+    val pendingErrorCode: String? = null,
 )
 
 private data class SettingsExtras(
@@ -123,6 +125,8 @@ class SettingsViewModel(
                 epoch = cursor?.epoch,
             )
             extras.update { it.copy(storage = storage) }
+            val pendingMutations = syncEngine.pendingMutationCount()
+            val pendingError = syncEngine.lastPendingError()
             val health = sessionController.health()
             extras.update {
                 it.copy(
@@ -134,6 +138,8 @@ class SettingsViewModel(
                             ?.sorted()
                             .orEmpty(),
                         errorCode = cursor?.errorCode,
+                        pendingMutations = pendingMutations,
+                        pendingErrorCode = pendingError,
                     )
                 )
             }

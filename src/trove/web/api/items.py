@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 
 from trove.domain.reading import BookLocator
@@ -64,7 +64,11 @@ def api_list_items(
     }
 
 
-@router.post("/items", response_model=ItemCreateResponse)
+@router.post(
+    "/items",
+    response_model=ItemCreateResponse,
+    responses={201: {"model": ItemCreateResponse, "description": "Item created"}},
+)
 def api_create_item(request: Request, payload: ItemCreateRequest):
     app_runtime = runtime(request)
     if payload.kind == "url":
@@ -138,14 +142,17 @@ def api_add_tag(request: Request, item_id: str, payload: TagRequest):
 
 @router.put("/items/{item_id}/tags", response_model=MutationResponse)
 def api_replace_tags(
-    request: Request, item_id: str, payload: TagsRequest
+    request: Request,
+    item_id: str,
+    payload: TagsRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     return runtime(request).sync.replace_tags(
         item_id,
         tags=payload.tags,
         client_updated_at=payload.client_updated_at,
         device_id=request.state.device_id,
-        idempotency_key=request.headers.get("idempotency-key"),
+        idempotency_key=idempotency_key,
     )
 
 
@@ -196,7 +203,12 @@ def api_book_chapter(request: Request, item_id: str, chapter_index: int):
 
 
 @router.put("/items/{item_id}/progress", response_model=MutationResponse)
-def api_progress(request: Request, item_id: str, payload: ProgressRequest):
+def api_progress(
+    request: Request,
+    item_id: str,
+    payload: ProgressRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
     app_runtime = runtime(request)
     if payload.book_locator is not None and payload.book_locator.schema_version != 2:
         raise ValidationError(
@@ -227,7 +239,7 @@ def api_progress(request: Request, item_id: str, payload: ProgressRequest):
         consumption_state=payload.consumption_state,
         client_updated_at=payload.client_updated_at,
         device_id=request.state.device_id,
-        idempotency_key=request.headers.get("idempotency-key"),
+        idempotency_key=idempotency_key,
         require_progress=not state_only,
     )
 

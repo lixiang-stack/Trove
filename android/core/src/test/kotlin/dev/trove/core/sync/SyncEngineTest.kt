@@ -331,6 +331,177 @@ class SyncEngineTest {
     }
 
     @Test
+    fun stateCursorInvalidTriggersFullResync() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.stateFailOnce = true
+        api.statePages += state(items = emptyList(), cursor = "0")
+
+        val result = engine().sync()
+
+        assertTrue(result.success)
+        assertEquals(listOf(null, null), api.requestedCursors)
+        assertNotNull(database.itemDao().find("a"))
+    }
+
+    @Test
+    fun partialFullResyncFailureRetriesFullAndReconcilesDeletedItems() = runBlocking {
+        api.manifestPages += manifest(
+            items = listOf(item("a", version = 1), item("ghost", version = 1)),
+            cursor = "2",
+        )
+        api.statePages += state(items = emptyList(), cursor = "0")
+        engine().sync()
+        assertNotNull(database.itemDao().find("ghost"))
+
+        api.manifestPages.clear()
+        api.statePages.clear()
+        api.manifestCallCount = 0
+        api.manifestFailCall = 2
+        api.manifestPages += manifest(items = listOf(item("a", version = 2)), cursor = "1", hasMore = true, epoch = "epoch-2")
+        api.manifestPages += manifest(items = emptyList(), cursor = "2", epoch = "epoch-2")
+        val failed = engine().sync()
+        assertFalse(failed.success)
+        assertNotNull(database.itemDao().find("ghost"))
+
+        api.manifestFailCall = null
+        api.manifestCallCount = 0
+        api.manifestPages.clear()
+        api.manifestPages += manifest(items = listOf(item("a", version = 2)), cursor = "1", epoch = "epoch-2")
+        api.manifestPages += manifest(items = emptyList(), cursor = "2", epoch = "epoch-2")
+        api.statePages += state(items = emptyList(), cursor = "0", epoch = "epoch-2")
+        val recovered = engine().sync()
+
+        assertTrue(recovered.success)
+        assertNull(database.itemDao().find("ghost"))
+        assertNotNull(database.itemDao().find("a"))
+    }
+
+    @Test
+    fun downloadedFileIsReusedAcrossEpochResync() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        engine().sync()
+        val artifact = database.artifactDao().find("a", "transcript")!!
+        val file = fileStore.pathFor("a", "transcript", artifact.mime)
+        file.writeText("downloaded")
+        database.artifactDao().upsert(
+            artifact.copy(
+                localPath = file.absolutePath,
+                downloadState = "completed",
+                downloadedBytes = 10,
+            )
+        )
+
+        api.manifestPages.clear()
+        api.statePages.clear()
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1", epoch = "epoch-2")
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1", epoch = "epoch-2")
+        api.statePages += state(items = emptyList(), cursor = "0", epoch = "epoch-2")
+        val result = engine().sync()
+
+        assertTrue(result.success)
+        val after = database.artifactDao().find("a", "transcript")!!
+        assertEquals("completed", after.downloadState)
+        assertEquals(file.absolutePath, after.localPath)
+        assertTrue(file.exists())
+    }
+
+    @Test
+    fun pendingMutationsSurviveEpochResetAndArePushed() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        engine().sync()
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "key-1",
+                itemId = "a",
+                field = "audio_progress",
+                payloadJson = """{"position_sec":20.0}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+        api.progressResponse = MutationResponseDto(
+            ok = true,
+            item = MutationItemDto(id = "a", version = 2, audioPositionSec = 25.0),
+        )
+
+        api.manifestPages.clear()
+        api.statePages.clear()
+        api.progressFailOnce = true
+        api.manifestPages += manifest(items = emptyList(), cursor = "0", epoch = "epoch-2")
+        api.manifestPages += manifest(items = listOf(item("a", version = 2)), cursor = "1", hasMore = true, epoch = "epoch-2")
+        api.manifestPages += manifest(items = emptyList(), cursor = "2", epoch = "epoch-2")
+        api.statePages += state(items = emptyList(), cursor = "0", epoch = "epoch-2")
+        val result = engine().sync()
+
+        assertTrue(result.success)
+        assertEquals(listOf("key-1", "key-1"), api.progressCalls.map { it.idempotencyKey })
+        assertEquals(0, database.pendingMutationDao().count())
+        assertEquals(25.0, database.itemDao().find("a")!!.audioPositionSec, 0.0)
+    }
+
+    @Test
+    fun changedPausedArtifactStaysSelectedAndIsRequeued() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        engine().sync()
+        val old = database.artifactDao().find("a", "transcript")!!
+        database.artifactDao().upsert(old.copy(downloadState = "paused", downloadedBytes = 4))
+        val enqueued = mutableListOf<String>()
+
+        api.manifestPages.clear()
+        api.manifestPages += manifest(
+            items = listOf(
+                item("a", version = 2, files = listOf(file("transcript", sha = "b".repeat(64))))
+            ),
+            cursor = "2",
+        )
+        engine(
+            downloadQueue = object : DownloadQueue {
+                override suspend fun enqueue(itemId: String) {
+                    enqueued += itemId
+                }
+            }
+        ).sync()
+
+        val updated = database.artifactDao().find("a", "transcript")!!
+        assertEquals("queued", updated.downloadState)
+        assertEquals(listOf("a"), enqueued)
+    }
+
+    @Test
+    fun newArtifactKindForSelectedItemIsQueued() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        engine().sync()
+        val old = database.artifactDao().find("a", "transcript")!!
+        database.artifactDao().upsert(old.copy(downloadState = "completed", localPath = "/tmp/a"))
+        val enqueued = mutableListOf<String>()
+
+        api.manifestPages.clear()
+        api.manifestPages += manifest(
+            items = listOf(
+                item(
+                    "a",
+                    version = 2,
+                    files = listOf(file("transcript"), file("audio")),
+                )
+            ),
+            cursor = "2",
+        )
+        engine(
+            downloadQueue = object : DownloadQueue {
+                override suspend fun enqueue(itemId: String) {
+                    enqueued += itemId
+                }
+            }
+        ).sync()
+
+        assertEquals("queued", database.artifactDao().find("a", "audio")!!.downloadState)
+        assertEquals(listOf("a"), enqueued)
+    }
+
+    @Test
     fun pendingProgressIsPushedBeforePullAndCanonicalValueWins() = runBlocking {
         api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
         api.statePages += state(items = emptyList(), cursor = "0")
@@ -413,7 +584,7 @@ class SyncEngineTest {
     }
 
     @Test
-    fun failedPendingPushSkipsStatePullAndKeepsMutation() = runBlocking {
+    fun failedPendingPushStillPullsManifestAndKeepsMutation() = runBlocking {
         api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
         api.statePages += state(items = emptyList(), cursor = "0")
         api.progressError = TroveApiException("server.error", "boom", 500)
@@ -433,8 +604,152 @@ class SyncEngineTest {
 
         assertFalse(result.success)
         assertEquals(1, database.pendingMutationDao().count())
+        assertTrue(api.calls.contains("manifest"))
         assertFalse(api.calls.contains("state"))
+        assertNotNull(database.itemDao().find("a"))
         assertEquals(SyncStatus.Error("server.error", "boom", null), sync.status.value)
+    }
+
+    @Test
+    fun failedPushDoesNotBlockOtherPendingMutations() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        engine().sync()
+        api.calls.clear()
+        api.manifestPages.clear()
+        api.manifestPages += manifest(items = emptyList(), cursor = "1")
+        api.progressError = TroveApiException("server.error", "boom", 500)
+        api.tagsResponse = MutationResponseDto(
+            ok = true,
+            item = MutationItemDto(id = "a", version = 2, tags = listOf("ok")),
+        )
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "progress-1",
+                itemId = "a",
+                field = "audio_progress",
+                payloadJson = """{"position_sec":20.0}""",
+                clientUpdatedAt = 998,
+                createdAt = 998,
+            )
+        )
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "tags-1",
+                itemId = "a",
+                field = "tags",
+                payloadJson = """{"tags":["ok"]}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+
+        val result = engine().sync()
+
+        assertFalse(result.success)
+        assertEquals(1, api.tagsCalls.size)
+        assertEquals(1, database.pendingMutationDao().count())
+        assertEquals(listOf("ok"), database.itemDao().findDetails("a")!!.tags.map { it.name })
+    }
+
+    @Test
+    fun retryReusesTheSameIdempotencyKey() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.progressResponse = MutationResponseDto(
+            ok = true,
+            item = MutationItemDto(id = "a", version = 2, audioPositionSec = 21.0),
+        )
+        api.progressError = TroveNetworkException("offline")
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "stable-key",
+                itemId = "a",
+                field = "audio_progress",
+                payloadJson = """{"position_sec":20.0}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+        val sync = engine()
+        val first = sync.sync()
+        assertFalse(first.success)
+        assertEquals(1, database.pendingMutationDao().count())
+
+        api.progressError = null
+        api.manifestPages.clear()
+        api.manifestPages += manifest(items = emptyList(), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        val second = sync.sync()
+
+        assertTrue(second.success)
+        assertEquals(0, database.pendingMutationDao().count())
+        assertEquals(
+            listOf("stable-key", "stable-key"),
+            api.progressCalls.map { it.idempotencyKey },
+        )
+    }
+
+    @Test
+    fun clockSkewWarningIsVisibleAsNonBlockingNotice() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.progressResponse = MutationResponseDto(
+            ok = true,
+            item = MutationItemDto(id = "a", version = 2, audioPositionSec = 21.0),
+            warnings = listOf("sync.clock_skew"),
+        )
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "key-1",
+                itemId = "a",
+                field = "audio_progress",
+                payloadJson = """{"position_sec":20.0}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+        val sync = engine()
+        val notice = async { withTimeout(5_000) { sync.conflicts.first() } }
+
+        val result = sync.sync()
+
+        assertTrue(result.success)
+        assertTrue(notice.await().contains("时钟"))
+    }
+
+    @Test
+    fun canonicalResponseDoesNotOverwriteANewerPendingField() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        engine().sync()
+        api.manifestPages.clear()
+        api.manifestPages += manifest(items = emptyList(), cursor = "1")
+        api.tagsResponse = MutationResponseDto(
+            ok = true,
+            item = MutationItemDto(
+                id = "a",
+                version = 4,
+                audioPositionSec = 5.0,
+                consumptionState = "finished",
+                tags = listOf("canonical"),
+            ),
+        )
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "tags-1",
+                itemId = "a",
+                field = "tags",
+                payloadJson = """{"tags":["local"]}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+
+        engine().sync()
+
+        val a = database.itemDao().find("a")!!
+        assertEquals(0.0, a.audioPositionSec, 0.0)
+        assertEquals("unstarted", a.consumptionState)
+        assertEquals(4, a.version)
+        assertEquals(listOf("canonical"), database.itemDao().findDetails("a")!!.tags.map { it.name })
     }
 
     @Test
@@ -617,8 +932,13 @@ class SyncEngineTest {
         val progressCalls = mutableListOf<ProgressCall>()
         val tagsCalls = mutableListOf<Pair<String, TagsRequestDto>>()
         var failCursor = false
+        var stateFailOnce = false
+        var manifestCallCount = 0
+        var manifestFailCall: Int? = null
         var manifestError: Throwable? = null
+        var stateError: Throwable? = null
         var progressError: Throwable? = null
+        var progressFailOnce = false
         var tagsError: Throwable? = null
         var progressResponse: MutationResponseDto? = null
         var tagsResponse: MutationResponseDto? = null
@@ -636,6 +956,10 @@ class SyncEngineTest {
         override suspend fun manifest(cursor: String?, limit: Int): ManifestDto {
             calls += "manifest"
             requestedCursors += cursor
+            manifestCallCount += 1
+            if (manifestFailCall == manifestCallCount) {
+                throw TroveNetworkException("offline")
+            }
             manifestError?.let { throw it }
             if (failCursor && !cursorFailed) {
                 cursorFailed = true
@@ -646,6 +970,11 @@ class SyncEngineTest {
 
         override suspend fun state(cursor: String?, limit: Int): SyncStateDto {
             calls += "state"
+            if (stateFailOnce) {
+                stateFailOnce = false
+                throw TroveApiException(CURSOR_INVALID, "invalid", 422)
+            }
+            stateError?.let { throw it }
             return if (statePages.isEmpty()) {
                 SyncStateDto(emptyList(), "0", false, EPOCH)
             } else {
@@ -660,6 +989,10 @@ class SyncEngineTest {
         ): MutationResponseDto {
             calls += "progress"
             progressCalls += ProgressCall(body, idempotencyKey)
+            if (progressFailOnce) {
+                progressFailOnce = false
+                throw TroveApiException("server.error", "boom", 500)
+            }
             progressError?.let { throw it }
             return progressResponse ?: MutationResponseDto(item = MutationItemDto(itemId))
         }

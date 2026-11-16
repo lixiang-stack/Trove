@@ -1,6 +1,6 @@
 # 21 — V1 API 契约审计与 OpenAPI
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M3
 Blocked by: 03, 04, 05, 06, 07, 08
@@ -25,12 +25,12 @@ V1 的 Host API 是 Android 的唯一契约。需要一次审计：新端点/认
 
 ## Acceptance Criteria
 
-- [ ] OpenAPI 包含全部 V1 端点，请求/响应 schema 与实现一致。
-- [ ] Cookie 和 Bearer 认证标记正确；CSRF 只作用于 Cookie 写。
-- [ ] 错误/分页/cursor/epoch/compact payload 与 fixture 一致。
-- [ ] 文件 ETag/Range/If-Range/sha 契约通过；无路径/密钥泄漏。
-- [ ] Android DTO 能解析 Host fixture；无两端字段漂移。
-- [ ] 旧 MVP API/HTML 测试全绿。
+- [x] OpenAPI 包含全部 V1 端点，请求/响应 schema 与实现一致。
+- [x] Cookie 和 Bearer 认证标记正确；CSRF 只作用于 Cookie 写。
+- [x] 错误/分页/cursor/epoch/compact payload 与 fixture 一致。
+- [x] 文件 ETag/Range/If-Range/sha 契约通过；无路径/密钥泄漏。
+- [x] Android DTO 能解析 Host fixture；无两端字段漂移。
+- [x] 旧 MVP API/HTML 测试全绿。
 
 ## Testing
 
@@ -42,3 +42,11 @@ V1 的 Host API 是 Android 的唯一契约。需要一次审计：新端点/认
 
 - Android 功能实现；由 09–20 完成。
 - API 版本前缀/迁移策略；V1 用 capabilities + additive 变更。
+
+## Implementation
+
+- OpenAPI 现在为 V1 端点声明请求/响应、方法、认证、`Idempotency-Key` header、`FieldClockSchema`、文件/媒体 Range/ETag/206/416、ZIP export、health 503 和创建 201；`/api/items/{item_id}/cover` 纳入回归路径。Swagger/ReDoc 只在 docs 路径使用放行 CDN 的 CSP，JSON schema 仍公开。
+- 错误约定保持 `{code,message,details?}`；新增未处理异常的 `internal.error` 500 JSON/HTML 分支，并保留旧 MVP 测试。
+- 共享 fixture 修正 `search.json` 的 label/URL/cover；新增 `mutation.json`、`health.json`；Host 测试校验 schema 并用真实 Host 搜索结果对照 label/URL；Android `DtoContractTest` 消费同一组 fixture。
+- Android DTO 补齐 search Item 的 label/cover/artifacts 和 mutation `field_clocks`；`TroveClient.revokeDevice`/`deleteItem` 现在解析稳定错误码并触发 401 处理。
+- 旧 MVP API/HTML/browser 测试仍保留；`./scripts/check.sh --full` 全绿。

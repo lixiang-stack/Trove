@@ -35,4 +35,13 @@ jobs:
 
       - name: Assemble, test, lint
         working-directory: android
-        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --no-daemon
+        run: |
+          ./gradlew \
+            :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
+            :core:testDebugUnitTest :core:lintDebug \
+            :playback:lintDebug :reader:lintDebug \
+            --no-daemon
+
+      - name: Release shrink and LAN flavor smoke
+        working-directory: android
+        run: ./gradlew :app:assembleProdRelease :app:assembleLanDebug --no-daemon

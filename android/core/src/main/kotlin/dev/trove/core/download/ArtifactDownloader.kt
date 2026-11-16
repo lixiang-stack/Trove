@@ -313,6 +313,7 @@ class ArtifactDownloader(
         }
         target.delete()
         moveAtomically(part, target)
+        database.pendingDeletionDao().deletePaths(listOf(target.absolutePath))
         database.artifactDao().upsert(
             artifact.copy(
                 localPath = target.absolutePath,

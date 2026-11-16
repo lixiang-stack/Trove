@@ -10,6 +10,7 @@ SPEC_PATHS = {
     "/api/items",
     "/api/items/{item_id}",
     "/api/items/{item_id}/audio",
+    "/api/items/{item_id}/cover",
     "/api/items/{item_id}/transcript",
     "/api/items/{item_id}/book/chapters/{chapter_index}",
     "/api/items/{item_id}/progress",
@@ -58,9 +59,35 @@ def test_openapi_covers_mvp_endpoints_and_security(api_host):
         {"cookieAuth": []},
         {"bearerAuth": []},
     ]
+    for path in (
+        "/api/devices",
+        "/api/devices/{device_id}",
+        "/api/sync/manifest",
+        "/api/sync/state",
+        "/api/items/{item_id}/files/{kind}",
+        "/api/items/{item_id}/progress",
+        "/api/items/{item_id}/tags",
+    ):
+        operation = next(iter(schema["paths"][path].values()))
+        assert operation["security"] == [{"cookieAuth": []}, {"bearerAuth": []}]
     assert "security" not in schema["paths"]["/api/auth/login"]["post"]
     assert "security" not in schema["paths"]["/api/auth/device-token"]["post"]
     assert "security" not in schema["paths"]["/api/health"]["get"]
+
+    expected_methods = {
+        "/api/items": {"get", "post"},
+        "/api/items/{item_id}": {"get", "patch", "delete"},
+        "/api/items/{item_id}/progress": {"put"},
+        "/api/items/{item_id}/tags": {"put"},
+        "/api/devices": {"get"},
+        "/api/devices/{device_id}": {"delete"},
+        "/api/sync/manifest": {"get"},
+        "/api/sync/state": {"get"},
+        "/api/items/{item_id}/files/{kind}": {"get"},
+        "/api/health": {"get"},
+    }
+    for path, methods in expected_methods.items():
+        assert methods <= set(schema["paths"][path])
 
     item_schema = schema["components"]["schemas"]["ItemSchema"]["properties"]
     assert "artifacts" in item_schema
@@ -75,6 +102,49 @@ def test_openapi_covers_mvp_endpoints_and_security(api_host):
     assert error_schema["content"]["application/json"]["schema"]["$ref"].endswith(
         "/ErrorResponse"
     )
+
+    assert schema["paths"]["/api/sync/manifest"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"].endswith("/ManifestResponse")
+    assert schema["paths"]["/api/sync/state"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"].endswith("/SyncStateResponse")
+    assert schema["paths"]["/api/devices"]["get"]["responses"]["200"][
+        "content"
+    ]["application/json"]["schema"]["$ref"].endswith("/DeviceListResponse")
+    progress = schema["paths"]["/api/items/{item_id}/progress"]["put"]
+    tags = schema["paths"]["/api/items/{item_id}/tags"]["put"]
+    assert progress["responses"]["200"]["content"]["application/json"]["schema"][
+        "$ref"
+    ].endswith("/MutationResponse")
+    for operation in (progress, tags):
+        assert any(
+            parameter["in"] == "header"
+            and parameter["name"].lower() == "idempotency-key"
+            for parameter in operation["parameters"]
+        )
+
+    file_responses = schema["paths"]["/api/items/{item_id}/files/{kind}"]["get"][
+        "responses"
+    ]
+    assert "ETag" in file_responses["200"]["headers"]
+    assert "Accept-Ranges" in file_responses["200"]["headers"]
+    assert "206" in file_responses
+    assert "416" in file_responses
+    assert "206" in schema["paths"]["/api/items/{item_id}/audio"]["get"]["responses"]
+    assert (
+        schema["paths"]["/api/export"]["get"]["responses"]["200"]["content"]
+    ) == {"application/zip": {}}
+    assert "503" in schema["paths"]["/api/health"]["get"]["responses"]
+
+
+def test_docs_ui_serves_cdn_assets_with_a_scoped_csp(api_host):
+    docs = api_host.client.get("/docs")
+    assert docs.status_code == 200
+    assert "cdn.jsdelivr.net" in docs.headers["content-security-policy"]
+    redoc = api_host.client.get("/redoc")
+    assert redoc.status_code == 200
+    assert "cdn.redoc.ly" in redoc.headers["content-security-policy"]
 
 
 def test_error_shape_is_stable(api_host):

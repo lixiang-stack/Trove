@@ -84,4 +84,5 @@
     <string name="error_host_incompatible">Host 版本不支持同步，请升级 Host</string>
     <string name="error_device_revoked">登录已失效，请重新登录</string>
     <string name="error_unknown">连接失败，请稍后重试</string>
+    <string name="lan_warning">LAN 调试版：允许受信任局域网明文 HTTP，请勿日常使用或分发。</string>
 </resources>

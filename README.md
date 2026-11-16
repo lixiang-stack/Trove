@@ -25,8 +25,9 @@ uv run trove worker
 Data lives in `~/Trove` by default. Override it with `TROVE_HOME`.
 
 For auto-start at login, Caddy/Tailscale HTTPS, upgrades, backups, and uninstall,
-follow [docs/deployment.md](docs/deployment.md). The security regression checklist
-is in [docs/security.md](docs/security.md); dependency licenses are listed in
+follow [docs/deployment.md](docs/deployment.md). Android build/signing/CA notes are
+in [docs/android.md](docs/android.md). The security regression checklist is in
+[docs/security.md](docs/security.md); dependency licenses are listed in
 [docs/licenses.md](docs/licenses.md).
 
 ## Configuration

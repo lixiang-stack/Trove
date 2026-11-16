@@ -11,8 +11,40 @@ router = APIRouter()
 
 DOWNLOADABLE_KINDS = frozenset(kind.value for kind in ArtifactKind)
 
+_FILE_HEADERS = {
+    "ETag": {
+        "description": "Quoted SHA-256 of the artifact",
+        "schema": {"type": "string"},
+    },
+    "Accept-Ranges": {"description": "Always `bytes`", "schema": {"type": "string"}},
+    "Cache-Control": {"description": "Always `private`", "schema": {"type": "string"}},
+    "X-Content-Type-Options": {"description": "Always `nosniff`", "schema": {"type": "string"}},
+}
 
-@router.get("/items/{item_id}/files/{kind}")
+
+@router.get(
+    "/items/{item_id}/files/{kind}",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "description": "Content Package artifact",
+            "content": {"application/octet-stream": {}},
+            "headers": _FILE_HEADERS,
+        },
+        206: {
+            "description": "Partial content for Range requests",
+            "content": {"application/octet-stream": {}},
+            "headers": {
+                **_FILE_HEADERS,
+                "Content-Range": {
+                    "description": "Inclusive byte range and total size",
+                    "schema": {"type": "string"},
+                },
+            },
+        },
+        416: {"description": "Requested range is not satisfiable"},
+    },
+)
 def api_download_file(request: Request, item_id: str, kind: str):
     app_runtime = runtime(request)
     bundle = app_runtime.library.get(item_id)

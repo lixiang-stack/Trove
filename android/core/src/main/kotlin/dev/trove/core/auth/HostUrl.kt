@@ -19,7 +19,11 @@ enum class HostUrlError {
 object HostUrl {
     private val debugCleartextHosts = setOf("localhost", "127.0.0.1", "10.0.2.2", "::1")
 
-    fun normalize(raw: String, allowDebugCleartext: Boolean): HostUrlResult {
+    fun normalize(
+        raw: String,
+        allowDebugCleartext: Boolean,
+        allowLanCleartext: Boolean = false,
+    ): HostUrlResult {
         val value = raw.trim()
         if (value.isEmpty()) {
             return HostUrlResult.Invalid(HostUrlError.EMPTY)
@@ -37,9 +41,10 @@ object HostUrl {
         }
         if (scheme != "https") {
             val hostKey = host.removePrefix("[").removeSuffix("]").lowercase()
-            val allowed = scheme == "http" &&
-                allowDebugCleartext &&
-                hostKey in debugCleartextHosts
+            val allowed = scheme == "http" && (
+                (allowDebugCleartext && hostKey in debugCleartextHosts) ||
+                    (allowLanCleartext && isLanHost(hostKey))
+                )
             if (!allowed) {
                 return HostUrlResult.Invalid(HostUrlError.CLEARTEXT)
             }
@@ -52,5 +57,25 @@ object HostUrl {
         }
         val port = if (uri.port == -1) "" else ":${uri.port}"
         return HostUrlResult.Valid("$scheme://${host.lowercase()}$port")
+    }
+
+    private fun isLanHost(host: String): Boolean {
+        if (host == "localhost" || host.endsWith(".local")) return true
+        if (":" in host) {
+            return host == "::1" ||
+                host.startsWith("fc") ||
+                host.startsWith("fd") ||
+                host.startsWith("fe8") ||
+                host.startsWith("fe9") ||
+                host.startsWith("fea") ||
+                host.startsWith("feb")
+        }
+        val parts = host.split('.').mapNotNull { it.toIntOrNull() }
+        if (parts.size != 4 || parts.any { it !in 0..255 }) return false
+        return parts[0] == 10 ||
+            (parts[0] == 172 && parts[1] in 16..31) ||
+            (parts[0] == 192 && parts[1] == 168) ||
+            parts[0] == 127 ||
+            (parts[0] == 169 && parts[1] == 254)
     }
 }

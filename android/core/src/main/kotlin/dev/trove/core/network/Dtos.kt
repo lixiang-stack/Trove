@@ -147,6 +147,16 @@ data class ItemCreateRequestDto(
 )
 
 @Serializable
+data class ArtifactDto(
+    val kind: String,
+    val sha256: String = "",
+    val size: Long = 0,
+    val mime: String = "",
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    val url: String? = null,
+)
+
+@Serializable
 data class ItemDto(
     val id: String,
     val version: Int = 0,
@@ -160,6 +170,12 @@ data class ItemDto(
     @SerialName("duration_sec") val durationSec: Double? = null,
     val summary: String? = null,
     val tags: List<String> = emptyList(),
+    @SerialName("source_type_label") val sourceTypeLabel: String? = null,
+    @SerialName("consumption_label") val consumptionLabel: String? = null,
+    @SerialName("processing_label") val processingLabel: String? = null,
+    @SerialName("has_cover") val hasCover: Boolean = false,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val artifacts: List<ArtifactDto> = emptyList(),
     @SerialName("processing_state") val processingState: String = "queued",
     @SerialName("error_code") val errorCode: String? = null,
     @SerialName("error_message") val errorMessage: String? = null,
@@ -238,9 +254,16 @@ data class MutationItemDto(
 )
 
 @Serializable
+data class FieldClockDto(
+    @SerialName("client_updated_at") val clientUpdatedAt: Long,
+    @SerialName("device_id") val deviceId: String,
+)
+
+@Serializable
 data class MutationResponseDto(
     val ok: Boolean = true,
     val applied: Boolean = true,
     val item: MutationItemDto,
+    @SerialName("field_clocks") val fieldClocks: Map<String, FieldClockDto> = emptyMap(),
     val warnings: List<String> = emptyList(),
 )

@@ -1,0 +1,68 @@
+{
+  "ok": true,
+  "applied": false,
+  "item": {
+    "id": "5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10",
+    "version": 8,
+    "source_key": "youtube:dQw4w9WgXcQ",
+    "source_type": "video_url",
+    "source_type_label": "Video",
+    "platform": "youtube",
+    "platform_label": "YouTube",
+    "source_url_raw": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "source_url_canonical": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "title": "记忆与智能",
+    "author": "作者",
+    "published_at": "2026-10-01",
+    "fetched_at": 1793516400000,
+    "language": "zh",
+    "duration_sec": 642.25,
+    "summary": "人工智能与记忆的关系。",
+    "tags": ["AI", "host-wins"],
+    "tag_items": [
+      {"name": "AI", "source": "ai"},
+      {"name": "host-wins", "source": "user"}
+    ],
+    "consumption_state": "in_progress",
+    "consumption_label": "In progress",
+    "audio_position_sec": 642.25,
+    "book_locator": null,
+    "created_at": 1793516300000,
+    "updated_at": 1793517000000,
+    "processing_state": "completed",
+    "processing_label": "Completed",
+    "status_category": "ready",
+    "has_audio": true,
+    "has_book": false,
+    "has_cover": true,
+    "audio_url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/audio",
+    "cover_url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/cover",
+    "artifacts": [
+      {
+        "kind": "audio",
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "size": 184320,
+        "mime": "audio/mp4",
+        "duration_sec": 642.25,
+        "url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/audio"
+      },
+      {
+        "kind": "cover",
+        "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size": 24576,
+        "mime": "image/jpeg",
+        "duration_sec": null,
+        "url": "/api/items/5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10/cover"
+      }
+    ],
+    "ai": null,
+    "run": null
+  },
+  "field_clocks": {
+    "tags": {
+      "client_updated_at": 1793517000123,
+      "device_id": "device-1"
+    }
+  },
+  "warnings": ["sync.clock_skew"]
+}

@@ -62,6 +62,7 @@ class SessionController(
     private val settingsStore: SettingsStore,
     private val apiFactory: TroveApiFactory = RetrofitTroveApiFactory(),
     private val allowDebugCleartext: Boolean,
+    private val allowLanCleartext: Boolean = false,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
 ) : UnauthorizedListener {
     private val _state = MutableStateFlow<SessionState>(SessionState.Checking)
@@ -78,7 +79,9 @@ class SessionController(
     }
 
     suspend fun login(rawHost: String, password: String, deviceName: String): LoginOutcome {
-        val normalized = when (val result = HostUrl.normalize(rawHost, allowDebugCleartext)) {
+        val normalized = when (
+            val result = HostUrl.normalize(rawHost, allowDebugCleartext, allowLanCleartext)
+        ) {
             is HostUrlResult.Invalid -> return LoginOutcome(error = result.reason.toSessionError())
             is HostUrlResult.Valid -> result.baseUrl
         }
