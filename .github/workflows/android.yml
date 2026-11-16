@@ -39,7 +39,8 @@ jobs:
           ./gradlew \
             :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
             :core:testDebugUnitTest :core:lintDebug \
-            :playback:lintDebug :reader:testDebugUnitTest :reader:lintDebug \
+            :playback:testDebugUnitTest :playback:lintDebug \
+            :reader:testDebugUnitTest :reader:lintDebug \
             --no-daemon
 
       - name: Signed release artifact check
