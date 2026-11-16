@@ -128,6 +128,7 @@ fun PlayerScreen(
     onConsumption: (String) -> Unit,
     onClearTagError: () -> Unit,
     onRead: (String) -> Unit,
+    onRetryProcessing: () -> Unit,
 ) {
     PlayerSystemBars()
     var confirmDelete by remember { mutableStateOf(false) }
@@ -187,6 +188,7 @@ fun PlayerScreen(
                 onDelete = { confirmDelete = true },
                 onEditTags = { tagEditorOpen = true },
                 onConsumption = onConsumption,
+                onRetryProcessing = onRetryProcessing,
             )
             if (state.tagError != null) {
                 Row(
@@ -384,6 +386,7 @@ private fun PlayerTopBar(
     onDelete: () -> Unit,
     onEditTags: () -> Unit,
     onConsumption: (String) -> Unit,
+    onRetryProcessing: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -467,6 +470,15 @@ private fun PlayerTopBar(
                             onEditTags()
                         },
                     )
+                    if (item.processingState == "failed") {
+                        DropdownMenuItem(
+                            text = { Text("重试处理") },
+                            onClick = {
+                                onDismissMenu()
+                                onRetryProcessing()
+                            },
+                        )
+                    }
                     DropdownMenuItem(
                         text = { Text("删除 Item") },
                         onClick = {
@@ -549,6 +561,18 @@ private fun PlayerContent(
                 TrovePill("#$tag", dark = true)
             }
             TrovePill("编辑 Tag", onClick = onEditTags, dark = true)
+        }
+        if (item.processingState == "failed") {
+            Text(
+                item.errorMessage?.takeIf { it.isNotBlank() }
+                    ?: "处理失败，可从右上角菜单重试。",
+                style = MaterialTheme.typography.bodySmall,
+                color = TroveColors.AccentSoft,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .testTag("processing-error"),
+            )
         }
         if (!isBook && (state.errorCode != null || playback.errorCode != null)) {
             PlayerError(state.errorCode ?: playback.errorCode.orEmpty())

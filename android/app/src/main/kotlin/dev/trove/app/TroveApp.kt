@@ -349,6 +349,7 @@ private fun MainShell(
                         onConsumption = playerViewModel::setConsumption,
                         onClearTagError = playerViewModel::clearTagError,
                         onRead = { openReader(it) },
+                        onRetryProcessing = playerViewModel::retryProcessing,
                     )
                 }
                 entry<TranscriptRoute> { route ->

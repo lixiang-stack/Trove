@@ -14,6 +14,7 @@ import dev.trove.core.library.LibraryRepository
 import dev.trove.core.library.toUserMessage
 import dev.trove.core.search.LocalSearchRepository
 import dev.trove.core.settings.SettingsStore
+import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
 import dev.trove.core.transcript.TranscriptSegment
 import dev.trove.playback.PlaybackRequest
@@ -55,6 +56,7 @@ class PlayerViewModel(
     private val sessionController: SessionController,
     private val itemMutationRepository: ItemMutationRepository,
     private val localSearchRepository: LocalSearchRepository,
+    private val syncEngine: SyncEngine,
 ) : ViewModel() {
     private val selectedId = MutableStateFlow<String?>(null)
     private val errorCode = MutableStateFlow<String?>(null)
@@ -217,6 +219,23 @@ class PlayerViewModel(
         tagError.value = null
     }
 
+    fun retryProcessing() {
+        val itemId = selectedId.value ?: return
+        viewModelScope.launch {
+            val client = sessionController.currentClient()
+            if (client == null) {
+                errorCode.value = "auth.required"
+                return@launch
+            }
+            runCatching {
+                client.retryItem(itemId)
+                syncEngine.sync()
+            }.onFailure {
+                errorCode.value = "item.retry_failed"
+            }
+        }
+    }
+
     fun setConsumption(state: String) {
         val itemId = selectedId.value ?: return
         viewModelScope.launch { itemMutationRepository.setConsumption(itemId, state) }
@@ -274,6 +293,7 @@ class PlayerViewModel(
                     sessionController = container.sessionController,
                     itemMutationRepository = container.itemMutationRepository,
                     localSearchRepository = container.localSearchRepository,
+                    syncEngine = container.syncEngine,
                 )
             }
         }

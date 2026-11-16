@@ -19,6 +19,7 @@ import dev.trove.core.reading.BookRepository
 import dev.trove.core.search.LocalSearchRepository
 import dev.trove.core.search.SearchIndex
 import dev.trove.core.storage.ArtifactFileStore
+import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -93,6 +94,11 @@ class PlayerViewModelTest {
             transcriptRepository = TranscriptRepository(database, fileStore),
             bookRepository = BookRepository(database, fileStore),
             index = SearchIndex(database),
+        ),
+        syncEngine = SyncEngine(
+            database = database,
+            clientProvider = { controller.currentClient() },
+            fileStore = fileStore,
         ),
     )
 

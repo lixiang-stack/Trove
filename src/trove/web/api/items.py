@@ -215,6 +215,11 @@ def api_progress(request: Request, item_id: str, payload: ProgressRequest):
         if payload.book_locator is not None
         else None
     )
+    state_only = (
+        payload.position_sec is None
+        and payload.book_locator is None
+        and payload.consumption_state is not None
+    )
     return app_runtime.sync.apply_progress(
         item_id,
         position_sec=payload.position_sec,
@@ -223,6 +228,7 @@ def api_progress(request: Request, item_id: str, payload: ProgressRequest):
         client_updated_at=payload.client_updated_at,
         device_id=request.state.device_id,
         idempotency_key=request.headers.get("idempotency-key"),
+        require_progress=not state_only,
     )
 
 

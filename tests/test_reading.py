@@ -135,6 +135,17 @@ def test_reading_progress_is_saved_and_restored(host):
     assert "A Hare one day ridiculed" in page.text
 
 
+def test_reading_progress_accepts_consumption_state_only(host):
+    item_id = _add_epub(host, FIXTURES / "aesop.epub")
+    host.login()
+    response = host.client.put(
+        f"/api/items/{item_id}/progress",
+        json={"consumption_state": "finished"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["item"]["consumption_state"] == "finished"
+
+
 def test_reading_progress_accepts_epub_schema_two_locator(host):
     item_id = _add_epub(host, FIXTURES / "aesop.epub")
     host.login()
