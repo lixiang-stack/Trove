@@ -110,10 +110,10 @@ class PlayerViewModel(
         }
         viewModelScope.launch {
             player.state
-                .map { it.itemId }
+                .map { it.itemId to it.ended }
                 .distinctUntilChanged()
-                .collect { itemId ->
-                    repository.cleanupPendingFiles(itemId)
+                .collect { (itemId, ended) ->
+                    repository.cleanupPendingFiles(if (ended) null else itemId)
                 }
         }
     }

@@ -14,7 +14,7 @@ ticket comments, not claims.
 | Host full tests | `./scripts/check.sh --full` | PASS 2026-11-16 — 388 collected; docs check included |
 | Host fast CI | `./scripts/check.sh --fast` | PASS 2026-11-16 |
 | Docs | `python3 scripts/check-docs.py` | PASS — 84 files |
-| Android build/JVM/Compose/lint | `:app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug :core:testDebugUnitTest :core:lintDebug :playback:lintDebug :reader:lintDebug` | PASS — 66 app tests, 90 core tests, 3 reader tests |
+| Android build/JVM/Compose/lint | `:app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug :core:testDebugUnitTest :core:lintDebug :playback:lintDebug :reader:testDebugUnitTest :reader:lintDebug` | PASS — 66 app tests, 90 core tests, 3 reader tests |
 | Release R8/resource shrink | `:app:assembleProdRelease` | PASS (signed and unsigned variants) |
 | Signed release check | `scripts/android/release-check.sh` | PASS — signed, not debuggable, permissions allowlist, 9 MiB |
 | LAN debug build | `:app:assembleLanDebug` | PASS |

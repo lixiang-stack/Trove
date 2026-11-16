@@ -42,7 +42,10 @@ not a penetration-test report.
 - [x] EPUB chapters are parsed into text paragraphs and cleaned with an `nh3`
       tag allowlist (no attributes, scripts, styles, remote images, or links).
 - [x] CSP: `default-src 'self'`, `script-src 'self'`, `img-src 'self' data:`,
-      `media-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`.
+      `media-src 'self'`, `object-src 'none'`, `frame-ancestors 'none'`. The public
+      `/docs` and `/redoc` pages use a scoped policy that additionally allows the
+      Swagger/ReDoc CDN (and inline bootstrap script); app pages keep `script-src
+      'self'`.
 - [x] `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`, `nosniff`.
 
 ## Authentication and headers
