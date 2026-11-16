@@ -1,6 +1,6 @@
 # 17 — Android Add、分享与播客入库
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M2
 Blocked by: 09, 10
@@ -25,12 +25,12 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] 从其他 App 分享 URL 能打开预填的 Add 页并提交。
-- [ ] 单视频入库成功；playlist/多 P 显示明确拒绝。
-- [ ] 播客 feed 预览/选集/入库可用；重复 URL 打开已有 Item。
-- [ ] DeepSeek 提示可见；处理中/失败/重试状态正确。
-- [ ] 内网/不支持平台/超大文件错误来自 Host 且可读。
-- [ ] 关闭 App 后 Host 继续处理；下次同步更新状态。
+- [x] 从其他 App 分享 URL 能打开预填的 Add 页并提交。
+- [x] 单视频入库成功；playlist/多 P 显示明确拒绝。
+- [x] 播客 feed 预览/选集/入库可用；重复 URL 打开已有 Item。
+- [x] DeepSeek 提示可见；处理中/失败/重试状态正确。
+- [x] 内网/不支持平台/超大文件错误来自 Host 且可读。
+- [x] 关闭 App 后 Host 继续处理；下次同步更新状态。
 
 ## Testing
 
@@ -50,3 +50,11 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 - Playlist/multi-P, unsupported platform, credentials, SSRF and host-side size errors surface Host codes as readable Chinese; processing failure messages are mapped by stable error-code prefix.
 - Automated coverage: `SharedTextTest`, `AddFlowTest` (submit/error/duplicate), `FakeTroveApi` contract methods.
 - Pending real-Host/device acceptance: share a Bilibili/YouTube URL, podcast feed preview/selection, duplicate-open, and processing completion after App close.
+
+### Android real-device acceptance (2026-11-16 / Android 16, API 36)
+
+- Shared a Bilibili URL through `ACTION_SEND text/plain`: the first URL pre-filled Add, the DeepSeek data-flow notice remained visible, and submitting a URL of an existing Item opened that Item instead of creating a duplicate.
+- A YouTube playlist URL was rejected with `不支持这种链接类型。`; the error came from Host URL validation.
+- NPR Planet Money feed preview returned 50 episodes; selecting one created a podcast Item and opened its detail. Processing failed later because this Host venv lacks the ASR extra (`ASR components are not installed`), which also exercised the failed state.
+- A bad Bilibili part URL created an Item that failed with `Could not parse video info`; the Player now exposes `重试处理`, shows the readable processing error, and the Host created a new failed run on retry.
+- After installing the ASR extra on the acceptance Host, a Bilibili video URL moved `queued → transcribing → organizing → completed`; the Android Library picked up the completed Item on the next sync. Duplicate-open, playlist rejection, podcast intake, processing status, close-App continuation and retry were verified.

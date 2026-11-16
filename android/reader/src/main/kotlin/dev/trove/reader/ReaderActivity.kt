@@ -88,6 +88,7 @@ class ReaderActivity : FragmentActivity() {
     private var navigator: EpubNavigatorFragment? = null
     private var initialLocator: Locator? = null
     private var highlightLocator: Locator? = null
+    private var highlightApplied = false
     private var currentLocator: Locator? = null
     private var saveJob: Job? = null
     private var paragraphCounts: Map<Int, Int> = emptyMap()
@@ -313,6 +314,7 @@ class ReaderActivity : FragmentActivity() {
         navigator = fragment
         highlightLocator?.let { locator ->
             lifecycleScope.launch {
+                delay(600)
                 runCatching {
                     fragment.applyDecorations(
                         listOf(
@@ -324,6 +326,7 @@ class ReaderActivity : FragmentActivity() {
                         ),
                         group = "search",
                     )
+                    highlightApplied = true
                 }
             }
         }

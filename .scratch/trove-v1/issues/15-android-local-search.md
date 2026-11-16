@@ -1,6 +1,6 @@
 # 15 — Android 本地 FTS5 搜索
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M2
 Blocked by: 12, 13, 14
@@ -25,12 +25,12 @@ ADRs: [0003](../../../docs/adr/0003-sqlite-fts5-cjk-search.md), [0009](../../../
 
 ## Acceptance Criteria
 
-- [ ] “记忆”“智能”等两字中文词命中；英文词干命中。
-- [ ] 结果按 Item 聚合，evidence 正确；点击打开对应 transcript/书段落。
-- [ ] 离线搜索只覆盖已下载 Item；在线搜索覆盖全库。
-- [ ] 索引可重建；FTS5 缺失/损坏有明确错误，播放/阅读仍可用。
-- [ ] 1,000 Item 本地搜索 p95 <1 秒。
-- [ ] 不做语义/向量检索。
+- [x] “记忆”“智能”等两字中文词命中；英文词干命中。
+- [x] 结果按 Item 聚合，evidence 正确；点击打开对应 transcript/书段落。
+- [x] 离线搜索只覆盖已下载 Item；在线搜索覆盖全库。
+- [x] 索引可重建；FTS5 缺失/损坏有明确错误，播放/阅读仍可用。
+- [x] 1,000 Item 本地搜索 p95 <1 秒。
+- [x] 不做语义/向量检索。
 
 ## Testing
 
@@ -50,3 +50,11 @@ ADRs: [0003](../../../docs/adr/0003-sqlite-fts5-cjk-search.md), [0009](../../../
 - Index is rebuilt on first launch when empty and can be manually rebuilt from Settings; FTS5 absence degrades to online-only search without blocking playback/reading.
 - Automated coverage: `SearchQueryTest`, `SearchIndexTest` (JVM skips framework SQLite without FTS5), `SearchIndexDeviceTest` (instrumented bundled SQLite), `SearchFlowTest`, `LocalSearchRepository.kt`/Host contract fixtures `contract/search.json` and `contract/search-query.json`.
 - Pending: 1,000-item p95 benchmark on a real device.
+
+### Android real-device acceptance (2026-11-16 / Android 16, API 36)
+
+- Online search hit Host `/api/search` and returned grouped Item evidence; local search after airplane mode + `adb reverse` removal showed `离线 · 仅搜索已下载内容` and hit the downloaded Aesop book.
+- `SearchIndexDeviceTest` passed on device: bundled SQLite FTS5 is available, Chinese bigrams (`智能`) and English stemming (`fox` → `foxes`) hit, and 1,000 indexed Items stayed under the 1 s p95 assertion.
+- Result click opened the Reader at the matching book chapter; the first evidence anchor is chosen over summary/title evidence.
+- Search filters (type EPUB + consumption + source local) narrowed correctly; switching to `已完成` produced zero hits.
+- The 1,000-Item run is an FTS-index benchmark (`SearchIndexDeviceTest`), not a full App download/UI benchmark. Chinese text input could not be scripted through MIUI's IME (ADBKeyboard install is blocked by `INSTALL_FAILED_USER_RESTRICTED`), so the Chinese query path is covered by the device instrumented test rather than the search box UI.
