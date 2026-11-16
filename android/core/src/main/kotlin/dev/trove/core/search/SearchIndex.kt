@@ -1,13 +1,14 @@
 package dev.trove.core.search
 
-import android.database.Cursor
-import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.room.PooledConnection
+import androidx.room.immediateTransaction
+import androidx.room.useReaderConnection
+import androidx.room.useWriterConnection
+import androidx.sqlite.SQLiteStatement
 import dev.trove.core.db.SearchFtsSchema
 import dev.trove.core.db.TroveDatabase
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 
 data class SearchDocument(
     val text: String,
@@ -44,20 +45,27 @@ class SearchIndex(private val database: TroveDatabase) {
         runCatching { ensureTable() }.isSuccess
     }
 
+    suspend fun hasDocuments(): Boolean = mutex.withLock {
+        runCatching {
+            ensureTable()
+            read { connection ->
+                connection.query("SELECT 1 FROM search_fts LIMIT 1") { it.getLong(0) }
+            }.isNotEmpty()
+        }.getOrDefault(false)
+    }
+
     suspend fun replaceItem(itemId: String, documents: List<SearchDocument>) =
         mutex.withLock {
             ensureTable()
-            val db = database.openHelper.writableDatabase
-            db.beginTransaction()
-            try {
-                db.execSQL("DELETE FROM search_fts WHERE item_id = ?", arrayOf(itemId))
+            write { connection ->
+                connection.exec("DELETE FROM search_fts WHERE item_id = ?", listOf(itemId))
                 for (document in documents) {
                     val normalized = normText(document.text)
                     if (normalized.isEmpty()) continue
-                    db.execSQL(
+                    connection.exec(
                         "INSERT INTO search_fts (norm_text, text, item_id, doc_kind, ref) " +
                             "VALUES (?, ?, ?, ?, ?)",
-                        arrayOf(
+                        listOf(
                             normalized,
                             document.text,
                             itemId,
@@ -66,32 +74,21 @@ class SearchIndex(private val database: TroveDatabase) {
                         ),
                     )
                 }
-                db.setTransactionSuccessful()
-            } finally {
-                db.endTransaction()
             }
         }
 
     suspend fun deleteItem(itemId: String) = mutex.withLock {
         ensureTable()
-        database.openHelper.writableDatabase.execSQL(
-            "DELETE FROM search_fts WHERE item_id = ?",
-            arrayOf(itemId),
-        )
+        write { connection ->
+            connection.exec("DELETE FROM search_fts WHERE item_id = ?", listOf(itemId))
+        }
     }
 
     suspend fun clear() = mutex.withLock {
         ensureTable()
-        database.openHelper.writableDatabase.execSQL("DELETE FROM search_fts")
-    }
-
-    suspend fun hasDocuments(): Boolean = mutex.withLock {
-        runCatching {
-            ensureTable()
-            database.openHelper.readableDatabase.query("SELECT 1 FROM search_fts LIMIT 1").use {
-                it.moveToFirst()
-            }
-        }.getOrDefault(false)
+        write { connection ->
+            connection.exec("DELETE FROM search_fts")
+        }
     }
 
     suspend fun search(query: String, limit: Int = 100): List<SearchHit> {
@@ -102,38 +99,38 @@ class SearchIndex(private val database: TroveDatabase) {
             if (available != true) throw LocalSearchUnavailableException()
             val fetchLimit = maxOf(limit * FETCH_MULTIPLIER, 200)
             val hits = linkedMapOf<Triple<String, String, String>, SearchHit>()
-            val db = database.openHelper.writableDatabase
-            if (match.match != null) {
-                db.query(
-                    "SELECT item_id, doc_kind, ref, text, (-bm25(search_fts)) AS score " +
-                        "FROM search_fts WHERE search_fts MATCH ? ORDER BY score DESC LIMIT ?",
-                    arrayOf<Any?>(match.match, fetchLimit),
-                ).use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val hit = cursor.toHit()
+            read { connection ->
+                if (match.match != null) {
+                    connection.query(
+                        "SELECT item_id, doc_kind, ref, text, (-bm25(search_fts)) AS score " +
+                            "FROM search_fts WHERE search_fts MATCH ? ORDER BY score DESC LIMIT ?",
+                        listOf(match.match, fetchLimit),
+                    ) { cursor ->
+                        cursor.readHit()
+                    }.forEach { hit ->
                         if (match.likeTerms.isNotEmpty() && !matchesAll(hit.text, match.likeTerms)) {
-                            continue
+                            return@forEach
                         }
                         collect(hits, hit)
                     }
                 }
-            }
-            for (term in match.likeTerms) {
-                val sql = if (match.match == null) {
-                    "SELECT item_id, doc_kind, ref, text FROM search_fts WHERE text LIKE ? LIMIT ?"
-                } else {
-                    "SELECT item_id, doc_kind, ref, text FROM search_fts " +
-                        "WHERE search_fts MATCH ? AND text LIKE ? LIMIT ?"
-                }
-                val args = if (match.match == null) {
-                    arrayOf<Any?>("%$term%", fetchLimit)
-                } else {
-                    arrayOf<Any?>(match.match, "%$term%", fetchLimit)
-                }
-                db.query(sql, args).use { cursor ->
-                    while (cursor.moveToNext()) {
-                        val hit = cursor.toHit(score = LIKE_SCORE)
-                        if (!matchesAll(hit.text, match.likeTerms)) continue
+                for (term in match.likeTerms) {
+                    val sql = if (match.match == null) {
+                        "SELECT item_id, doc_kind, ref, text, $LIKE_SCORE AS score " +
+                            "FROM search_fts WHERE text LIKE ? LIMIT ?"
+                    } else {
+                        "SELECT item_id, doc_kind, ref, text, $LIKE_SCORE AS score " +
+                            "FROM search_fts WHERE search_fts MATCH ? AND text LIKE ? LIMIT ?"
+                    }
+                    val args = if (match.match == null) {
+                        listOf("%$term%", fetchLimit)
+                    } else {
+                        listOf(match.match, "%$term%", fetchLimit)
+                    }
+                    connection.query(sql, args) { cursor ->
+                        cursor.readHit()
+                    }.forEach { hit ->
+                        if (!matchesAll(hit.text, match.likeTerms)) return@forEach
                         collect(hits, hit)
                     }
                 }
@@ -167,13 +164,14 @@ class SearchIndex(private val database: TroveDatabase) {
             .take(limit)
     }
 
-    private fun ensureTable() {
+    private suspend fun ensureTable() {
         if (tableReady) return
-        val db = database.openHelper.writableDatabase
         available = try {
-            db.execSQL(SearchFtsSchema.CREATE)
-            db.execSQL("CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_fts_check USING fts5(x)")
-            db.execSQL("DROP TABLE IF EXISTS temp.search_fts_check")
+            write { connection ->
+                connection.exec(SearchFtsSchema.CREATE)
+                connection.exec("CREATE VIRTUAL TABLE IF NOT EXISTS temp.search_fts_check USING fts5(x)")
+                connection.exec("DROP TABLE IF EXISTS temp.search_fts_check")
+            }
             true
         } catch (_: Exception) {
             false
@@ -181,6 +179,59 @@ class SearchIndex(private val database: TroveDatabase) {
         tableReady = available == true
         if (available == false) throw LocalSearchUnavailableException()
     }
+
+    private suspend fun write(block: suspend (PooledConnection) -> Unit) {
+        database.useWriterConnection { transactor ->
+            transactor.immediateTransaction { block(this) }
+        }
+    }
+
+    private suspend fun <T> read(block: suspend (PooledConnection) -> T): T =
+        database.useReaderConnection { connection -> block(connection) }
+
+    private suspend fun PooledConnection.exec(sql: String, args: List<Any?> = emptyList()) {
+        usePrepared(sql) { statement ->
+            statement.bind(args)
+            statement.step()
+        }
+    }
+
+    private suspend fun <T> PooledConnection.query(
+        sql: String,
+        args: List<Any?> = emptyList(),
+        map: (SQLiteStatement) -> T,
+    ): List<T> {
+        val rows = mutableListOf<T>()
+        usePrepared(sql) { statement ->
+            statement.bind(args)
+            while (statement.step()) {
+                rows += map(statement)
+            }
+        }
+        return rows
+    }
+
+    private fun SQLiteStatement.bind(args: List<Any?>) {
+        for ((index, value) in args.withIndex()) {
+            val position = index + 1
+            when (value) {
+                null -> bindNull(position)
+                is Long -> bindLong(position, value)
+                is Int -> bindLong(position, value.toLong())
+                is Double -> bindDouble(position, value)
+                is Float -> bindDouble(position, value.toDouble())
+                else -> bindText(position, value.toString())
+            }
+        }
+    }
+
+    private fun SQLiteStatement.readHit(): SearchHit = SearchHit(
+        itemId = getText(0),
+        docKind = getText(1),
+        ref = getText(2),
+        text = getText(3),
+        score = getDouble(4),
+    )
 
     private fun weight(docKind: String): Double = when (docKind) {
         "title" -> KIND_WEIGHT_TITLE
@@ -204,14 +255,6 @@ class SearchIndex(private val database: TroveDatabase) {
         val normalized = normalizeText(value)
         return terms.all { normalized.contains(it) }
     }
-
-    private fun Cursor.toHit(score: Double? = null): SearchHit = SearchHit(
-        itemId = getString(getColumnIndexOrThrow("item_id")),
-        docKind = getString(getColumnIndexOrThrow("doc_kind")),
-        ref = getString(getColumnIndexOrThrow("ref")),
-        text = getString(getColumnIndexOrThrow("text")),
-        score = score ?: getDouble(getColumnIndexOrThrow("score")),
-    )
 }
 
 data class GroupedSearchHits(

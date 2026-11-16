@@ -149,6 +149,16 @@ class SearchViewModel(
                     )
                 }
                 return@launch
+            } catch (error: Exception) {
+                android.util.Log.e("TroveSearch", "local search failed", error)
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        results = emptyList(),
+                        error = "搜索失败，请重试。",
+                    )
+                }
+                return@launch
             }
             _state.update { it.copy(loading = false, results = results, error = null) }
         }

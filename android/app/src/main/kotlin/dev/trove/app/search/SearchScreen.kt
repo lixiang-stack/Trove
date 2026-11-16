@@ -180,7 +180,7 @@ fun SearchScreen(
                             result = result,
                             query = state.query.trim(),
                             onClick = {
-                                val anchor = result.evidence.firstOrNull()
+                                val anchor = result.anchor
                                 when {
                                     anchor?.transcriptSeq != null -> onOpenTranscript(
                                         result.item.id,
