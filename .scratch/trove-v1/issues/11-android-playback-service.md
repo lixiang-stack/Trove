@@ -60,3 +60,8 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 - Verified local-file playback with Host and Wi-Fi/data unavailable; position advanced and was persisted to Room.
 - Streaming playback against the Host worked before download; `Authorization` is applied by the data source, not the URL.
 - **Not completed:** the 60-minute continuous background run was interrupted after ~3 minutes by a physical device interaction that switched to another Item; it needs a clean rerun. Bluetooth output, headphone unplug, and incoming-call/audio-focus behavior were not testable without external hardware/calls. End-of-file completion was covered by unit tests but not waited out on device.
+
+### Post-acceptance fix (2026-11-16)
+
+- Real-device report: playing progress froze while the media session kept advancing (e.g. UI stuck at 9:46). Root cause: `MediaSessionPlayer.release()` cancelled the position tick job but left the cancelled `Job` reference non-null, so the next `connect()` saw `positionJob != null` and never restarted per-second UI updates. It reproduced after switching Host (logout/login), which triggers release -> connect.
+- Fix: extracted `PositionTicker` with `start()`/`stop()` that clears the job; added `PositionTickerTest.stopThenStartResumesTicks`. Verified on device: the player time now advances each second after reinstall/reconnect.

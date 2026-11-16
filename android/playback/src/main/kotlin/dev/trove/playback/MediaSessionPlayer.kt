@@ -14,15 +14,11 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 
 @UnstableApi
 class MediaSessionPlayer(private val context: Context) : PlayerGateway {
@@ -32,7 +28,11 @@ class MediaSessionPlayer(private val context: Context) : PlayerGateway {
 
     private var controller: MediaController? = null
     private var future: ListenableFuture<MediaController>? = null
-    private var positionJob: Job? = null
+    private val positionTicker = PositionTicker(
+        scope = scope,
+        intervalMs = POSITION_TICK_MS,
+        tick = { controller?.let(::updateFrom) },
+    )
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -72,7 +72,7 @@ class MediaSessionPlayer(private val context: Context) : PlayerGateway {
                         created.addListener(listener)
                         _state.update { it.copy(connected = true, errorCode = null) }
                         updateFrom(created)
-                        startPositionUpdates()
+                        positionTicker.start()
                     }
             },
             ContextCompat.getMainExecutor(context),
@@ -80,7 +80,7 @@ class MediaSessionPlayer(private val context: Context) : PlayerGateway {
     }
 
     override fun release() {
-        positionJob?.cancel()
+        positionTicker.stop()
         controller?.removeListener(listener)
         controller?.release()
         controller = null
@@ -132,16 +132,6 @@ class MediaSessionPlayer(private val context: Context) : PlayerGateway {
     override fun setSpeed(speed: Float) {
         controller?.setPlaybackSpeed(speed)
         controller?.let(::updateFrom)
-    }
-
-    private fun startPositionUpdates() {
-        if (positionJob != null) return
-        positionJob = scope.launch {
-            while (isActive) {
-                controller?.let(::updateFrom)
-                delay(POSITION_TICK_MS)
-            }
-        }
     }
 
     private fun updateFrom(player: Player) {
