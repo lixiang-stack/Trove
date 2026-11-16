@@ -1,18 +1,20 @@
 #!/usr/bin/env bash
 # Start a throwaway Host + adb reverse + debug app for Android acceptance.
 #
-# Usage: scripts/android/acceptance-host.sh [--port 8765] [--home DIR] [--no-install]
-# The server keeps running; stop it with: kill "$(cat "$HOME/server.pid")"
+# Usage: scripts/android/acceptance-host.sh [--port 8765] [--home DIR] [--no-worker] [--no-install]
+# The server keeps running; stop it with: kill "$(cat "$home/server.pid")"
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
 port=${PORT:-8765}
 home=""
 install_app=1
+worker=1
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --port) port=$2; shift 2 ;;
     --home) home=$2; shift 2 ;;
+    --no-worker) worker=0; shift ;;
     --no-install) install_app=0; shift ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
@@ -32,8 +34,13 @@ if [ ! -f "$home/trove.db" ]; then
   "$root/.venv/bin/python" "$root/scripts/android/seed_acceptance.py" "$home"
 fi
 
+worker_args=""
+if [ "$worker" -eq 0 ]; then
+  worker_args="--no-worker"
+fi
+
 TROVE_HOME="$home" TROVE_LOG_CONSOLE=0 \
-  "$root/.venv/bin/trove" serve --no-worker --host 127.0.0.1 --port "$port" \
+  "$root/.venv/bin/trove" serve $worker_args --host 127.0.0.1 --port "$port" \
   >"$home/server.log" 2>&1 &
 echo $! >"$home/server.pid"
 

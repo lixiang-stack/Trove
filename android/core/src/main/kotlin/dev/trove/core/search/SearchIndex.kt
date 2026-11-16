@@ -106,7 +106,7 @@ class SearchIndex(private val database: TroveDatabase) {
                             "FROM search_fts WHERE search_fts MATCH ? ORDER BY score DESC LIMIT ?",
                         listOf(match.match, fetchLimit),
                     ) { cursor ->
-                        cursor.readHit()
+                        cursor.readSearchHit()
                     }.forEach { hit ->
                         if (match.likeTerms.isNotEmpty() && !matchesAll(hit.text, match.likeTerms)) {
                             return@forEach
@@ -128,7 +128,7 @@ class SearchIndex(private val database: TroveDatabase) {
                         listOf(match.match, "%$term%", fetchLimit)
                     }
                     connection.query(sql, args) { cursor ->
-                        cursor.readHit()
+                        cursor.readSearchHit()
                     }.forEach { hit ->
                         if (!matchesAll(hit.text, match.likeTerms)) return@forEach
                         collect(hits, hit)
@@ -225,14 +225,6 @@ class SearchIndex(private val database: TroveDatabase) {
         }
     }
 
-    private fun SQLiteStatement.readHit(): SearchHit = SearchHit(
-        itemId = getText(0),
-        docKind = getText(1),
-        ref = getText(2),
-        text = getText(3),
-        score = getDouble(4),
-    )
-
     private fun weight(docKind: String): Double = when (docKind) {
         "title" -> KIND_WEIGHT_TITLE
         "summary" -> KIND_WEIGHT_SUMMARY
@@ -261,4 +253,12 @@ data class GroupedSearchHits(
     val itemId: String,
     val score: Double,
     val evidence: List<SearchHit>,
+)
+
+internal fun SQLiteStatement.readSearchHit(): SearchHit = SearchHit(
+    itemId = getText(0),
+    docKind = getText(1),
+    ref = getText(2),
+    text = getText(3),
+    score = getDouble(4),
 )

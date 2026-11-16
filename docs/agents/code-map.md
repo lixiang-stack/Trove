@@ -7,6 +7,25 @@ only the "where does this change go?" map.
 
 `android/` — native Android client. Read `android/AGENTS.md` before changing it.
 
+```text
+android/
+├── app/        Compose routes/screens, AppContainer, Add/Search/Settings/Player wiring
+├── core/       network, Room db, sync, download, search FTS5, reading/book JSON, settings
+├── playback/   Media3 MediaSessionService + PlayerGateway
+└── reader/     Readium ReaderActivity/Fragment + locator mapping
+```
+
+| Change | Where |
+|---|---|
+| New Compose screen or navigation route | `android/app/src/main/kotlin/dev/trove/app/<feature>/` + `TroveApp.kt` |
+| API DTO/client contract | `android/core/.../network/`; keep `contract/*.json` in sync |
+| Room table/migration/query | `android/core/.../db/` |
+| Sync push/pull/LWW | `android/core/.../sync/SyncEngine.kt` |
+| Local FTS5 index/query | `android/core/.../search/` |
+| EPUB/book JSON/locator | `android/core/.../reading/` + `android/reader/` |
+| Download worker/files | `android/core/.../download/` + `storage/` |
+| Device acceptance tooling | `scripts/android/` (`acceptance-host.sh`, `device-check.sh`, `seed_acceptance.py`, `ui-dump.py`) |
+
 ## HTTP surface
 
 ```text
