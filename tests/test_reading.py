@@ -55,6 +55,18 @@ def _rewrite_epub(
             "Aesop",
             ["The North Wind and the Sun", "The Tortoise and the Hare"],
         ),
+        (
+            "illustrated.epub",
+            "Aesop Fables",
+            "Aesop",
+            ["The North Wind and the Sun", "The Tortoise and the Hare"],
+        ),
+        (
+            "malicious.epub",
+            "Aesop Fables",
+            "Aesop",
+            ["The North Wind and the Sun", "The Tortoise and the Hare"],
+        ),
         ("oedipus.epub", "Oedipus Rex", "Sophocles", ["Prologue", "Parodos"]),
     ],
 )
