@@ -234,7 +234,7 @@ class SyncEngine(
                 if (!database.pendingMutationDao()
                         .hasPending(mutation.itemId, ItemMutationRepository.TAGS)
                 ) {
-                    applyCanonicalTags(mutation.itemId, response.item.tags)
+                    replaceTags(mutation.itemId, response.item.tags)
                 }
             }
         }
@@ -245,8 +245,8 @@ class SyncEngine(
         indexChanged(mutation.itemId)
     }
 
-    private suspend fun applyCanonicalTags(itemId: String, tags: List<String>) {
-        val normalized = runCatching { normalizeTags(tags) }.getOrDefault(emptyList())
+    private suspend fun replaceTags(itemId: String, tags: List<String>) {
+        val normalized = runCatching { normalizeTags(tags) }.getOrNull() ?: return
         database.tagDao().clearItemTags(itemId)
         if (normalized.isEmpty()) return
         database.tagDao().upsertAll(
@@ -265,6 +265,9 @@ class SyncEngine(
         } else {
             "「$title」已在其他设备更新，已使用最新值。"
         }
+
+    private fun blocksState(fields: Collection<String>): Boolean =
+        fields.any { it != ItemMutationRepository.TAGS }
 
     private suspend fun indexChanged(itemId: String) {
         runCatching { onItemChanged(itemId) }
@@ -288,11 +291,7 @@ class SyncEngine(
             database.itemDao().applyVersion(item.id, item.version)
         }
         val pending = database.pendingMutationDao().fieldsForItem(item.id).toSet()
-        val statePending = pending.any {
-            it == ItemMutationRepository.AUDIO_PROGRESS ||
-                it == ItemMutationRepository.BOOK_PROGRESS ||
-                it == ItemMutationRepository.CONSUMPTION_STATE
-        }
+        val statePending = blocksState(pending)
         if (payload.positionSec != null &&
             ItemMutationRepository.AUDIO_PROGRESS !in pending
         ) {
@@ -421,17 +420,7 @@ class SyncEngine(
     }
 
     private suspend fun applyTags(dto: SyncItemDto) {
-        val normalized = runCatching { normalizeTags(dto.tags) }.getOrDefault(emptyList())
-        database.tagDao().clearItemTags(dto.id)
-        if (normalized.isEmpty()) return
-        database.tagDao().upsertAll(
-            normalized.map { TagEntity(normalizedName = it.normalizedName, name = it.name) }
-        )
-        database.tagDao().insertItemTags(
-            normalized.map {
-                ItemTagEntity(itemId = dto.id, tagName = it.normalizedName, source = "user")
-            }
-        )
+        replaceTags(dto.id, dto.tags)
     }
 
     private suspend fun applyArtifacts(
@@ -546,7 +535,7 @@ class SyncEngine(
         database.writeTransaction {
             for (item in page.items) {
                 val pending = database.pendingMutationDao().fieldsForItem(item.id)
-                if (pending.any { it != ItemMutationRepository.TAGS }) continue
+                if (blocksState(pending)) continue
                 database.itemDao().applyState(
                     id = item.id,
                     positionSec = item.audioPositionSec,

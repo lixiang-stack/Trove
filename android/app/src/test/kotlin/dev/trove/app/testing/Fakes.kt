@@ -395,6 +395,10 @@ class FakePlayer : PlayerGateway {
         speeds += speed
         playback.value = playback.value.copy(speed = speed)
     }
+
+    fun finish() {
+        playback.value = playback.value.copy(ended = true, isPlaying = false)
+    }
 }
 
 class FakeTroveApiFactory(private val api: TroveApi) : TroveApiFactory {

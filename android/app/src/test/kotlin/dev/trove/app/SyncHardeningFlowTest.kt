@@ -1,12 +1,14 @@
 package dev.trove.app
 
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.player.PlayerViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.TestAppContainer
 import dev.trove.core.auth.StoredCredential
+import dev.trove.core.db.PendingDeletionEntity
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.MutationItemDto
 import dev.trove.core.network.MutationResponseDto
@@ -20,6 +22,7 @@ import dev.trove.core.storage.ArtifactFileStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
@@ -47,6 +50,7 @@ class SyncHardeningFlowTest {
 
     private lateinit var context: Context
     private lateinit var container: TestAppContainer
+    private val playerViewModels = mutableListOf<PlayerViewModel>()
 
     @Before
     fun setUp() {
@@ -57,9 +61,23 @@ class SyncHardeningFlowTest {
 
     @After
     fun tearDown() {
+        playerViewModels.forEach { it.viewModelScope.cancel() }
         container.database.close()
         Dispatchers.resetMain()
     }
+
+    private fun playerViewModel(): PlayerViewModel =
+        PlayerViewModel(
+            repository = container.libraryRepository,
+            player = container.fakePlayer,
+            downloadManager = container.downloadManager,
+            settingsStore = container.settingsStore,
+            transcriptRepository = container.transcriptRepository,
+            sessionController = container.sessionController,
+            itemMutationRepository = container.itemMutationRepository,
+            localSearchRepository = container.localSearchRepository,
+            syncEngine = container.syncEngine,
+        ).also { playerViewModels += it }
 
     private fun newContainer() =
         TestAppContainer(
@@ -285,17 +303,7 @@ class SyncHardeningFlowTest {
         container.api.manifestPages += manifest(listOf(item("a", version = 1)), cursor = "1")
         container.api.statePages += state(emptyList(), cursor = "0")
         signInAndSync()
-        val viewModel = PlayerViewModel(
-            repository = container.libraryRepository,
-            player = container.fakePlayer,
-            downloadManager = container.downloadManager,
-            settingsStore = container.settingsStore,
-            transcriptRepository = container.transcriptRepository,
-            sessionController = container.sessionController,
-            itemMutationRepository = container.itemMutationRepository,
-            localSearchRepository = container.localSearchRepository,
-            syncEngine = container.syncEngine,
-        )
+        val viewModel = playerViewModel()
         viewModel.open("a", autoPlay = false)
         withTimeout(5_000) { viewModel.state.first { it.item != null } }
 
@@ -310,6 +318,38 @@ class SyncHardeningFlowTest {
         container.syncEngine.sync()
 
         withTimeout(5_000) { viewModel.state.first { it.deleted } }
+    }
+
+    @Test
+    fun finishedPlaybackCleansDeferredDeletion() = runBlocking<Unit> {
+        container.api.manifestPages += manifest(
+            listOf(item("a", version = 1, files = listOf(file("audio")))),
+            cursor = "1",
+        )
+        container.api.statePages += state(emptyList(), cursor = "0")
+        signInAndSync()
+        val artifact = container.database.artifactDao().find("a", "audio")!!
+        val file = container.fileStore.pathFor("a", "audio", artifact.mime)
+        file.writeBytes(byteArrayOf(1, 2, 3))
+        container.database.pendingDeletionDao().upsertAll(
+            listOf(PendingDeletionEntity(file.absolutePath, "a"))
+        )
+        val viewModel = playerViewModel()
+        viewModel.open("a", autoPlay = true)
+        withTimeout(5_000) {
+            while (container.fakePlayer.requests.isEmpty()) {
+                kotlinx.coroutines.delay(10)
+            }
+        }
+
+        container.fakePlayer.finish()
+
+        withTimeout(5_000) {
+            while (container.database.pendingDeletionDao().all().isNotEmpty()) {
+                kotlinx.coroutines.delay(10)
+            }
+        }
+        assertTrue(!file.exists())
     }
 
     @Test
@@ -332,17 +372,7 @@ class SyncHardeningFlowTest {
         )
         container.api.manifestError = TroveNetworkException("offline")
 
-        val viewModel = PlayerViewModel(
-            repository = container.libraryRepository,
-            player = container.fakePlayer,
-            downloadManager = container.downloadManager,
-            settingsStore = container.settingsStore,
-            transcriptRepository = container.transcriptRepository,
-            sessionController = container.sessionController,
-            itemMutationRepository = container.itemMutationRepository,
-            localSearchRepository = container.localSearchRepository,
-            syncEngine = container.syncEngine,
-        )
+        val viewModel = playerViewModel()
         viewModel.open("a", autoPlay = true)
 
         withTimeout(5_000) {

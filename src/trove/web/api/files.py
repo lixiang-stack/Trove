@@ -5,21 +5,12 @@ from fastapi.responses import FileResponse
 
 from trove.content_package import ArtifactKind
 from trove.errors import ArtifactMissingError
+from trove.web.api.headers import CONTENT_RANGE_HEADER, FILE_RESPONSE_HEADERS
 from trove.web.deps import runtime
 
 router = APIRouter()
 
 DOWNLOADABLE_KINDS = frozenset(kind.value for kind in ArtifactKind)
-
-_FILE_HEADERS = {
-    "ETag": {
-        "description": "Quoted SHA-256 of the artifact",
-        "schema": {"type": "string"},
-    },
-    "Accept-Ranges": {"description": "Always `bytes`", "schema": {"type": "string"}},
-    "Cache-Control": {"description": "Always `private`", "schema": {"type": "string"}},
-    "X-Content-Type-Options": {"description": "Always `nosniff`", "schema": {"type": "string"}},
-}
 
 
 @router.get(
@@ -29,17 +20,14 @@ _FILE_HEADERS = {
         200: {
             "description": "Content Package artifact",
             "content": {"application/octet-stream": {}},
-            "headers": _FILE_HEADERS,
+            "headers": FILE_RESPONSE_HEADERS,
         },
         206: {
             "description": "Partial content for Range requests",
             "content": {"application/octet-stream": {}},
             "headers": {
-                **_FILE_HEADERS,
-                "Content-Range": {
-                    "description": "Inclusive byte range and total size",
-                    "schema": {"type": "string"},
-                },
+                **FILE_RESPONSE_HEADERS,
+                "Content-Range": CONTENT_RANGE_HEADER,
             },
         },
         416: {"description": "Requested range is not satisfiable"},
