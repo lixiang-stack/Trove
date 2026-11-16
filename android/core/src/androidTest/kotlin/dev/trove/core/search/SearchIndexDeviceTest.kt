@@ -46,4 +46,29 @@ class SearchIndexDeviceTest {
         val english = index.search("fox")
         assertTrue(english.isNotEmpty())
     }
+
+    @Test
+    fun thousandItemSearchP95IsUnderOneSecond() = runBlocking {
+        assertTrue(index.isAvailable())
+        for (number in 0 until 1_000) {
+            index.replaceItem(
+                "item-$number",
+                listOf(
+                    SearchDocument(
+                        "第 $number 条记忆：人工智能正在改变记忆方式，智能体需要上下文。",
+                        "transcript",
+                        "1:0",
+                    )
+                ),
+            )
+        }
+
+        val durations = (0 until 20).map {
+            kotlin.system.measureTimeMillis {
+                index.search("智能", limit = 1_000)
+            }
+        }.sorted()
+        val p95 = durations[(durations.size * 0.95).toInt().coerceAtMost(durations.lastIndex)]
+        assertTrue("p95=${p95}ms durations=$durations", p95 < 1_000)
+    }
 }

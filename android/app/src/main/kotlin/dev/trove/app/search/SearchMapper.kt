@@ -18,7 +18,12 @@ data class SearchUiEvidence(
 data class SearchUiResult(
     val item: LibraryItem,
     val evidence: List<SearchUiEvidence>,
-)
+) {
+    val anchor: SearchUiEvidence?
+        get() = evidence.firstOrNull {
+            it.transcriptSeq != null || it.chapterIndex != null
+        }
+}
 
 fun LocalSearchGroup.toUiResult(): SearchUiResult = SearchUiResult(
     item = item,
