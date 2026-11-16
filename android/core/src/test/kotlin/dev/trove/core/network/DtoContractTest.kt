@@ -53,4 +53,15 @@ class DtoContractTest {
         assertEquals("Device authorization has been revoked", error.message)
         assertNull(error.details)
     }
+
+    @Test
+    fun searchFixtureParsesEvidenceAndItem() {
+        val search = json.decodeFromString<SearchResponseDto>(resource("search.json"))
+        val result = search.results.single()
+        assertEquals("5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10", result.item.id)
+        assertEquals(listOf("AI", "记忆"), result.item.tags)
+        assertEquals("transcript", result.evidence.single().docKind)
+        assertEquals("3:65000", result.evidence.single().ref)
+        assertEquals(1, search.count)
+    }
 }

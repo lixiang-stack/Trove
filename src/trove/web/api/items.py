@@ -198,14 +198,27 @@ def api_book_chapter(request: Request, item_id: str, chapter_index: int):
 @router.put("/items/{item_id}/progress", response_model=MutationResponse)
 def api_progress(request: Request, item_id: str, payload: ProgressRequest):
     app_runtime = runtime(request)
+    if payload.book_locator is not None and payload.book_locator.schema_version != 2:
+        raise ValidationError(
+            "Unsupported book locator schema",
+            details={"code": "book.locator_schema"},
+        )
     locator = (
         BookLocator(
             chapter_index=payload.book_locator.chapter_index,
             paragraph_index=payload.book_locator.paragraph_index,
             scroll_ratio=payload.book_locator.scroll_ratio,
+            epub_href=payload.book_locator.epub_href,
+            epub_progression=payload.book_locator.epub_progression,
+            epub_total_progression=payload.book_locator.epub_total_progression,
         )
         if payload.book_locator is not None
         else None
+    )
+    state_only = (
+        payload.position_sec is None
+        and payload.book_locator is None
+        and payload.consumption_state is not None
     )
     return app_runtime.sync.apply_progress(
         item_id,
@@ -215,6 +228,7 @@ def api_progress(request: Request, item_id: str, payload: ProgressRequest):
         client_updated_at=payload.client_updated_at,
         device_id=request.state.device_id,
         idempotency_key=request.headers.get("idempotency-key"),
+        require_progress=not state_only,
     )
 
 

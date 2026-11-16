@@ -39,6 +39,8 @@ data class LibraryUiState(
     val loading: Boolean = false,
     val downloads: List<LibraryItem> = emptyList(),
     val downloadPreferences: DownloadPreferences = DownloadPreferences(),
+    val continueItems: List<LibraryItem> = emptyList(),
+    val conflictNotice: String? = null,
 )
 
 class LibraryViewModel(
@@ -49,14 +51,17 @@ class LibraryViewModel(
 ) : ViewModel() {
     private val filters = MutableStateFlow(LibraryFilters())
     private val sort = MutableStateFlow(LibrarySort.RECENT_ADDED)
+    private val conflict = MutableStateFlow<String?>(null)
 
     val state: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
         syncEngine.status,
         downloadSettings.preferences,
         repository.observeDownloads(),
-        combine(filters, sort) { activeFilters, activeSort -> activeFilters to activeSort },
-    ) { items, status, preferences, downloads, (activeFilters, activeSort) ->
+        combine(filters, sort, conflict) { activeFilters, activeSort, notice ->
+            Triple(activeFilters, activeSort, notice)
+        },
+    ) { items, status, preferences, downloads, (activeFilters, activeSort, notice) ->
         LibraryUiState(
             items = applyLibraryQuery(items, activeFilters, activeSort),
             allItems = items,
@@ -72,12 +77,27 @@ class LibraryViewModel(
                     (status is SyncStatus.Idle && status.lastSuccessAt == null)),
             downloads = downloads,
             downloadPreferences = preferences,
+            continueItems = items
+                .filter { it.consumptionState == "in_progress" }
+                .sortedByDescending { it.lastConsumedAt ?: 0L }
+                .take(3),
+            conflictNotice = notice,
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
         initialValue = LibraryUiState(),
     )
+
+    init {
+        viewModelScope.launch {
+            syncEngine.conflicts.collect { conflict.value = it }
+        }
+    }
+
+    fun dismissConflict() {
+        conflict.value = null
+    }
 
     fun refresh() {
         viewModelScope.launch { syncEngine.sync() }

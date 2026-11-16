@@ -8,23 +8,32 @@ import dev.trove.core.db.TroveDatabase
 import dev.trove.core.network.DeviceListResponse
 import dev.trove.core.network.DeviceTokenRequest
 import dev.trove.core.network.DeviceTokenResponse
+import dev.trove.core.network.FeedPreviewRequestDto
+import dev.trove.core.network.FeedPreviewResponseDto
 import dev.trove.core.network.HealthDto
+import dev.trove.core.network.ItemCreateRequestDto
+import dev.trove.core.network.ItemCreateResponseDto
+import dev.trove.core.network.ItemDto
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.MutationItemDto
 import dev.trove.core.network.MutationResponseDto
 import dev.trove.core.network.ProgressRequestDto
+import dev.trove.core.network.SearchResponseDto
 import dev.trove.core.network.SyncFileDto
 import dev.trove.core.network.SyncItemDto
 import dev.trove.core.network.SyncStateDto
 import dev.trove.core.network.SyncStateItemDto
+import dev.trove.core.network.TagsRequestDto
 import dev.trove.core.network.TombstoneDto
 import dev.trove.core.network.TroveApi
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveClient
 import dev.trove.core.network.TroveNetworkException
 import dev.trove.core.storage.ArtifactFileStore
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -363,6 +372,47 @@ class SyncEngineTest {
     }
 
     @Test
+    fun pendingTagPushAppliesCanonicalTagsAndReportsConflict() = runBlocking {
+        api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        val sync = engine()
+        sync.sync()
+
+        api.calls.clear()
+        api.manifestPages += manifest(items = emptyList(), cursor = "1")
+        api.statePages += state(items = emptyList(), cursor = "0")
+        api.tagsResponse = MutationResponseDto(
+            ok = true,
+            applied = false,
+            item = MutationItemDto(
+                id = "a",
+                version = 4,
+                tags = listOf("canonical"),
+            ),
+        )
+        database.pendingMutationDao().upsert(
+            PendingMutationEntity(
+                idempotencyKey = "tags-1",
+                itemId = "a",
+                field = "tags",
+                payloadJson = """{"tags":["stale"]}""",
+                clientUpdatedAt = 999,
+                createdAt = 999,
+            )
+        )
+
+        val conflict = async { withTimeout(5_000) { sync.conflicts.first() } }
+        val result = sync.sync()
+
+        assertTrue(result.success)
+        assertEquals(1, api.tagsCalls.size)
+        assertEquals(listOf("canonical"), database.itemDao().findDetails("a")!!.tags.map { it.name })
+        assertEquals(0, database.pendingMutationDao().count())
+        assertTrue(conflict.await().contains("其他设备"))
+        assertEquals(listOf("tags", "manifest", "state"), api.calls)
+    }
+
+    @Test
     fun failedPendingPushSkipsStatePullAndKeepsMutation() = runBlocking {
         api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
         api.statePages += state(items = emptyList(), cursor = "0")
@@ -565,10 +615,13 @@ class SyncEngineTest {
         val requestedCursors = mutableListOf<String?>()
         val calls = mutableListOf<String>()
         val progressCalls = mutableListOf<ProgressCall>()
+        val tagsCalls = mutableListOf<Pair<String, TagsRequestDto>>()
         var failCursor = false
         var manifestError: Throwable? = null
         var progressError: Throwable? = null
+        var tagsError: Throwable? = null
         var progressResponse: MutationResponseDto? = null
+        var tagsResponse: MutationResponseDto? = null
         private var cursorFailed = false
 
         override suspend fun health(): HealthDto = HealthDto()
@@ -610,6 +663,36 @@ class SyncEngineTest {
             progressError?.let { throw it }
             return progressResponse ?: MutationResponseDto(item = MutationItemDto(itemId))
         }
+
+        override suspend fun tags(
+            itemId: String,
+            body: TagsRequestDto,
+            idempotencyKey: String?,
+        ): MutationResponseDto {
+            calls += "tags"
+            tagsCalls += itemId to body
+            tagsError?.let { throw it }
+            return tagsResponse ?: MutationResponseDto(item = MutationItemDto(itemId))
+        }
+
+        override suspend fun createItem(body: ItemCreateRequestDto): ItemCreateResponseDto =
+            error("not used")
+
+        override suspend fun item(itemId: String): ItemDto = error("not used")
+
+        override suspend fun retryItem(itemId: String): ItemDto = error("not used")
+
+        override suspend fun previewFeed(body: FeedPreviewRequestDto): FeedPreviewResponseDto =
+            error("not used")
+
+        override suspend fun search(
+            query: String,
+            type: String?,
+            consumption: String?,
+            tag: String?,
+            source: String?,
+            limit: Int,
+        ): SearchResponseDto = error("not used")
 
         override suspend fun deleteItem(itemId: String): Response<Unit> = Response.success(Unit)
     }

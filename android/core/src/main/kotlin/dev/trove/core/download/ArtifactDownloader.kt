@@ -42,6 +42,7 @@ class ArtifactDownloader(
     private val clientFactory: (String?) -> OkHttpClient = { TroveHttpClients.create(it, 60) },
     private val onUnauthorized: (String) -> Unit = {},
     private val nowPlayingItemId: () -> String? = { null },
+    private val onItemFilesChanged: suspend (String) -> Unit = {},
 ) {
     suspend fun downloadItem(itemId: String, onProgress: (Float) -> Unit = {}): Int {
         val artifacts = database.artifactDao().forItem(itemId)
@@ -71,6 +72,7 @@ class ArtifactDownloader(
             downloadArtifact(client, host, itemId, current, onProgress)
             completed += 1
         }
+        onItemFilesChanged(itemId)
         return completed
     }
 
@@ -98,6 +100,8 @@ class ArtifactDownloader(
                 )
             }
             database.transcriptSegmentDao().deleteForItem(itemId)
+            database.bookDao().deleteForItem(itemId)
+            database.bookDao().deleteParagraphsForItem(itemId)
         }
         artifacts.forEach { artifact ->
             if (playing && artifact.kind == "audio" && artifact.localPath != null) {
@@ -108,6 +112,7 @@ class ArtifactDownloader(
                 fileStore.deleteArtifact(itemId, artifact.kind, artifact.localPath)
             }
         }
+        onItemFilesChanged(itemId)
     }
 
     private suspend fun downloadArtifact(

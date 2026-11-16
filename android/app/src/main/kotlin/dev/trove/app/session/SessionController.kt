@@ -6,6 +6,7 @@ import dev.trove.core.auth.HostUrlResult
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.auth.TokenStore
 import dev.trove.core.network.DeviceDto
+import dev.trove.core.network.HealthDto
 import dev.trove.core.network.RetrofitTroveApiFactory
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveApiFactory
@@ -131,6 +132,9 @@ class SessionController(
         val current = _state.value as? SessionState.SignedIn ?: return emptyList()
         return authenticatedClient(current).devices().devices
     }
+
+    suspend fun health(): HealthDto? =
+        currentClient()?.let { runCatching { it.health() }.getOrNull() }
 
     suspend fun revokeDevice(deviceId: String) {
         val current = _state.value as? SessionState.SignedIn ?: return

@@ -13,8 +13,13 @@ import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
 import dev.trove.core.db.ItemEntity
 import dev.trove.core.db.TroveDatabase
+import dev.trove.core.library.ItemMutationRepository
 import dev.trove.core.library.LibraryRepository
+import dev.trove.core.reading.BookRepository
+import dev.trove.core.search.LocalSearchRepository
+import dev.trove.core.search.SearchIndex
 import dev.trove.core.storage.ArtifactFileStore
+import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -83,6 +88,18 @@ class PlayerViewModelTest {
         settingsStore = settingsStore,
         transcriptRepository = TranscriptRepository(database, fileStore),
         sessionController = controller,
+        itemMutationRepository = ItemMutationRepository(database),
+        localSearchRepository = LocalSearchRepository(
+            database = database,
+            transcriptRepository = TranscriptRepository(database, fileStore),
+            bookRepository = BookRepository(database, fileStore),
+            index = SearchIndex(database),
+        ),
+        syncEngine = SyncEngine(
+            database = database,
+            clientProvider = { controller.currentClient() },
+            fileStore = fileStore,
+        ),
     )
 
     @Test

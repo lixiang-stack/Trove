@@ -444,6 +444,7 @@ M0 的 toolchain smoke 是硬 gate：Readium 3.4 + compileSdk 37 + AGP 9 + KSP �
 | Lifecycle | 2.11.0 | ViewModel/生命周期 | Apache-2.0 |
 | Navigation3 | 1.2.1 | Compose 导航 | Apache-2.0 |
 | Media3 | 1.11.1 | 播放/MediaSession | Apache-2.0 |
+| Fragment KTX | 1.9.0 | Readium classic navigator 的 FragmentActivity/Compose 互操作 | Apache-2.0 |
 | Room | 2.8.5 | 本地 DB | Apache-2.0 |
 | androidx.sqlite bundled | 2.7.1 | bundled SQLite/FTS5 | Apache-2.0；SQLite public domain |
 | WorkManager | 2.12.0 | 下载/同步任务 | Apache-2.0 |

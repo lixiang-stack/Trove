@@ -44,9 +44,13 @@ data class LibraryItem(
 
     val coverArtifact: LocalArtifact? get() = artifacts.firstOrNull { it.kind == "cover" }
 
+    val bookArtifact: LocalArtifact? get() = artifacts.firstOrNull { it.kind == "book" }
+
     val isInbox: Boolean
         get() = processingState == "failed" ||
             processingState !in setOf("completed", "cancelled")
+
+    val isBookOnly: Boolean get() = hasBook && !hasAudio
 
     val downloadState: String
         get() = when {
