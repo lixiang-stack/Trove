@@ -58,6 +58,34 @@ class TroveClient(
     ): MutationResponseDto =
         call { api.progress(itemId, request, idempotencyKey) }
 
+    suspend fun tags(
+        itemId: String,
+        request: TagsRequestDto,
+        idempotencyKey: String?,
+    ): MutationResponseDto =
+        call { api.tags(itemId, request, idempotencyKey) }
+
+    suspend fun createItem(request: ItemCreateRequestDto): ItemCreateResponseDto =
+        call { api.createItem(request) }
+
+    suspend fun item(itemId: String): ItemDto = call { api.item(itemId) }
+
+    suspend fun retryItem(itemId: String): ItemDto = call { api.retryItem(itemId) }
+
+    suspend fun previewFeed(url: String): FeedPreviewResponseDto =
+        call { api.previewFeed(FeedPreviewRequestDto(url)) }
+
+    suspend fun search(
+        query: String,
+        type: String? = null,
+        consumption: String? = null,
+        tag: String? = null,
+        source: String? = null,
+        limit: Int = 50,
+    ): SearchResponseDto = call {
+        api.search(query, type, consumption, tag, source, limit)
+    }
+
     suspend fun deleteItem(itemId: String) {
         val response = call { api.deleteItem(itemId) }
         if (!response.isSuccessful) {

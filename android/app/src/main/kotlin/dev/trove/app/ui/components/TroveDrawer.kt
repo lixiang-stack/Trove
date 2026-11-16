@@ -40,7 +40,6 @@ import dev.trove.app.library.LibrarySort
 import dev.trove.app.library.LibraryUiState
 import dev.trove.app.library.processingLabel
 import dev.trove.app.library.sourceTypeLabel
-import dev.trove.app.search.SearchContent
 import dev.trove.app.ui.theme.TroveColors
 import dev.trove.core.library.LibraryItem
 
@@ -61,7 +60,9 @@ fun TroveDrawer(
     onInbox: (Boolean) -> Unit,
     onConsumption: (String?) -> Unit,
     onAdd: () -> Unit,
+    onSearch: () -> Unit,
     onDownloads: () -> Unit,
+    onSettings: () -> Unit,
     onDevices: () -> Unit,
     onSignOut: () -> Unit,
 ) {
@@ -145,11 +146,7 @@ fun TroveDrawer(
                     modifier = Modifier.weight(1f),
                 )
 
-                DrawerTab.SEARCH -> SearchContent(
-                    items = state.allItems,
-                    onOpenItem = onOpenItem,
-                    modifier = Modifier.weight(1f),
-                )
+                DrawerTab.SEARCH -> DrawerSearch(onSearch = onSearch, modifier = Modifier.weight(1f))
 
                 DrawerTab.ADD -> DrawerAdd(onAdd = onAdd, modifier = Modifier.weight(1f))
             }
@@ -161,6 +158,7 @@ fun TroveDrawer(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 TextButton(onClick = onDownloads) { Text("下载") }
+                TextButton(onClick = onSettings) { Text("设置") }
                 TextButton(onClick = onDevices) { Text("设备") }
                 TextButton(onClick = onSignOut) { Text("退出登录") }
             }
@@ -301,6 +299,35 @@ private fun DrawerRow(item: LibraryItem, onClick: () -> Unit) {
 }
 
 @Composable
+private fun DrawerSearch(onSearch: () -> Unit, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("搜索", style = MaterialTheme.typography.titleLarge)
+        Text(
+            "打开搜索页，在线时搜索全库；离线时只搜索已下载内容。",
+            style = MaterialTheme.typography.bodyMedium,
+            color = TroveColors.Muted,
+        )
+        Surface(
+            onClick = onSearch,
+            shape = RoundedCornerShape(12.dp),
+            color = TroveColors.Paper2,
+            border = androidx.compose.foundation.BorderStroke(1.dp, TroveColors.Line),
+        ) {
+            Text(
+                "打开搜索页",
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
+    }
+}
+
+@Composable
 private fun DrawerAdd(onAdd: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
@@ -310,7 +337,7 @@ private fun DrawerAdd(onAdd: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         Text("添加内容", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Android 端 Add 尚未接入 Host。当前请先在 Host Console 添加链接、文件或播客单集，Library 会自动同步。",
+            "打开添加页，粘贴视频链接或播客 feed；本地文件仍在 Host Console 上传。",
             style = MaterialTheme.typography.bodyMedium,
             color = TroveColors.Muted,
         )

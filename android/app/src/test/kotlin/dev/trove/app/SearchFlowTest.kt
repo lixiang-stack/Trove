@@ -64,6 +64,52 @@ class SearchFlowTest {
         assertTrue(compose.onAllNodesWithText("Beta").fetchSemanticsNodes().isEmpty())
     }
 
+    @Test
+    fun onlineSearchShowsEvidenceAndOpensTranscriptMatch() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = testHarness(
+            context,
+            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
+            settingsStore = FakeSettingsStore("https://host.example"),
+        )
+        harness.api.searchResponse = dev.trove.core.network.SearchResponseDto(
+            query = "智能",
+            results = listOf(
+                dev.trove.core.network.SearchResultDto(
+                    item = dev.trove.core.network.ItemDto(
+                        id = "a",
+                        title = "Alpha 2025",
+                        author = "作者",
+                        sourceType = "video_url",
+                        platform = "youtube",
+                        processingState = "completed",
+                        hasAudio = true,
+                    ),
+                    evidence = listOf(
+                        dev.trove.core.network.SearchEvidenceDto(
+                            docKind = "transcript",
+                            ref = "3:65000",
+                            text = "人工智能正在改变记忆方式",
+                            snippet = "人工智能正在改变记忆方式",
+                        )
+                    ),
+                )
+            ),
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        compose.onNodeWithText("搜索").performClick()
+        waitForTag("search-screen")
+        compose.onNodeWithTag("search-input").performTextInput("智能")
+
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText("人工智能正在改变记忆方式").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithText("人工智能正在改变记忆方式").performClick()
+        waitForTag("transcript-screen")
+    }
+
     private fun waitForTag(tag: String) {
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()

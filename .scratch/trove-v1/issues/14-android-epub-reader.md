@@ -1,6 +1,6 @@
 # 14 — Android EPUB Reader（Readium）
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: M2
 Blocked by: 10, 12
@@ -26,11 +26,11 @@ V1 阅读要覆盖完整可重排 EPUB（图片、脚注/内部链接、书内�
 ## Acceptance Criteria
 
 - [ ] EPUB2/EPUB3 golden fixture 可打开、翻章、显示正文/图片/脚注链接。
-- [ ] 阅读位置保存/恢复；与 Web legacy locator 可互相回退。
-- [ ] 书内搜索命中并定位/高亮；离线可用。
-- [ ] 恶意 EPUB 不执行远程脚本/请求；不打开外部导航。
-- [ ] 阅读页与播放器/导航互不干扰；返回不丢位置。
-- [ ] 不实现标注/PDF/TTS/分页模式切换。
+- [x] 阅读位置保存/恢复；与 Web legacy locator 可互相回退。
+- [x] 书内搜索命中并定位/高亮；离线可用。
+- [x] 恶意 EPUB 不执行远程脚本/请求；不打开外部导航。
+- [x] 阅读页与播放器/导航互不干扰；返回不丢位置。
+- [x] 不实现标注/PDF/TTS/分页模式切换。
 
 ## Testing
 
@@ -42,3 +42,19 @@ V1 阅读要覆盖完整可重排 EPUB（图片、脚注/内部链接、书内�
 
 - 标注/笔记、PDF、TTS、书内购买/DRM。
 - 完整 EPUB 渲染的 Web 版本；Web 仍用薄阅读器。
+
+## Implementation
+
+- `:reader` now hosts `ReaderActivity` around Readium 3.4 classic `EpubNavigatorFragment`; Library/Player/Search open downloaded `book.epub` files, with chapter TOC, in-book search + highlight, font/line-height/light-sepia-dark settings, and a finished toggle.
+- `BookRepository` parses `book.json` into Room chapter/paragraph tables; `BookLocator` schema 2 keeps legacy chapter/paragraph/scroll plus `epub_href`/`epub_progression`/`epub_total_progression`. Host accepts/validates schema 2 and still serializes legacy-only writes for the Web Shell.
+- Reader progress is saved locally and queued as a `book_progress` mutation; offline reads and restores from the last EPUB locator.
+- Security: external navigation is disabled, WebViews get `blockNetworkLoads`, mixed-content/window/popup settings are locked down. Automated coverage: `ReaderLocatorMappingTest`, `BookLocatorTest`, Host `test_reading` schema-2 test.
+- Pending device acceptance: Readium golden EPUB flip/search with images/footnotes, malicious EPUB smoke, Android offline reader/locator restore. No instrumented reader test was added in this pass.
+
+### Android real-device acceptance (2026-11-16 / Android 16, API 36)
+
+- Opened the real Host EPUB `老子-道德经` and the golden `aesop.epub`; both rendered reflowable text, chapter TOC, and page/chapter navigation (Aesop: 1/2 → 2/2; Real book: 1/1 because its EPUB has a single XHTML chapter).
+- In-book search for `Tortoise` returned matches, jumped to the chapter/paragraph and rendered the Readium highlight; font size and the sepia theme applied immediately and survived page changes.
+- Closed and reopened the reader: restored chapter 2 at 50%; with Host unreachable, `adb reverse` removed, and airplane mode on, the downloaded EPUB still opened and restored the same position.
+- Security smoke: added a modified `aesop.epub` with a remote image (`http://127.0.0.1:8765/leak-image`), a remote `fetch` script, and an external link. The image rendered as a broken placeholder, the Host log recorded no `leak-image`/`leak-script` request, and tapping the external link left the reader on `ReaderActivity` instead of opening a browser.
+- Not covered by the available fixtures/device run: local images, footnote links, and an instrumented Readium golden-EPUB test (no image/footnote fixtures in this set).

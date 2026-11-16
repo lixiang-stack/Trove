@@ -11,6 +11,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -122,10 +124,16 @@ fun PlayerScreen(
     onTranscript: () -> Unit,
     onRefreshTranscript: () -> Unit,
     onOpenDrawer: () -> Unit,
+    onTags: (List<String>) -> Unit,
+    onConsumption: (String) -> Unit,
+    onClearTagError: () -> Unit,
+    onRead: (String) -> Unit,
+    onRetryProcessing: () -> Unit,
 ) {
     PlayerSystemBars()
     var confirmDelete by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
+    var tagEditorOpen by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -164,7 +172,7 @@ fun PlayerScreen(
             PlayerTopBar(
                 eyebrow = when {
                     item == null -> "资料库"
-                    item.hasBook && !item.hasAudio -> "正在读"
+                    item.isBookOnly -> "正在读"
                     else -> "正在听"
                 },
                 onBack = onBack,
@@ -178,7 +186,30 @@ fun PlayerScreen(
                 onRetryDownload = onRetryDownload,
                 onRemoveDownload = onRemoveDownload,
                 onDelete = { confirmDelete = true },
+                onEditTags = { tagEditorOpen = true },
+                onConsumption = onConsumption,
+                onRetryProcessing = onRetryProcessing,
             )
+            if (state.tagError != null) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 6.dp)
+                        .background(TroveColors.Danger.copy(alpha = 0.18f), RoundedCornerShape(10.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        state.tagError,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TroveColors.Paper,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onClearTagError) {
+                        Text("关闭", color = TroveColors.AccentSoft)
+                    }
+                }
+            }
             when {
                 state.loading -> Box(
                     Modifier.fillMaxSize(),
@@ -208,6 +239,8 @@ fun PlayerScreen(
                     onRemoveDownload = onRemoveDownload,
                     onTranscript = onTranscript,
                     onRefreshTranscript = onRefreshTranscript,
+                    onEditTags = { tagEditorOpen = true },
+                    onRead = onRead,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(horizontal = 22.dp),
@@ -238,6 +271,86 @@ fun PlayerScreen(
             },
         )
     }
+    if (tagEditorOpen && item != null) {
+        TagEditorDialog(
+            tags = item.tags,
+            error = state.tagError,
+            onDismiss = {
+                tagEditorOpen = false
+                onClearTagError()
+            },
+            onSave = { tags ->
+                onTags(tags)
+                tagEditorOpen = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun TagEditorDialog(
+    tags: List<String>,
+    error: String?,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit,
+) {
+    var values by remember(tags) { mutableStateOf(tags.toList()) }
+    var draft by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = TroveColors.Paper2,
+        title = { Text("编辑 Tag") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = draft,
+                    onValueChange = { draft = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("tag-input"),
+                    placeholder = { Text("输入 Tag 后添加") },
+                    singleLine = true,
+                )
+                TextButton(
+                    onClick = {
+                        if (draft.isNotBlank()) {
+                            values = (values + draft.trim()).distinctBy { it.lowercase() }
+                            draft = ""
+                        }
+                    },
+                ) {
+                    Text("添加")
+                }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    values.forEach { tag ->
+                        TrovePill(
+                            text = "#$tag ×",
+                            onClick = { values = values - tag },
+                        )
+                    }
+                }
+                if (error != null) {
+                    Text(
+                        error,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TroveColors.Danger,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(values) }) { Text("保存") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable
@@ -271,6 +384,9 @@ private fun PlayerTopBar(
     onRetryDownload: () -> Unit,
     onRemoveDownload: () -> Unit,
     onDelete: () -> Unit,
+    onEditTags: () -> Unit,
+    onConsumption: (String) -> Unit,
+    onRetryProcessing: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -337,6 +453,33 @@ private fun PlayerTopBar(
                         )
                     }
                     DropdownMenuItem(
+                        text = {
+                            Text(if (item.consumptionState == "finished") "标记未完成" else "标记完成")
+                        },
+                        onClick = {
+                            onDismissMenu()
+                            onConsumption(
+                                if (item.consumptionState == "finished") "unstarted" else "finished"
+                            )
+                        },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("编辑 Tag") },
+                        onClick = {
+                            onDismissMenu()
+                            onEditTags()
+                        },
+                    )
+                    if (item.processingState == "failed") {
+                        DropdownMenuItem(
+                            text = { Text("重试处理") },
+                            onClick = {
+                                onDismissMenu()
+                                onRetryProcessing()
+                            },
+                        )
+                    }
+                    DropdownMenuItem(
                         text = { Text("删除 Item") },
                         onClick = {
                             onDismissMenu()
@@ -367,11 +510,13 @@ private fun PlayerContent(
     onRemoveDownload: () -> Unit,
     onTranscript: () -> Unit,
     onRefreshTranscript: () -> Unit,
+    onEditTags: () -> Unit,
+    onRead: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val item = state.item ?: return
     val playback = state.playback
-    val isBook = item.hasBook && !item.hasAudio
+    val isBook = item.isBookOnly
     val isCurrent = playback.itemId == item.id
     val itemDuration = item.durationSec
     val durationMs = when {
@@ -406,15 +551,28 @@ private fun PlayerContent(
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 7.dp),
         )
-        if (item.tags.isNotEmpty()) {
-            Row(
-                modifier = Modifier.padding(top = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-                item.tags.forEach { tag ->
-                    TrovePill("#$tag", dark = true)
-                }
+        Row(
+            modifier = Modifier
+                .horizontalScroll(rememberScrollState())
+                .padding(top = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            item.tags.forEach { tag ->
+                TrovePill("#$tag", dark = true)
             }
+            TrovePill("编辑 Tag", onClick = onEditTags, dark = true)
+        }
+        if (item.processingState == "failed") {
+            Text(
+                item.errorMessage?.takeIf { it.isNotBlank() }
+                    ?: "处理失败，可从右上角菜单重试。",
+                style = MaterialTheme.typography.bodySmall,
+                color = TroveColors.AccentSoft,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .padding(top = 12.dp)
+                    .testTag("processing-error"),
+            )
         }
         if (!isBook && (state.errorCode != null || playback.errorCode != null)) {
             PlayerError(state.errorCode ?: playback.errorCode.orEmpty())
@@ -433,11 +591,29 @@ private fun PlayerContent(
                     color = TroveColors.Paper,
                 )
                 Text(
-                    "Host 已保留 book.epub。Android Reader（Readium）将在下一阶段接入；当前可先下载，或在 Web Shell 阅读。",
+                    if (item.bookArtifact?.downloadState == "completed") {
+                        "已下载 EPUB，可离线阅读。"
+                    } else {
+                        "下载 EPUB 后可在 App 内阅读；也可在 Web Shell 阅读。"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = TroveColors.Paper.copy(alpha = 0.58f),
                     modifier = Modifier.padding(top = 6.dp),
                 )
+                TextButton(
+                    onClick = { onRead(item.id) },
+                    enabled = item.bookArtifact?.downloadState == "completed",
+                    modifier = Modifier.testTag("player-read"),
+                ) {
+                    Text(
+                        if (item.bookArtifact?.downloadState == "completed") "打开阅读器" else "请先下载",
+                        color = if (item.bookArtifact?.downloadState == "completed") {
+                            TroveColors.AccentSoft
+                        } else {
+                            TroveColors.Paper.copy(alpha = 0.4f)
+                        },
+                    )
+                }
                 val summary = item.summary
                 if (summary != null) {
                     Text(

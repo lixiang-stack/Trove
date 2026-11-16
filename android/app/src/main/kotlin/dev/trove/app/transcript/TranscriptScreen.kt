@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -141,6 +143,11 @@ private fun DarkSystemBars() {
 
 @Composable
 private fun TranscriptBody(state: TranscriptUiState, onRetry: () -> Unit) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(state.focusSeq, state.segments) {
+        val index = state.segments.indexOfFirst { it.seq == state.focusSeq }
+        if (index >= 0) listState.scrollToItem(index)
+    }
     val item = state.item
     val transcriptArtifact = item?.transcriptArtifact
     val downloaded = transcriptArtifact?.downloadState == "completed"
@@ -202,18 +209,29 @@ private fun TranscriptBody(state: TranscriptUiState, onRetry: () -> Unit) {
         }
         return
     }
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
         items(state.segments, key = { it.seq }) { segment ->
-            SegmentRow(segment = segment, query = state.query)
+            SegmentRow(
+                segment = segment,
+                query = state.query,
+                focused = state.focusSeq == segment.seq,
+            )
         }
     }
 }
 
 @Composable
-private fun SegmentRow(segment: TranscriptSegment, query: String) {
+private fun SegmentRow(segment: TranscriptSegment, query: String, focused: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .background(
+                if (focused) {
+                    TroveColors.Accent.copy(alpha = 0.12f)
+                } else {
+                    Color.Transparent
+                }
+            )
             .padding(horizontal = 18.dp, vertical = 10.dp)
             .testTag("transcript-segment-${segment.seq}"),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
