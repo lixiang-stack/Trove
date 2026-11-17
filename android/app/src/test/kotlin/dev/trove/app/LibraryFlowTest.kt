@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
+import dev.trove.app.testing.TestHarness
 import dev.trove.app.testing.testHarness
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
@@ -43,6 +44,15 @@ class LibraryFlowTest {
         }
     }
 
+    private fun waitForPlaybackRequest(harness: TestHarness) {
+        // waitUntil only drives the Compose clock; pump the main looper so the
+        // Room-backed ViewModel coroutine can resume and call the player.
+        compose.waitUntil(PLAYBACK_TIMEOUT_MS) {
+            compose.waitForIdle()
+            harness.player.requests.isNotEmpty()
+        }
+    }
+
     private fun signedInHarness(context: Context) = testHarness(
         context,
         tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
@@ -68,7 +78,7 @@ class LibraryFlowTest {
 
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
-        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
+        waitForPlaybackRequest(harness)
         assertEquals(
             "https://host.example/api/items/item-1/files/audio",
             harness.player.requests.single().url,
@@ -120,7 +130,7 @@ class LibraryFlowTest {
         waitForTag("continue-item-1")
         compose.onNodeWithTag("continue-item-1").performClick()
         compose.waitForIdle()
-        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
+        waitForPlaybackRequest(harness)
         assertEquals(
             "https://host.example/api/items/item-1/files/audio",
             harness.player.requests.single().url,
@@ -145,7 +155,7 @@ class LibraryFlowTest {
         waitForTag("library-item-item-1")
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
-        compose.waitUntil(PLAYBACK_TIMEOUT_MS) { harness.player.requests.isNotEmpty() }
+        waitForPlaybackRequest(harness)
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
         waitForTag("player-screen")
         waitForTag("player-error")
@@ -171,6 +181,7 @@ class LibraryFlowTest {
         compose.setContent { TroveApp(viewModel, harness.container) }
 
         waitForTag("library-item-ready")
+        waitForTag("library-item-failed")
         compose.onNodeWithText("Ready item").assertIsDisplayed()
 
         compose.onNodeWithTag("filter-inbox").performScrollTo().performClick()

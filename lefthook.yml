@@ -56,15 +56,13 @@ pre-push:
         - "scripts/**"
       run: ./scripts/check.sh --fast
     android-checks:
-      glob: "android/**"
+      glob:
+        - "android/**"
+        - "scripts/android/**"
       run: |
         if [ -x android/gradlew ]; then
           # Keep this identical to .github/workflows/android.yml (all modules).
-          (cd android && ./gradlew \
-            :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
-            :core:testDebugUnitTest :core:lintDebug \
-            :playback:testDebugUnitTest :playback:lintDebug \
-            :reader:testDebugUnitTest :reader:lintDebug)
+          ./scripts/android/check.sh
         else
           echo "android/gradlew missing; skipping Android checks"
         fi

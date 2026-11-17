@@ -77,10 +77,20 @@ This is an OEM behavior, not something the app can override.
 ## Device checks
 
 ```bash
+scripts/android/check.sh             # build + JVM/Compose tests + lint (all modules)
 scripts/android/device-check.sh      # bundled SQLite/FTS5 + platform manifest
 scripts/android/acceptance-host.sh   # throwaway Host + prodDebug app + adb reverse
-scripts/android/ui-dump.py           # inspect the current screen
+scripts/android/acceptance-playback.sh --seconds 30   # short playback smoke
+scripts/android/acceptance-playback.sh                # 5-minute background run
+scripts/android/diagnostics.sh       # media session, notification, doze, logcat
+scripts/android/ui-dump.py           # dump screen; supports --wait/tap text/desc
 ```
+
+`acceptance-playback.sh` clones the current Host DB/config into a throwaway home,
+adds a silent audio Item, drives the app over `adb reverse`, locks the screen, and
+verifies MediaSession plus Host canonical progress. It assumes the debug app's Host
+URL is `http://127.0.0.1:8765` and that the phone is connected over USB and Wi-Fi.
+It restores the previous reverse mapping when it exits.
 
 Real-device acceptance still requires manual playback, download, reader, and sync
 checks. Emulator passes do not replace background playback/media notification

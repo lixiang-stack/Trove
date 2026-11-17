@@ -1,6 +1,7 @@
 package dev.trove.app.player
 
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionController
 import dev.trove.app.testing.FakeDownloadManager
@@ -23,6 +24,7 @@ import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.setMain
@@ -55,6 +57,7 @@ class PlayerViewModelTest {
     private lateinit var api: FakeTroveApi
     private lateinit var controller: SessionController
     private lateinit var settingsStore: FakeSettingsStore
+    private val viewModels = mutableListOf<PlayerViewModel>()
 
     @Before
     fun setUp() {
@@ -77,6 +80,7 @@ class PlayerViewModelTest {
 
     @After
     fun tearDown() {
+        viewModels.forEach { it.viewModelScope.cancel() }
         database.close()
         Dispatchers.resetMain()
     }
@@ -100,7 +104,7 @@ class PlayerViewModelTest {
             clientProvider = { controller.currentClient() },
             fileStore = fileStore,
         ),
-    )
+    ).also { viewModels += it }
 
     @Test
     fun streamingPlaybackUsesHostFileUrlAndSavedPosition() = runBlocking {
