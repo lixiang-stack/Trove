@@ -62,6 +62,7 @@ class SyncHardeningFlowTest {
     @After
     fun tearDown() {
         playerViewModels.forEach { it.viewModelScope.cancel() }
+        container.close()
         container.database.close()
         Dispatchers.resetMain()
     }
@@ -294,6 +295,7 @@ class SyncHardeningFlowTest {
                 reinstalled.database.artifactDao().find("a", "transcript")?.downloadState,
             )
         } finally {
+            reinstalled.close()
             reinstalled.database.close()
         }
     }

@@ -24,7 +24,7 @@ android/
 | Local FTS5 index/query | `android/core/.../search/` |
 | EPUB/book JSON/locator | `android/core/.../reading/` + `android/reader/` |
 | Download worker/files | `android/core/.../download/` + `storage/` |
-| Device acceptance tooling | `scripts/android/` (`acceptance-host.sh`, `device-check.sh`, `release-check.sh`, `seed_acceptance.py`, `ui-dump.py`) |
+| Device acceptance tooling | `scripts/android/` (`check.sh`, `acceptance-host.sh`, `acceptance-playback.sh`, `diagnostics.sh`, `device-check.sh`, `release-check.sh`, `seed_acceptance.py`, `seed_playback.py`, `ui-dump.py`) |
 
 ## HTTP surface
 
