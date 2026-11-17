@@ -34,10 +34,10 @@ import dev.trove.core.sync.DownloadQueue
 import dev.trove.playback.PlaybackRequest
 import dev.trove.playback.PlaybackState
 import dev.trove.playback.PlayerGateway
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import retrofit2.Response
-import java.util.concurrent.CopyOnWriteArrayList
 
 class FakeTokenStore(
     var credential: StoredCredential? = null,
@@ -109,7 +109,7 @@ class FakeTroveApi : TroveApi {
         )
     )
     var deviceError: Throwable? = null
-    val revokedDevices = mutableListOf<String>()
+    val revokedDevices = CopyOnWriteArrayList<String>()
     var manifestResponse = ManifestDto(
         items = emptyList(),
         tombstones = emptyList(),
@@ -118,7 +118,7 @@ class FakeTroveApi : TroveApi {
         epoch = "test-epoch",
     )
     val manifestPages = ArrayDeque<ManifestDto>()
-    val requestedManifestCursors = mutableListOf<String?>()
+    val requestedManifestCursors = CopyOnWriteArrayList<String?>()
     var stateResponse = SyncStateDto(
         items = emptyList(),
         nextCursor = "0",
@@ -131,17 +131,17 @@ class FakeTroveApi : TroveApi {
     var progressError: Throwable? = null
     var progressFailuresRemaining = 0
     var progressResponse: MutationResponseDto? = null
-    val progressCalls = mutableListOf<Pair<String, ProgressRequestDto>>()
-    val progressKeys = mutableListOf<String?>()
+    val progressCalls = CopyOnWriteArrayList<Pair<String, ProgressRequestDto>>()
+    val progressKeys = CopyOnWriteArrayList<String?>()
     var deleteError: Throwable? = null
-    val deletedItems = mutableListOf<String>()
-    val tagCalls = mutableListOf<Pair<String, List<String>>>()
-    val tagKeys = mutableListOf<String?>()
+    val deletedItems = CopyOnWriteArrayList<String>()
+    val tagCalls = CopyOnWriteArrayList<Pair<String, List<String>>>()
+    val tagKeys = CopyOnWriteArrayList<String?>()
     var tagsError: Throwable? = null
     var tagsResponse: MutationResponseDto? = null
     var createResponse: ItemCreateResponseDto? = null
     var createError: Throwable? = null
-    val createCalls = mutableListOf<ItemCreateRequestDto>()
+    val createCalls = CopyOnWriteArrayList<ItemCreateRequestDto>()
     var itemResponse: ItemDto? = null
     var itemError: Throwable? = null
     var feedResponse: FeedPreviewResponseDto = FeedPreviewResponseDto(title = "Feed")
@@ -320,7 +320,7 @@ class FakeDownloadSettingsStore(
 }
 
 class FakeDownloadQueue : DownloadQueue {
-    val enqueued = mutableListOf<String>()
+    val enqueued = CopyOnWriteArrayList<String>()
 
     override suspend fun enqueue(itemId: String) {
         enqueued += itemId
@@ -328,10 +328,10 @@ class FakeDownloadQueue : DownloadQueue {
 }
 
 class FakeDownloadManager : DownloadManager {
-    val enqueued = mutableListOf<String>()
-    val paused = mutableListOf<String>()
-    val retried = mutableListOf<String>()
-    val removed = mutableListOf<String>()
+    val enqueued = CopyOnWriteArrayList<String>()
+    val paused = CopyOnWriteArrayList<String>()
+    val retried = CopyOnWriteArrayList<String>()
+    val removed = CopyOnWriteArrayList<String>()
 
     override suspend fun enqueue(itemId: String) {
         enqueued += itemId
@@ -403,7 +403,7 @@ class FakePlayer : PlayerGateway {
 }
 
 class FakeTroveApiFactory(private val api: TroveApi) : TroveApiFactory {
-    val requests = mutableListOf<Pair<String, String?>>()
+    val requests = CopyOnWriteArrayList<Pair<String, String?>>()
 
     override fun create(baseUrl: String, token: String?): TroveApi {
         requests += baseUrl to token

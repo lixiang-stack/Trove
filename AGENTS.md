@@ -48,6 +48,7 @@
 ## Android App
 
 - Android 子树的本地规范在 `android/AGENTS.md`；开发 App 前先读。根规范仍适用，包含 Google Material Design (Material 3)。
+- 真机/release 验收：先读 `docs/android.md`；统一检查命令是 `scripts/android/check.sh`；验收结论和例外见 `.scratch/trove-v1/acceptance.md`。
 
 ## Agent skills
 
