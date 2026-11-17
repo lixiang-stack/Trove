@@ -88,24 +88,26 @@ def test_library_orders_by_recent_consumed(host):
     ]
 
 
-def test_inbox_filters_processing_and_failed(host):
-    ready = seed_item(host, title="Ready item", source_key="seed:ready")
+def test_inbox_filters_processing_and_failed(api_host):
+    # API-only fixture: the background worker must not advance the seeded run
+    # before the filter page is read.
+    ready = seed_item(api_host, title="Ready item", source_key="seed:ready")
     processing = seed_item(
-        host,
+        api_host,
         title="Processing item",
         source_key="seed:processing",
         run_state="transcribing",
     )
     failed = seed_item(
-        host,
+        api_host,
         title="Failed item",
         source_key="seed:failed",
         run_state="failed",
     )
-    host.login()
-    library = host.client.get("/library")
+    api_host.login()
+    library = api_host.client.get("/library")
     assert set(_order(library.text)) == {ready.item.id, processing.item.id, failed.item.id}
-    inbox = host.client.get("/library?state=processing,failed")
+    inbox = api_host.client.get("/library?state=processing,failed")
     assert set(_order(inbox.text)) == {processing.item.id, failed.item.id}
     assert "Ready item" not in inbox.text
     assert "Transcribing" in inbox.text

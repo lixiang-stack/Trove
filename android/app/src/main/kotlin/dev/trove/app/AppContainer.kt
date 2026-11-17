@@ -40,6 +40,7 @@ import dev.trove.reader.ReaderDependencies
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -142,6 +143,12 @@ open class AppContainer(
 
     fun consumeSharedUrl() {
         sharedUrl.value = null
+    }
+
+    /** Stop background collectors; used by tests before resetting Main. */
+    internal fun close() {
+        scope.cancel()
+        player.release()
     }
 
     private fun currentPlayerItemId(): String? = player.state.value.itemId
