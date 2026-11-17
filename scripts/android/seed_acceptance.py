@@ -39,6 +39,7 @@ def add_item(
     position: float = 0.0,
     run_state: str = "completed",
     with_transcript: bool = True,
+    duration: float = 20.0,
 ) -> str:
     bundle, _ = runtime.library.create_item(
         source_key=source_key,
@@ -47,7 +48,7 @@ def add_item(
         title=title,
         author="验收作者",
         language="zh",
-        duration_sec=20.0,
+        duration_sec=duration,
     )
     item_id = bundle.item.id
     installed_audio = runtime.package.copy_artifact(
@@ -66,7 +67,7 @@ def add_item(
                 sha256=installed_audio.sha256,
                 size=installed_audio.size,
                 mime=installed_audio.mime,
-                duration_sec=20.0,
+                duration_sec=duration,
             )
         )
         if with_transcript:

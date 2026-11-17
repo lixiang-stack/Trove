@@ -115,9 +115,7 @@ open class AppContainer(
         tokenProvider = { tokenStore.read()?.token },
         preferencesProvider = { downloadSettingsStore.preferences.first() },
         onUnauthorized = sessionController::onUnauthorized,
-        nowPlayingItemId = {
-            player.state.value.itemId
-        },
+        nowPlayingItemId = ::currentPlayerItemId,
         onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
 
@@ -132,9 +130,7 @@ open class AppContainer(
         clientProvider = { sessionController.currentClient() },
         fileStore = fileStore,
         downloadQueue = downloadQueue,
-        nowPlayingItemId = {
-            player.state.value.itemId
-        },
+        nowPlayingItemId = ::currentPlayerItemId,
         onItemChanged = { itemId -> localSearchRepository.indexItem(itemId) },
     )
 
@@ -148,6 +144,8 @@ open class AppContainer(
         sharedUrl.value = null
     }
 
+    private fun currentPlayerItemId(): String? = player.state.value.itemId
+
     init {
         DownloadEnvironmentHolder.current = DownloadEnvironment(
             database = database,
@@ -156,9 +154,7 @@ open class AppContainer(
             downloadSettings = downloadSettingsStore,
             tokenStore = tokenStore,
             onUnauthorized = sessionController::onUnauthorized,
-            nowPlayingItemId = {
-                player.state.value.itemId
-            },
+            nowPlayingItemId = ::currentPlayerItemId,
             onItemFilesChanged = { itemId -> localSearchRepository.indexItem(itemId) },
         )
         PlaybackEnvironment.progressSink = progressRecorder

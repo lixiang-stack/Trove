@@ -87,6 +87,14 @@ def test_health_contract_fixture_matches_host_schema():
     assert health.capabilities["device_tokens"] is True
     assert health.capabilities["file_download"] is True
     assert health.database["fts5"] is True
+    assert health.database["migration"]["head"] == "0004_v1_sync_schema"
+
+
+def test_health_fixture_matches_live_migration_head(api_host):
+    fixture = _load("health.json")
+    live = api_host.client.get("/api/health").json()
+    assert live["database"]["migration"]["head"] == fixture["database"]["migration"]["head"]
+    assert live["capabilities"] == fixture["capabilities"]
 
 
 def test_live_search_payload_keeps_fixture_labels_and_urls(api_host):

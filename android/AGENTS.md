@@ -67,7 +67,8 @@
 
 ```bash
 ./gradlew :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
-  :core:testDebugUnitTest :core:lintDebug :playback:lintDebug :reader:lintDebug
+  :core:testDebugUnitTest :core:lintDebug :playback:testDebugUnitTest \
+  :playback:lintDebug :reader:testDebugUnitTest :reader:lintDebug
 ./gradlew :core:connectedDebugAndroidTest :app:connectedProdDebugAndroidTest   # bundled SQLite + 平台 manifest；需要真机/模拟器
 ./gradlew :app:assembleProdRelease               # R8/resource shrink smoke
 ./gradlew :app:assembleLanDebug                  # LAN 明文调试包

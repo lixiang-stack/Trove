@@ -142,6 +142,7 @@ def test_docs_ui_serves_cdn_assets_with_a_scoped_csp(api_host):
     docs = api_host.client.get("/docs")
     assert docs.status_code == 200
     assert "cdn.jsdelivr.net" in docs.headers["content-security-policy"]
+    assert "'unsafe-inline'" in docs.headers["content-security-policy"]
     redoc = api_host.client.get("/redoc")
     assert redoc.status_code == 200
     assert "cdn.redoc.ly" in redoc.headers["content-security-policy"]

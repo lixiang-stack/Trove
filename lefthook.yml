@@ -63,7 +63,8 @@ pre-push:
           (cd android && ./gradlew \
             :app:assembleProdDebug :app:testProdDebugUnitTest :app:lintProdDebug \
             :core:testDebugUnitTest :core:lintDebug \
-            :playback:lintDebug :reader:lintDebug)
+            :playback:testDebugUnitTest :playback:lintDebug \
+            :reader:testDebugUnitTest :reader:lintDebug)
         else
           echo "android/gradlew missing; skipping Android checks"
         fi

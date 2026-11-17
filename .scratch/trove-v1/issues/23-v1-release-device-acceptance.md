@@ -11,9 +11,10 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Context
 
-M3 自动化、release 构建和契约收口已完成，但验收时 Xiaomi 13 从 adb 断开，
-release APK 安装/R8 冒烟和以下 P0 真机项仍未在本次 sweep 中验证。此 issue 只补
-验收证据，不引入新功能。
+M3 自动化、release 构建和契约收口已完成，但 60 分钟后台播放仍未验证。
+2026-11-17 首轮连续播放到 32:06 时因使用手机被中断；用户明确跳过干净重跑。
+release 安装/启动、明文拒绝、重装 Library/进度、EPUB 离线/图片/脚注和离线进度回写
+已在真机 PASS。此 issue 只补验收证据，不引入新功能。
 
 ## Scope
 

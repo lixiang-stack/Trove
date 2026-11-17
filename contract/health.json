@@ -13,8 +13,8 @@
   "database": {
     "status": "ok",
     "migration": {
-      "current": "0010",
-      "head": "0010",
+      "current": "0004_v1_sync_schema",
+      "head": "0004_v1_sync_schema",
       "up_to_date": true
     },
     "fts5": true
