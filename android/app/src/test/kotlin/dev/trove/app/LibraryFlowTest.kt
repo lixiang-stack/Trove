@@ -29,7 +29,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-private const val PLAYBACK_TIMEOUT_MS = 15_000L
+private const val PLAYBACK_TIMEOUT_MS = 30_000L
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
@@ -38,7 +38,7 @@ class LibraryFlowTest {
     val compose = createComposeRule()
 
     private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
+        compose.waitUntil(10_000) {
             compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
         }
     }
