@@ -65,3 +65,4 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - Real-device report: playing progress froze while the media session kept advancing (e.g. UI stuck at 9:46). Root cause: `MediaSessionPlayer.release()` cancelled the position tick job but left the cancelled `Job` reference non-null, so the next `connect()` saw `positionJob != null` and never restarted per-second UI updates. It reproduced after switching Host (logout/login), which triggers release -> connect.
 - Fix: extracted `PositionTicker` with `start()`/`stop()` that clears the job; added `PositionTickerTest.stopThenStartResumesTicks`. Verified on device: the player time now advances each second after reinstall/reconnect.
+- 2026-11-17: first continuous background run reached 32:06 and was interrupted by phone use; the user explicitly skipped the clean 60-minute rerun. The 60-minute P0 item remains NOT VERIFIED and is tracked in issue 23.
