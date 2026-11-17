@@ -37,6 +37,7 @@ import dev.trove.playback.PlayerGateway
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import retrofit2.Response
+import java.util.concurrent.CopyOnWriteArrayList
 
 class FakeTokenStore(
     var credential: StoredCredential? = null,
@@ -352,10 +353,10 @@ class FakeDownloadManager : DownloadManager {
 class FakePlayer : PlayerGateway {
     private val playback = MutableStateFlow(PlaybackState(connected = true))
     override val state: kotlinx.coroutines.flow.StateFlow<PlaybackState> = playback
-    val requests = mutableListOf<PlaybackRequest>()
+    val requests = CopyOnWriteArrayList<PlaybackRequest>()
     var connected = false
     var errorOnPlay: String? = null
-    val speeds = mutableListOf<Float>()
+    val speeds = CopyOnWriteArrayList<Float>()
 
     override fun connect() {
         connected = true
@@ -394,6 +395,10 @@ class FakePlayer : PlayerGateway {
     override fun setSpeed(speed: Float) {
         speeds += speed
         playback.value = playback.value.copy(speed = speed)
+    }
+
+    fun finish() {
+        playback.value = playback.value.copy(ended = true, isPlaying = false)
     }
 }
 

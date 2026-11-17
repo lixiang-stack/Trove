@@ -3,17 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
 
+from trove.web.api.headers import CONTENT_RANGE_HEADER, FILE_RESPONSE_HEADERS
 from trove.web.deps import runtime
 from trove.web.media import audio_response, cover_response
 
 router = APIRouter()
-
-_MEDIA_HEADERS = {
-    "ETag": {"description": "Quoted SHA-256", "schema": {"type": "string"}},
-    "Accept-Ranges": {"description": "Always `bytes`", "schema": {"type": "string"}},
-    "Cache-Control": {"description": "Always `private`", "schema": {"type": "string"}},
-    "X-Content-Type-Options": {"description": "Always `nosniff`", "schema": {"type": "string"}},
-}
 
 
 @router.get(
@@ -23,17 +17,14 @@ _MEDIA_HEADERS = {
         200: {
             "content": {"audio/*": {}},
             "description": "Audio stream",
-            "headers": _MEDIA_HEADERS,
+            "headers": FILE_RESPONSE_HEADERS,
         },
         206: {
             "content": {"audio/*": {}},
             "description": "Partial audio stream",
             "headers": {
-                **_MEDIA_HEADERS,
-                "Content-Range": {
-                    "description": "Inclusive byte range and total size",
-                    "schema": {"type": "string"},
-                },
+                **FILE_RESPONSE_HEADERS,
+                "Content-Range": CONTENT_RANGE_HEADER,
             },
         },
         416: {"description": "Requested range is not satisfiable"},
@@ -50,7 +41,7 @@ def api_audio(request: Request, item_id: str):
         200: {
             "content": {"image/*": {}},
             "description": "Cover image",
-            "headers": _MEDIA_HEADERS,
+            "headers": FILE_RESPONSE_HEADERS,
         },
         404: {"description": "Cover is missing"},
     },
