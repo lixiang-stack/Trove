@@ -36,6 +36,7 @@
 - 完成后走 PR；`main` 只读，不在本地 merge。
 - 每个需求在 `.worktree/<需求名>` 新建分支，已合并分支不承接新需求。
 - 新建 worktree：`./scripts/git/new-worktree.sh <需求名> [base]`。
+- worktree 不共享 `.venv`；在 `.worktree/<需求名>` 内用 `uv run ...`（会创建本地 venv），不要直接调用主 checkout 的 `.venv/bin/python`。
 - **仅当用户明确要求时才 push**；需改写已推送分支时用 `--force-with-lease`。
 - **禁止代理自动合并**：PR 必须由用户 review 后合并；代理不得执行 `gh pr merge`、本地 merge 或直接 push `main`，撤销/修复也要走 PR。
 

@@ -14,6 +14,8 @@ import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
+import dev.trove.app.testing.scrollAndClick
+import dev.trove.app.testing.scrollAndClickText
 import dev.trove.app.testing.testHarness
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.CollectionCreateResponseDto
@@ -90,10 +92,10 @@ class CollectionFlowTest {
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput(url)
         waitForTag("add-preview")
-        compose.onNodeWithTag("add-preview-submit").performScrollTo().performClick()
+        compose.scrollAndClick("add-preview-submit")
         waitForTag("add-collection-result")
         compose.onNodeWithText("合集已加入").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("打开合集").performScrollTo().performClick()
+        compose.scrollAndClickText("打开合集")
         waitForTag("collection-screen")
         compose.onNodeWithText("Fixture Collection").assertIsDisplayed()
         compose.onNodeWithText("Episode One").assertIsDisplayed()

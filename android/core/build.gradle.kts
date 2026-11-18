@@ -30,6 +30,7 @@ android {
 
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../contract"))
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../tests/fixtures"))
+    sourceSets.getByName("test").assets.srcDir("$projectDir/schemas")
 }
 
 ksp {
@@ -56,6 +57,7 @@ dependencies {
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.androidx.sqlite.framework)
+    testImplementation(libs.androidx.room.testing)
 
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.junit)
