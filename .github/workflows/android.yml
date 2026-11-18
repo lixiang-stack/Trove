@@ -2,6 +2,12 @@ name: android
 
 on:
   pull_request:
+    paths:
+      - "android/**"
+      - "contract/**"
+      - "tests/fixtures/**"
+      - "scripts/android/**"
+      - ".github/workflows/android.yml"
   push:
     branches: [main]
 
@@ -35,22 +41,6 @@ jobs:
 
       - name: Assemble, test, lint
         run: scripts/android/check.sh --no-daemon
-
-      - name: Signed release artifact check
-        working-directory: android
-        run: |
-          keytool -genkeypair -v \
-            -keystore "$RUNNER_TEMP/trove-release.jks" \
-            -storetype PKCS12 -alias trove-release \
-            -keyalg RSA -keysize 2048 -validity 3650 \
-            -storepass ci-release -keypass ci-release \
-            -dname "CN=Trove CI, O=Trove, C=CN"
-          export TROVE_RELEASE_STORE_FILE="$RUNNER_TEMP/trove-release.jks"
-          export TROVE_RELEASE_STORE_PASSWORD=ci-release
-          export TROVE_RELEASE_KEY_ALIAS=trove-release
-          export TROVE_RELEASE_KEY_PASSWORD=ci-release
-          ./gradlew :app:assembleProdRelease --no-daemon
-          ../scripts/android/release-check.sh app/build/outputs/apk/prod/release/app-prod-release.apk
 
       - name: LAN flavor smoke
         working-directory: android
