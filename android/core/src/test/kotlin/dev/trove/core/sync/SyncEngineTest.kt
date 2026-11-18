@@ -8,12 +8,19 @@ import dev.trove.core.db.TroveDatabase
 import dev.trove.core.network.DeviceListResponse
 import dev.trove.core.network.DeviceTokenRequest
 import dev.trove.core.network.DeviceTokenResponse
+import dev.trove.core.network.CollectionCreateRequestDto
+import dev.trove.core.network.CollectionCreateResponseDto
+import dev.trove.core.network.CollectionDeleteResponseDto
+import dev.trove.core.network.CollectionDto
+import dev.trove.core.network.CollectionListResponseDto
 import dev.trove.core.network.FeedPreviewRequestDto
 import dev.trove.core.network.FeedPreviewResponseDto
 import dev.trove.core.network.HealthDto
 import dev.trove.core.network.ItemCreateRequestDto
 import dev.trove.core.network.ItemCreateResponseDto
 import dev.trove.core.network.ItemDto
+import dev.trove.core.network.LinkInspectRequestDto
+import dev.trove.core.network.LinkInspectResponseDto
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.MutationItemDto
 import dev.trove.core.network.MutationResponseDto
@@ -1014,6 +1021,27 @@ class SyncEngineTest {
         override suspend fun item(itemId: String): ItemDto = error("not used")
 
         override suspend fun retryItem(itemId: String): ItemDto = error("not used")
+
+        override suspend fun inspectLink(body: LinkInspectRequestDto): LinkInspectResponseDto =
+            error("not used")
+
+        override suspend fun createCollection(
+            body: CollectionCreateRequestDto,
+        ): CollectionCreateResponseDto = error("not used")
+
+        override suspend fun collection(collectionId: String): CollectionDto =
+            error("not used")
+
+        override suspend fun deleteCollection(
+            collectionId: String,
+            mode: String,
+        ): CollectionDeleteResponseDto = error("not used")
+
+        override suspend fun retryCollectionFailed(collectionId: String): CollectionDto =
+            error("not used")
+
+        override suspend fun collections(): CollectionListResponseDto =
+            CollectionListResponseDto()
 
         override suspend fun previewFeed(body: FeedPreviewRequestDto): FeedPreviewResponseDto =
             error("not used")

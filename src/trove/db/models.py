@@ -26,6 +26,10 @@ class Item(Base):
     source_url_raw: Mapped[str | None] = mapped_column(Text)
     source_url_canonical: Mapped[str | None] = mapped_column(Text)
     source_path: Mapped[str | None] = mapped_column(Text)
+    collection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("collections.id", ondelete="SET NULL"), index=True
+    )
+    collection_index: Mapped[int | None] = mapped_column(Integer)
     title: Mapped[str] = mapped_column(String(2048), nullable=False)
     author: Mapped[str | None] = mapped_column(String(1024))
     published_at: Mapped[str | None] = mapped_column(String(128))
@@ -57,6 +61,7 @@ class Item(Base):
     tags: Mapped[list[ItemTag]] = relationship(
         back_populates="item", cascade="all, delete-orphan", passive_deletes=True
     )
+    collection: Mapped[Collection | None] = relationship(back_populates="items")
 
     __table_args__ = (
         Index("ix_items_created_at", "created_at"),
@@ -65,6 +70,37 @@ class Item(Base):
         Index("ix_items_consumption_state", "consumption_state"),
         Index("ix_items_content_seq", "content_seq"),
         Index("ix_items_state_seq", "state_seq"),
+        UniqueConstraint(
+            "collection_id", "collection_index", name="uq_items_collection_index"
+        ),
+    )
+
+
+class Collection(Base):
+    __tablename__ = "collections"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_key: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False)
+    source_url_raw: Mapped[str | None] = mapped_column(Text)
+    source_url_canonical: Mapped[str | None] = mapped_column(Text)
+    platform: Mapped[str] = mapped_column(String(32), nullable=False)
+    title: Mapped[str] = mapped_column(String(2048), nullable=False)
+    author: Mapped[str | None] = mapped_column(String(1024))
+    episode_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    total_duration_sec: Mapped[float | None] = mapped_column()
+    deleted_at: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    items: Mapped[list[Item]] = relationship(
+        back_populates="collection", passive_deletes=True
+    )
+
+    __table_args__ = (
+        Index("ix_collections_created_at", "created_at"),
+        Index("ix_collections_updated_at", "updated_at"),
     )
 
 

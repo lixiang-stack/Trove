@@ -53,6 +53,7 @@ def library_page(
             "items": items,
             "sort": sort,
             "inbox": inbox,
+            "collection_count": app_runtime.collections.count(),
             "filter_groups": filter_groups(
                 build, selected, search_dimensions(app_runtime)
             ),

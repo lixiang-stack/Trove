@@ -13,6 +13,7 @@ from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
 from trove.adapters.safe_http import SafeHttpClient
 from trove.adapters.search import FtsSearchIndex
+from trove.adapters.video_inspect import YtDlpVideoInspector
 from trove.config import Config
 from trove.content_package import ContentPackage
 from trove.db.engine import create_engine_for, create_session_factory
@@ -21,13 +22,17 @@ from trove.ports import (
     BookExtractor,
     Downloader,
     FeedClient,
+    LinkProbe,
     Organizer,
     SearchIndex,
     Transcriber,
+    VideoInspector,
 )
 from trove.services.auth import AuthService
+from trove.services.collections import CollectionService
 from trove.services.devices import DeviceService
 from trove.services.export import ExportService
+from trove.services.inspect import InspectService
 from trove.services.intake import IntakeService
 from trove.services.library import LibraryService
 from trove.services.playback import PlaybackService
@@ -46,6 +51,8 @@ class Ports:
     transcriber: Transcriber
     organizer: Organizer
     book_extractor: BookExtractor
+    video_inspector: VideoInspector
+    link_probe: LinkProbe
 
 
 @dataclass(slots=True)
@@ -56,10 +63,12 @@ class Runtime:
     package: ContentPackage
     search_index: SearchIndex
     library: LibraryService
+    collections: CollectionService
     search: SearchService
     reading: ReadingService
     processing: ProcessingService
     intake: IntakeService
+    inspect: InspectService
     playback: PlaybackService
     export: ExportService
     sync: SyncService
@@ -78,6 +87,8 @@ def default_ports(config: Config) -> Ports:
         transcriber=MlxWhisperTranscriber(config.asr_model),
         organizer=DeepSeekOrganizer(config),
         book_extractor=EpubExtractor(),
+        video_inspector=YtDlpVideoInspector(config),
+        link_probe=http,
     )
 
 
@@ -102,11 +113,21 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         search_index=search_index,
         uploads=uploads,
     )
+    collections = CollectionService(config, sessions, package, library, processing)
+    inspect = InspectService(
+        config,
+        library,
+        collections,
+        ports.feed_client,
+        ports.video_inspector,
+        ports.link_probe,
+    )
     intake = IntakeService(
         config,
         package,
         library,
         processing,
+        collections,
         ports.feed_client,
         ports.book_extractor,
         ports.audio_extractor,
@@ -125,10 +146,12 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         package=package,
         search_index=search_index,
         library=library,
+        collections=collections,
         search=search,
         reading=reading,
         processing=processing,
         intake=intake,
+        inspect=inspect,
         playback=playback,
         export=export,
         sync=sync,

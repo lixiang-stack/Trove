@@ -531,6 +531,19 @@ class SyncService:
             "version": item.version,
             "source_type": item.source_type,
             "platform": item.platform,
+            "collection_id": item.collection_id,
+            "collection_index": item.collection_index,
+            "collection_title": (
+                bundle.collection.title if bundle.collection is not None else None
+            ),
+            "collection_platform": (
+                bundle.collection.platform if bundle.collection is not None else None
+            ),
+            "collection_source_url": (
+                bundle.collection.source_url_canonical
+                if bundle.collection is not None
+                else None
+            ),
             "title": item.title,
             "author": item.author,
             "published_at": item.published_at,

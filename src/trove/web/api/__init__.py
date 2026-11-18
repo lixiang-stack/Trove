@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from trove.web.api import (
     auth,
+    collections_api,
     continue_routes,
     devices,
     export,
@@ -19,6 +20,7 @@ from trove.web.api import (
 
 router = APIRouter()
 router.include_router(auth.router)
+router.include_router(collections_api.router)
 router.include_router(continue_routes.router)
 router.include_router(devices.router)
 router.include_router(files.router)

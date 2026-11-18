@@ -8,13 +8,21 @@ from trove.config import Config
 from trove.content_package import ArtifactKind, ContentPackage, sha256_file
 from trove.db.models import Artifact, Item
 from trove.domain.items import Platform, SourceType
+from trove.domain.links import LinkInspection
 from trove.domain.urls import (
+    canonicalize_epub_url,
     canonicalize_feed_url,
     canonicalize_video_url,
+    epub_title_hint,
     podcast_source_key,
 )
 from trove.errors import ValidationError
 from trove.ports import AudioExtractor, BookExtractor, FeedClient
+from trove.services.collections import (
+    CollectionCreateResult,
+    CollectionService,
+    collection_block,
+)
 from trove.services.library import ItemBundle, LibraryService
 from trove.services.processing import ProcessingService
 from trove.services.uploads import UploadStore, kind_for_suffix
@@ -27,6 +35,7 @@ class IntakeService:
         package: ContentPackage,
         library: LibraryService,
         processing: ProcessingService,
+        collections: CollectionService,
         feed_client: FeedClient,
         book_extractor: BookExtractor,
         audio_extractor: AudioExtractor,
@@ -36,6 +45,7 @@ class IntakeService:
         self.package = package
         self.library = library
         self.processing = processing
+        self.collections = collections
         self.feed_client = feed_client
         self.book_extractor = book_extractor
         self.audio_extractor = audio_extractor
@@ -58,6 +68,93 @@ class IntakeService:
             self.processing.create_run(bundle.item.id)
             return self.library.get(bundle.item.id), False
         return bundle, True
+
+    # ------------------------------------------------------------------
+    # EPUB URL
+    # ------------------------------------------------------------------
+    def add_epub_url(
+        self, raw_url: str, *, canonical_url: str | None = None
+    ) -> tuple[ItemBundle, bool]:
+        canonical = canonicalize_epub_url(canonical_url or raw_url)
+        existing = self._find_by_source_key(canonical)
+        if existing is not None:
+            return existing, True
+        bundle, deduplicated = self.library.create_item(
+            source_key=canonical,
+            source_type=SourceType.EPUB_URL,
+            platform=Platform.WEB,
+            title=epub_title_hint(canonical),
+            source_url_raw=raw_url,
+            source_url_canonical=canonical,
+        )
+        if deduplicated:
+            return bundle, True
+        self.processing.create_run(bundle.item.id)
+        return self.library.get(bundle.item.id), False
+
+    # ------------------------------------------------------------------
+    # Collections
+    # ------------------------------------------------------------------
+    def add_collection(self, inspection: LinkInspection) -> CollectionCreateResult:
+        if inspection.kind.value != "collection":
+            raise ValidationError(
+                "Link is not a collection", details={"code": "collection.empty"}
+            )
+        collection, _ = self.collections.create_or_update(
+            source_key=inspection.canonical_url,
+            source_url_raw=inspection.raw_url,
+            source_url_canonical=inspection.canonical_url,
+            platform=str(inspection.platform),
+            title=inspection.title,
+            author=inspection.author,
+            episode_count=inspection.episode_count,
+            total_duration_sec=inspection.total_duration_sec,
+        )
+        added = 0
+        attached = 0
+        skipped = 0
+        runs = 0
+        warnings: list[dict[str, object]] = list(inspection.warnings)
+        for episode in inspection.episodes:
+            existing = self.library.find_by_source_key(episode.source_key)
+            if existing is not None:
+                if existing.item.collection_id not in {None, collection.id}:
+                    skipped += 1
+                    continue
+                self.collections.attach_item(collection, existing, episode.index)
+                attached += 1
+                continue
+            block = collection_block(collection, episode.index)
+            bundle, deduplicated = self.library.create_item(
+                source_key=episode.source_key,
+                source_type=SourceType.VIDEO_URL,
+                platform=collection.platform,
+                title=episode.title,
+                source_url_raw=episode.canonical_url,
+                source_url_canonical=episode.canonical_url,
+                author=collection.author,
+                duration_sec=episode.duration_sec,
+                collection_id=collection.id,
+                collection_index=episode.index,
+                extra_source={"collection": block},
+            )
+            if deduplicated:
+                if bundle.item.collection_id != collection.id:
+                    self.collections.attach_item(collection, bundle, episode.index)
+                attached += 1
+                continue
+            added += 1
+            runs += 1
+            self.processing.create_run(bundle.item.id)
+        refreshed = self.collections.refresh_counts(collection.id)
+        return CollectionCreateResult(
+            collection=refreshed,
+            added_count=added,
+            attached_count=attached,
+            skipped_count=skipped,
+            run_count=runs,
+            warnings=warnings,
+        )
 
     # ------------------------------------------------------------------
     # Local paths

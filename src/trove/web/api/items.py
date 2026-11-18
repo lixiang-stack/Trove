@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 
+from trove.domain.links import LinkKind
 from trove.domain.reading import BookLocator
 from trove.errors import ValidationError
 from trove.web.deps import runtime
@@ -89,8 +90,21 @@ def api_create_item(request: Request, payload: ItemCreateRequest):
         bundle, duplicated = app_runtime.intake.add_podcast_episode(
             payload.feed_url, payload.episode_guid, payload.enclosure_url
         )
+    elif payload.kind == "ebook_url":
+        if not payload.url:
+            raise ValidationError("Missing url")
+        inspection = app_runtime.inspect.inspect(payload.url)
+        if inspection.kind != LinkKind.EBOOK:
+            raise ValidationError(
+                "Link is not an EPUB file", details={"code": "ebook.invalid_type"}
+            )
+        bundle, duplicated = app_runtime.intake.add_epub_url(
+            payload.url, canonical_url=inspection.canonical_url
+        )
     else:
-        raise ValidationError("kind must be one of url, path, upload, or podcast")
+        raise ValidationError(
+            "kind must be one of url, path, upload, podcast, or ebook_url"
+        )
     return JSONResponse(
         {"item": app_runtime.library.payload(bundle), "deduplicated": duplicated},
         status_code=200 if duplicated else 201,

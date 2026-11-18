@@ -43,6 +43,123 @@ class ItemCreateRequest(BaseModel):
     enclosure_url: str | None = None
 
 
+class LinkInspectRequest(BaseModel):
+    url: str
+
+
+class LinkEpisodeSchema(BaseModel):
+    title: str
+    url: str
+    source_key: str
+    index: int
+    duration_sec: float | None = None
+
+
+class LinkWarningSchema(BaseModel):
+    code: str
+    message: str
+    count: int | None = None
+
+
+class LinkInspectResponse(BaseModel):
+    kind: str
+    raw_url: str
+    canonical_url: str
+    title: str
+    author: str | None = None
+    platform: str
+    duration_sec: float | None = None
+    episode_count: int = 0
+    total_duration_sec: float | None = None
+    file_size: int | None = None
+    content_type: str | None = None
+    episodes: list[LinkEpisodeSchema] = Field(default_factory=list)
+    feed: dict[str, Any] | None = None
+    existing_collection_id: str | None = None
+    existing_episode_count: int = 0
+    upstream_removed_count: int = 0
+    conflict_count: int = 0
+    attachable_count: int = 0
+    deduplicated: bool = False
+    ignored_playlist: bool = False
+    warnings: list[LinkWarningSchema] = Field(default_factory=list)
+
+
+class CollectionCreateRequest(BaseModel):
+    url: str
+
+
+class CollectionStatusSchema(BaseModel):
+    queued: int = 0
+    processing: int = 0
+    completed: int = 0
+    failed: int = 0
+    cancelled: int = 0
+    total: int = 0
+
+
+class CollectionConsumptionSchema(BaseModel):
+    unstarted: int = 0
+    in_progress: int = 0
+    finished: int = 0
+
+
+class CollectionEpisodeSchema(BaseModel):
+    id: str
+    title: str
+    collection_index: int | None = None
+    duration_sec: float | None = None
+    processing_state: str
+    processing_label: str = ""
+    status_category: str
+    consumption_state: str
+    consumption_label: str = ""
+    has_audio: bool
+    has_book: bool
+    cover_url: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+class CollectionSchema(BaseModel):
+    id: str
+    source_key: str
+    platform: str
+    platform_label: str
+    source_url_raw: str | None = None
+    source_url_canonical: str | None = None
+    title: str
+    author: str | None = None
+    episode_count: int
+    total_duration_sec: float | None = None
+    created_at: int
+    updated_at: int
+    status: CollectionStatusSchema
+    consumption: CollectionConsumptionSchema
+    cover_url: str | None = None
+    items: list[CollectionEpisodeSchema] = Field(default_factory=list)
+
+
+class CollectionListResponse(BaseModel):
+    collections: list[CollectionSchema]
+    count: int
+
+
+class CollectionCreateResponse(BaseModel):
+    collection: CollectionSchema
+    added_count: int
+    attached_count: int
+    skipped_count: int
+    run_count: int
+    warnings: list[LinkWarningSchema] = Field(default_factory=list)
+
+
+class CollectionDeleteResponse(BaseModel):
+    deleted: bool
+    deleted_items: int
+    mode: str
+
+
 class ItemPatchRequest(BaseModel):
     title: str | None = None
     author: str | None = None
@@ -156,6 +273,11 @@ class ItemSchema(BaseModel):
     platform_label: str
     source_url_raw: str | None = None
     source_url_canonical: str | None = None
+    collection_id: str | None = None
+    collection_index: int | None = None
+    collection_title: str | None = None
+    collection_platform: str | None = None
+    collection_source_url: str | None = None
     title: str
     author: str | None = None
     published_at: str | None = None
@@ -337,6 +459,11 @@ class SyncItemSchema(BaseModel):
     version: int
     source_type: str
     platform: str
+    collection_id: str | None = None
+    collection_index: int | None = None
+    collection_title: str | None = None
+    collection_platform: str | None = None
+    collection_source_url: str | None = None
     title: str
     author: str | None = None
     published_at: str | None = None

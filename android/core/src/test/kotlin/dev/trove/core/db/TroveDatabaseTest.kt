@@ -70,6 +70,24 @@ class TroveDatabaseTest {
                 setOf("downloaded_bytes", "etag", "error_code")
             )
         )
+
+        val itemColumns = mutableSetOf<String>()
+        database.openHelper.readableDatabase.query("PRAGMA table_info(items)").use { cursor ->
+            while (cursor.moveToNext()) {
+                itemColumns += cursor.getString(1)
+            }
+        }
+        assertTrue(
+            itemColumns.containsAll(
+                setOf(
+                    "collection_id",
+                    "collection_index",
+                    "collection_title",
+                    "collection_platform",
+                    "collection_source_url",
+                )
+            )
+        )
     }
 
     @Test

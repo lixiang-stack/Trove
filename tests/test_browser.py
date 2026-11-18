@@ -5,7 +5,7 @@ import json
 import pytest
 
 from .conftest import seed_item
-from .fakes import FIXTURES, wait_until
+from .fakes import FIXTURES, video_collection, wait_until
 
 pytestmark = pytest.mark.browser
 
@@ -996,12 +996,12 @@ def test_add_page_submit_buttons_align_per_row(host, browser):
     context = _context(browser, host)
     page = context.new_page()
     page.goto(f"{host.base_url}/add", wait_until="domcontentloaded")
+    assert page.locator(".link-form button[type='submit']").count() == 1
     buttons = page.locator(".add-grid form button[type='submit']")
-    assert buttons.count() == 4
-    for first, second in ((0, 1), (2, 3)):
-        top_a = buttons.nth(first).bounding_box()["y"]
-        top_b = buttons.nth(second).bounding_box()["y"]
-        assert abs(top_a - top_b) < 2, (top_a, top_b)
+    assert buttons.count() == 2
+    top_a = buttons.nth(0).bounding_box()["y"]
+    top_b = buttons.nth(1).bounding_box()["y"]
+    assert abs(top_a - top_b) < 2, (top_a, top_b)
     context.close()
 
 
@@ -1043,4 +1043,38 @@ def test_tag_edit_updates_library_and_search(host, browser):
     assert "手动加标签" in page.locator(".queue-item").inner_text()
     page.goto(f"{host.base_url}/search?q=手动加标签", wait_until="domcontentloaded")
     assert page.locator(".search-result").first.is_visible()
+    context.close()
+
+
+def test_collection_pages_and_delete_dialog(host, browser):
+    host.login()
+    playlist = "https://www.youtube.com/playlist?list=PLbrowser"
+    host.stack.video_inspector.collections[playlist] = video_collection(
+        "Browser Collection",
+        [
+            ("Browser Episode One", "https://www.youtube.com/watch?v=episode0001", 60.0),
+            ("Browser Episode Two", "https://www.youtube.com/watch?v=episode0002", 60.0),
+        ],
+    )
+    created = host.client.post("/api/collections", json={"url": playlist})
+    assert created.status_code == 201, created.text
+    assert created.json()["collection"]["episode_count"] == 2, created.text
+    assert created.json()["collection"]["items"], created.text
+    collection_id = created.json()["collection"]["id"]
+
+    context = _context(browser, host)
+    page = context.new_page()
+    page.goto(f"{host.base_url}/collections", wait_until="domcontentloaded")
+    assert "Browser Collection" in page.text_content("main")
+    page.goto(
+        f"{host.base_url}/collections/{collection_id}",
+        wait_until="domcontentloaded",
+    )
+    assert page.locator("article.episode-row").count() == 2
+    assert "Browser Collection" in page.text_content("main")
+    page.click("[data-open-dialog='delete-collection']")
+    page.wait_for_selector("#delete-collection[open]")
+    page.click("#delete-collection button[value='ungroup']")
+    page.wait_for_url("**/collections")
+    assert "Browser Collection" not in page.text_content("main")
     context.close()

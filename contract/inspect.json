@@ -1,0 +1,38 @@
+{
+  "kind": "collection",
+  "raw_url": "https://www.youtube.com/playlist?list=PLtestcollection",
+  "canonical_url": "https://www.youtube.com/playlist?list=PLtestcollection",
+  "title": "Fixture Collection",
+  "author": "Fixture Channel",
+  "platform": "youtube",
+  "duration_sec": null,
+  "episode_count": 2,
+  "total_duration_sec": 120.0,
+  "file_size": null,
+  "content_type": null,
+  "episodes": [
+    {
+      "title": "Episode One",
+      "url": "https://www.youtube.com/watch?v=episode0001",
+      "source_key": "https://www.youtube.com/watch?v=episode0001",
+      "index": 1,
+      "duration_sec": 60.0
+    },
+    {
+      "title": "Episode Two",
+      "url": "https://www.youtube.com/watch?v=episode0002",
+      "source_key": "https://www.youtube.com/watch?v=episode0002",
+      "index": 2,
+      "duration_sec": 60.0
+    }
+  ],
+  "feed": null,
+  "existing_collection_id": null,
+  "existing_episode_count": 0,
+  "upstream_removed_count": 0,
+  "conflict_count": 0,
+  "attachable_count": 0,
+  "deduplicated": false,
+  "ignored_playlist": false,
+  "warnings": []
+}

@@ -94,6 +94,7 @@ fun LibraryScreen(
     transcript: List<TranscriptSegment>,
     onRefresh: () -> Unit,
     onOpenItem: (String) -> Unit,
+    onOpenCollection: (String) -> Unit,
     onQuickPlay: (String) -> Unit,
     onTogglePlay: () -> Unit,
     onSeek: (Long) -> Unit,
@@ -113,6 +114,7 @@ fun LibraryScreen(
     onSource: (String?) -> Unit,
     onSettings: () -> Unit,
     onDismissConflict: () -> Unit,
+    onClearCollectionActionError: () -> Unit,
 ) {
     LifecycleResumeEffect(Unit) {
         onRefresh()
@@ -173,7 +175,11 @@ fun LibraryScreen(
                         )
                     }
                     Text(
-                        "${state.items.size} 条内容",
+                        buildString {
+                            append("${state.entries.size} 条内容")
+                            val collections = state.entries.count { it is LibraryEntry.CollectionCard }
+                            if (collections > 0) append(" · $collections 个合集")
+                        },
                         style = MaterialTheme.typography.labelMedium,
                         color = TroveColors.Muted,
                     )
@@ -221,6 +227,12 @@ fun LibraryScreen(
                 ConflictStrip(
                     message = state.conflictNotice,
                     onDismiss = onDismissConflict,
+                )
+            }
+            if (state.collectionActionError != null) {
+                ConflictStrip(
+                    message = state.collectionActionError,
+                    onDismiss = onClearCollectionActionError,
                 )
             }
             if (state.continueItems.isNotEmpty()) {
@@ -317,7 +329,7 @@ fun LibraryScreen(
                     onAction = onRefresh,
                 )
 
-                state.items.isEmpty() -> TroveEmpty(
+                state.entries.isEmpty() -> TroveEmpty(
                     title = if (state.allItems.isEmpty()) {
                         stringResource(R.string.library_empty)
                     } else {
@@ -340,31 +352,44 @@ fun LibraryScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 20.dp),
                 ) {
-                    itemsIndexed(state.items, key = { _, item -> item.id }) { index, item ->
-                        val selected = selectedItemId == item.id
-                        val current = playerState.itemId == item.id
-                        QueueRow(
-                            item = item,
-                            index = index,
-                            active = selected,
-                            playing = current && playerState.isPlaying,
-                            onOpen = { onOpenItem(item.id) },
-                            onPlay = {
-                                if (current) onTogglePlay() else onQuickPlay(item.id)
-                            },
-                        )
-                        if (selected && current) {
-                            InlinePlayer(
-                                item = item,
-                                playback = playerState,
-                                transcript = transcript,
-                                onToggle = onTogglePlay,
-                                onSeek = onSeek,
-                                onSpeed = onSpeed,
-                                onTranscript = onTranscript,
-                            )
+                    itemsIndexed(state.entries, key = { _, entry -> entry.id }) { index, entry ->
+                        when (entry) {
+                            is LibraryEntry.CollectionCard -> {
+                                CollectionRow(
+                                    entry = entry,
+                                    onOpen = { onOpenCollection(entry.collectionId) },
+                                )
+                                HorizontalDivider(color = TroveColors.Line)
+                            }
+
+                            is LibraryEntry.Single -> {
+                                val item = entry.item
+                                val selected = selectedItemId == item.id
+                                val current = playerState.itemId == item.id
+                                QueueRow(
+                                    item = item,
+                                    index = index,
+                                    active = selected,
+                                    playing = current && playerState.isPlaying,
+                                    onOpen = { onOpenItem(item.id) },
+                                    onPlay = {
+                                        if (current) onTogglePlay() else onQuickPlay(item.id)
+                                    },
+                                )
+                                if (selected && current) {
+                                    InlinePlayer(
+                                        item = item,
+                                        playback = playerState,
+                                        transcript = transcript,
+                                        onToggle = onTogglePlay,
+                                        onSeek = onSeek,
+                                        onSpeed = onSpeed,
+                                        onTranscript = onTranscript,
+                                    )
+                                }
+                                HorizontalDivider(color = TroveColors.Line)
+                            }
                         }
-                        HorizontalDivider(color = TroveColors.Line)
                     }
                 }
             }
@@ -522,6 +547,115 @@ private fun SyncStrip(state: LibraryUiState, onRefresh: () -> Unit) {
             )
             Spacer(Modifier.width(4.dp))
             Text(stringResource(R.string.library_retry), style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+@Composable
+private fun CollectionRow(entry: LibraryEntry.CollectionCard, onOpen: () -> Unit) {
+    val statusText = when {
+        entry.failedCount > 0 && entry.processingCount > 0 ->
+            "${entry.processingCount} 处理中 · ${entry.failedCount} 失败"
+        entry.failedCount > 0 -> "${entry.failedCount} 集失败"
+        entry.processingCount > 0 || entry.queuedCount > 0 ->
+            listOfNotNull(
+                entry.processingCount.takeIf { it > 0 }?.let { "$it 处理中" },
+                entry.queuedCount.takeIf { it > 0 }?.let { "$it 排队" },
+            ).joinToString(" · ")
+        entry.completedCount == entry.episodeCount -> "全部完成"
+        else -> "${entry.completedCount}/${entry.episodeCount} 完成"
+    }
+    val statusColor = when {
+        entry.failedCount > 0 -> TroveColors.Danger
+        entry.processingCount > 0 || entry.queuedCount > 0 -> TroveColors.Cooking
+        entry.completedCount == entry.episodeCount -> TroveColors.Green
+        else -> TroveColors.Muted
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("library-collection-${entry.collectionId}")
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 18.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        TroveCover(entry.coverItem, size = 52.dp)
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+                Text(
+                    entry.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = TroveColors.Ink,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = TroveColors.AccentSoft.copy(alpha = 0.45f),
+                    contentColor = TroveColors.Accent,
+                ) {
+                    Text(
+                        "合集",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+                    )
+                }
+            }
+            Text(
+                listOfNotNull(
+                    platformLabel(entry.platform),
+                    entry.author,
+                    "${entry.episodeCount} 集",
+                ).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = TroveColors.Muted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            Text(
+                statusText,
+                style = MaterialTheme.typography.labelSmall,
+                color = statusColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+            TinyProgress(
+                fraction = entry.consumptionProgress,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 2.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    "已听 ${entry.finishedCount}/${entry.episodeCount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TroveColors.Muted,
+                )
+                Text(
+                    "${entry.completedCount}/${entry.episodeCount} 完成",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TroveColors.Muted,
+                )
+            }
+        }
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(TroveColors.Paper2),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("›", style = MaterialTheme.typography.titleMedium, color = TroveColors.Ink)
         }
     }
 }

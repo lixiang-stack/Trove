@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Trove · 合集与电子书 · Host Console 原型</title>
+<link rel="stylesheet" href="shared.css">
+<link rel="stylesheet" href="host-console.css">
+<!--
+  PROTOTYPE — throwaway. Host Console 静态线框，不接 HTMX/后端。
+  本轮确认：统一链接面板、/collections 列表、只读合集详情（重试/删除）。
+-->
+</head>
+<body class="prototype">
+<svg class="svg-defs" aria-hidden="true" width="0" height="0">
+  <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.25" fill="currentColor"/><circle cx="12" cy="12" r="1.25" fill="currentColor"/><circle cx="19" cy="12" r="1.25" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.4v13.2L19 12z"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M5 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H5zM19 4h-3a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h3z"/></symbol>
+  <symbol id="i-headphones" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v5H5a1 1 0 0 1-1-1zM20 14h-3v5h2a1 1 0 0 0 1-1z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 6.5"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m8 12.3 2.7 2.7 5.5-5.7"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 4 3 20h18zM12 9v5M12 17h.01"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm4.7 11.2L20 20"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19 8a7 7 0 1 0 1 6M19 4v4h-4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m12 4 8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l4 4v14H7zM14 3v5h5"/></symbol>
+  <symbol id="i-rss" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 5a14 14 0 0 1 14 14M5 11a8 8 0 0 1 8 8M5.5 18.5h.01"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5"/></symbol>
+</svg>
+
+<main class="gallery">
+  <header class="gallery-head">
+    <div>
+      <p class="eyebrow">PROTOTYPE · REVIEW ONLY</p>
+      <h1>合集与电子书 · Host Console</h1>
+      <p class="lede">
+        Host Console 负责入库和管理：添加页统一为一个链接面板，Library 增加“合集”入口，
+        新增只读合集详情（状态、单集跳转、重试失败项、删除合集）。现有单集列表、筛选和搜索保持不变。
+      </p>
+    </div>
+    <div class="meta">
+      <span class="pill accent">1280 × 900</span>
+      <span class="pill">现有 web 视觉</span>
+      <span class="pill">只读 + 删除/重试</span>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <section class="gallery-section">
+    <h2>添加页 · 统一链接面板</h2>
+    <p class="section-note">
+      视频单集、合集、EPUB 直链、播客 feed 共用一个输入框；检测后展示预览，确认后入库。
+      本地路径和上传文件面板保持现状。
+    </p>
+    <div class="gallery-grid">
+
+      <!-- H1 空 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H1 · 添加页</strong><span>统一链接面板</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/add</div>
+          </div>
+          <div class="browser" data-shot="host-add-empty">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#">Library</a><a href="#">Continue</a><a href="#">Search</a><a class="active" href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="web-head">
+                  <div>
+                    <p class="eyebrow">INTAKE</p>
+                    <h1>添加内容</h1>
+                    <p class="subtitle">链接、本地文件或 EPUB。</p>
+                  </div>
+                </div>
+
+                <section class="web-panel link-panel">
+                  <div class="row between mb10"><h2>链接</h2><span class="pill">自动识别</span></div>
+                  <form class="link-form">
+                    <div class="field">
+                      <label>B 站 / YouTube 视频或合集、EPUB 直链、播客 feed
+                        <input type="url" placeholder="https://www.youtube.com/watch?v=... 或 https://example.com/book.epub">
+                      </label>
+                    </div>
+                    <button type="button" class="btn primary">识别链接</button>
+                  </form>
+                  <p class="link-hint">粘贴后自动识别，不会立即下载；确认后才创建 Item 或合集。</p>
+                </section>
+
+                <div class="add-grid">
+                  <section class="web-panel">
+                    <h2>本地路径</h2>
+                    <p class="panel-sub">Mac 上已有的音频、视频或 EPUB。</p>
+                    <form class="stack-form mt10">
+                      <label>绝对路径<input type="text" placeholder="/Users/you/Downloads/audio.mp3"></label>
+                      <p class="hint">音频/EPUB 会复制进库；视频只保留路径和抽取的音频。</p>
+                      <button type="button" class="btn ghost">添加</button>
+                    </form>
+                  </section>
+                  <section class="web-panel">
+                    <h2>上传文件</h2>
+                    <p class="panel-sub">从浏览器上传音频 / 视频 / EPUB。</p>
+                    <form class="stack-form mt10">
+                      <label>选择文件<input type="text" placeholder="未选择任何文件"></label>
+                      <p class="hint">视频最大 4 GB，音频 500 MB，EPUB 100 MB。</p>
+                      <button type="button" class="btn ghost">上传并处理</button>
+                    </form>
+                  </section>
+                </div>
+
+                <p class="privacy-note-web">转写和书文本会分块发送给 DeepSeek 生成摘要与 Tag。音频和原文始终保存在你的 Mac 上。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">原来四个面板保留两个本地入口；视频链接和播客 feed 合并到统一链接面板，避免两个入口行为不一致。</p>
+      </div>
+
+      <!-- H2 合集预览 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H2 · 合集预览</strong><span>规模、冲突、上游移除</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/add</div>
+          </div>
+          <div class="browser" data-shot="host-add-collection">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#">Library</a><a href="#">Continue</a><a href="#">Search</a><a class="active" href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="web-head">
+                  <div>
+                    <p class="eyebrow">INTAKE</p>
+                    <h1>添加内容</h1>
+                    <p class="subtitle">链接、本地文件或 EPUB。</p>
+                  </div>
+                </div>
+
+                <section class="web-panel link-panel">
+                  <div class="row between mb10"><h2>链接</h2><span class="pill accent">已识别 · 合集</span></div>
+                  <form class="link-form">
+                    <div class="field">
+                      <label>链接
+                        <input type="url" value="https://space.bilibili.com/42/channel/collectiondetail?sid=88">
+                      </label>
+                    </div>
+                    <button type="button" class="btn ghost">重新识别</button>
+                  </form>
+                  <p class="link-hint">检测只读取元数据，不下载媒体。</p>
+                </section>
+
+                <section class="web-panel preview-panel">
+                  <div class="preview-head">
+                    <div class="cover green s72"><span>合</span></div>
+                    <div>
+                      <div class="preview-kind"><span class="eyebrow">识别为 · 视频合集</span><span class="pill">Bilibili</span><span class="pill green">12 集</span></div>
+                      <div class="preview-title">从零开始做个人知识库</div>
+                      <div class="preview-meta">UP 主：老周 · 约 6 小时 20 分 · 来源：space.bilibili.com</div>
+                    </div>
+                    <span class="pill gold">1 集已在库</span>
+                  </div>
+
+                  <div class="alert-web warn"><strong>上游已移除 1 集。</strong> 本地会保留，不自动删除；本次会追加新集。</div>
+                  <div class="alert-web info">其中 1 集已在库中，将并入合集并保留已有音频、转写和播放进度。</div>
+
+                  <div class="preview-body">
+                    <table class="web-episode-table">
+                      <thead><tr><th class="num">#</th><th>单集标题</th><th class="dur">时长</th><th class="state">状态</th><th class="action"></th></tr></thead>
+                      <tbody>
+                        <tr><td class="num">01</td><td>为什么要做个人知识库</td><td class="dur">28:14</td><td><span class="pill green">已在库</span></td><td class="action"></td></tr>
+                        <tr><td class="num">02</td><td>选择你的第一个容器</td><td class="dur">35:02</td><td><span class="pill">待创建</span></td><td class="action"></td></tr>
+                        <tr><td class="num">03</td><td>采集：从链接到内容包</td><td class="dur">41:37</td><td><span class="pill">待创建</span></td><td class="action"></td></tr>
+                      </tbody>
+                    </table>
+                    <p class="hint mt8">+ 9 集 · 按上游顺序处理</p>
+                  </div>
+
+                  <div class="preview-actions">
+                    <button type="button" class="btn primary">添加合集（12 集）</button>
+                    <button type="button" class="btn ghost">取消</button>
+                    <span class="hint">将全部处理，可能需要较长时间；单集失败不影响其他集。</span>
+                  </div>
+                </section>
+
+                <div class="add-grid">
+                  <section class="web-panel">
+                    <h2>本地路径</h2>
+                    <p class="panel-sub">Mac 上已有的音频、视频或 EPUB。</p>
+                  </section>
+                  <section class="web-panel">
+                    <h2>上传文件</h2>
+                    <p class="panel-sub">从浏览器上传音频 / 视频 / EPUB。</p>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">预览里同时出现“已在库”“上游移除”“待创建”，并明确“全部处理”；确认按钮写清集数。</p>
+      </div>
+
+      <!-- H3 电子书预览 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H3 · 电子书预览</strong><span>EPUB 直链</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/add</div>
+          </div>
+          <div class="browser" data-shot="host-add-ebook">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#">Library</a><a href="#">Continue</a><a href="#">Search</a><a class="active" href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="web-head">
+                  <div>
+                    <p class="eyebrow">INTAKE</p>
+                    <h1>添加内容</h1>
+                    <p class="subtitle">链接、本地文件或 EPUB。</p>
+                  </div>
+                </div>
+
+                <section class="web-panel link-panel">
+                  <div class="row between mb10"><h2>链接</h2><span class="pill accent">已识别 · 电子书</span></div>
+                  <form class="link-form">
+                    <div class="field">
+                      <label>链接
+                        <input type="url" value="https://example.com/books/design-of-everyday-things.epub">
+                      </label>
+                    </div>
+                    <button type="button" class="btn ghost">重新识别</button>
+                  </form>
+                  <p class="link-hint">检测只做 HEAD 和大小/类型判断。</p>
+                </section>
+
+                <section class="web-panel preview-panel">
+                  <div class="preview-head">
+                    <div class="cover gold s72"><span>书</span></div>
+                    <div>
+                      <div class="preview-kind"><span class="eyebrow">识别为 · 电子书</span><span class="pill">EPUB</span><span class="pill green">3.2 MB</span></div>
+                      <div class="preview-title">design-of-everyday-things.epub</div>
+                      <div class="preview-meta">直接下载 · DRM-free / 可重排校验 · 书名在解析后更新</div>
+                    </div>
+                  </div>
+                  <div class="alert-web info">仅支持可直接下载的 EPUB 直链；电子书详情页、PDF 和需要登录的链接暂不支持。</div>
+                  <div class="preview-actions">
+                    <button type="button" class="btn primary">添加电子书</button>
+                    <button type="button" class="btn ghost">取消</button>
+                  </div>
+                </section>
+
+                <div class="add-grid">
+                  <section class="web-panel">
+                    <h2>本地路径</h2>
+                    <p class="panel-sub">Mac 上已有的音频、视频或 EPUB。</p>
+                  </section>
+                  <section class="web-panel">
+                    <h2>上传文件</h2>
+                    <p class="panel-sub">从浏览器上传音频 / 视频 / EPUB。</p>
+                  </section>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">电子书不显示假的“书名/封面”；用文件名和大小确认，避免检测阶段下载整本。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <section class="gallery-section">
+    <h2>Library 与合集入口</h2>
+    <p class="section-note">
+      Library 的单集列表、筛选、搜索和计数保持不变；只在头部增加“合集 (3)”入口，进入独立的合集列表。
+    </p>
+    <div class="gallery-grid">
+
+      <!-- H4 Library -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H4 · Library</strong><span>合集入口</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/library</div>
+          </div>
+          <div class="browser" data-shot="host-library">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#" class="active">Library</a><a href="#">Continue</a><a href="#">Search</a><a href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="web-head">
+                  <div>
+                    <p class="eyebrow">HOST CONSOLE</p>
+                    <h1>Library</h1>
+                    <p class="subtitle">8 条内容</p>
+                  </div>
+                  <div class="web-actions">
+                    <button class="btn secondary">合集 3</button>
+                    <button class="btn primary">添加内容</button>
+                  </div>
+                </div>
+
+                <div class="filter-bar">
+                  <div class="filter-group"><span class="chip active">全部</span><span class="chip">Inbox</span></div>
+                  <div class="filter-group"><span class="chip active">最近添加</span><span class="chip">最近消费</span></div>
+                </div>
+
+                <div class="queue-web">
+                  <div class="queue-row">
+                    <span class="queue-index">01</span>
+                    <div class="cover vermilion s52"><span>记</span></div>
+                    <div class="queue-body">
+                      <div class="queue-title">记忆是智能体的瓶颈</div>
+                      <div class="queue-meta">张三 · 播客 · 小宇宙</div>
+                      <div class="queue-state"><span class="pill">42% 已听</span><span class="duration">1:12:00</span></div>
+                    </div>
+                    <button class="mini-play"><svg class="icon"><use href="#i-play"/></svg></button>
+                  </div>
+                  <div class="queue-row">
+                    <span class="queue-index">02</span>
+                    <div class="cover green s52"><span>注</span></div>
+                    <div class="queue-body">
+                      <div class="queue-title">The Art of Noticing</div>
+                      <div class="queue-meta">Rob Walker · 电子书 · EPUB</div>
+                      <div class="queue-state"><span class="pill">18% 已读</span></div>
+                    </div>
+                    <button class="mini-play"><svg class="icon"><use href="#i-book"/></svg></button>
+                  </div>
+                  <div class="queue-row">
+                    <span class="queue-index">03</span>
+                    <div class="cover ink s52"><span>本</span></div>
+                    <div class="queue-body">
+                      <div class="queue-title">本地优先软件的三个误解</div>
+                      <div class="queue-meta">陈七 · 视频 · YouTube</div>
+                      <div class="queue-state"><span class="pill">未开始</span><span class="duration">35:00</span></div>
+                    </div>
+                    <button class="mini-play"><svg class="icon"><use href="#i-play"/></svg></button>
+                  </div>
+                </div>
+
+                <p class="note-strip"><svg class="icon"><use href="#i-layers"/></svg><span>合集在“合集 3”页面统一管理；子集仍会出现在单集搜索、Inbox 和 Continue 中。</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">“合集 3”是入口，不把合集卡片混进单集队列；这样现有筛选/计数/导出语义完全不变。</p>
+      </div>
+
+      <!-- H5 合集列表 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H5 · 合集列表</strong><span>/collections</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/collections</div>
+          </div>
+          <div class="browser" data-shot="host-collections">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#" class="active">Library</a><a href="#">Continue</a><a href="#">Search</a><a href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="breadcrumb"><svg class="icon"><use href="#i-back"/></svg><a href="#">Library</a><span>/</span><span>合集</span></div>
+                <div class="web-head">
+                  <div>
+                    <p class="eyebrow">COLLECTIONS</p>
+                    <h1>合集</h1>
+                    <p class="subtitle">3 个合集 · 38 集</p>
+                  </div>
+                  <div class="web-actions">
+                    <button class="btn secondary">最近添加</button>
+                    <button class="btn primary">添加内容</button>
+                  </div>
+                </div>
+
+                <div class="filter-bar">
+                  <div class="filter-group"><span class="chip active">全部</span><span class="chip">处理中</span><span class="chip">有失败</span><span class="chip">已完成</span></div>
+                </div>
+
+                <div class="collection-grid">
+                  <div class="collection-card-web">
+                    <div class="cover green s64"><span>合</span></div>
+                    <div class="cc-body">
+                      <span class="eyebrow">Bilibili</span>
+                      <div class="cc-title">从零开始做个人知识库</div>
+                      <div class="cc-meta">12 集 · 约 6 小时 20 分 · 最近添加 11-17</div>
+                      <div class="cc-status"><span class="pill gold">3 处理中</span><span class="pill danger">2 失败</span><span class="pill green">3 完成</span><span class="pill">4 排队</span></div>
+                      <div class="cc-progress"><div class="progress"><span style="width:25%"></span></div><div class="cc-progress-meta"><span>已听 2/12</span><span>3/12 完成</span></div></div>
+                    </div>
+                    <div class="cc-footer"><span class="hint">失败项可单独重试</span><button class="btn ghost">打开合集</button></div>
+                  </div>
+
+                  <div class="collection-card-web">
+                    <div class="cover gold s64"><span>读</span></div>
+                    <div class="cc-body">
+                      <span class="eyebrow">YouTube</span>
+                      <div class="cc-title">The Art of Noticing 读书会</div>
+                      <div class="cc-meta">8 集 · 约 3 小时 10 分 · 最近添加 11-10</div>
+                      <div class="cc-status"><span class="pill green">全部完成</span><span class="pill">已听 5/8</span></div>
+                      <div class="cc-progress"><div class="progress green"><span style="width:100%"></span></div><div class="cc-progress-meta"><span>处理完成</span><span>100%</span></div></div>
+                    </div>
+                    <div class="cc-footer"><span class="hint">8 集全部完成</span><button class="btn ghost">打开合集</button></div>
+                  </div>
+
+                  <div class="collection-card-web">
+                    <div class="cover blue s64"><span>编</span></div>
+                    <div class="cc-body">
+                      <span class="eyebrow">Bilibili</span>
+                      <div class="cc-title">编译器入门</div>
+                      <div class="cc-meta">18 集 · 约 9 小时 40 分 · 最近添加 11-02</div>
+                      <div class="cc-status"><span class="pill gold">12 排队</span><span class="pill green">6 完成</span></div>
+                      <div class="cc-progress"><div class="progress"><span style="width:33%"></span></div><div class="cc-progress-meta"><span>未开始</span><span>6/18 完成</span></div></div>
+                    </div>
+                    <div class="cc-footer"><span class="hint">等待 worker 处理</span><button class="btn ghost">打开合集</button></div>
+                  </div>
+                </div>
+
+                <p class="note-strip"><svg class="icon"><use href="#i-layers"/></svg><span>合集卡片只显示整体状态；单集状态、重试和 Item 详情在合集详情页。</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">独立列表让 Host Console 的 Library 计数、筛选和导出保持原样；合集管理仍然可达。</p>
+      </div>
+
+      <!-- H6 合集详情 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H6 · 合集详情</strong><span>只读 + 重试 + 删除</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/collections/coll_01</div>
+          </div>
+          <div class="browser" data-shot="host-collection-detail">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#" class="active">Library</a><a href="#">Continue</a><a href="#">Search</a><a href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="breadcrumb"><svg class="icon"><use href="#i-back"/></svg><a href="#">合集</a><span>/</span><span>从零开始做个人知识库</span></div>
+
+                <section class="web-panel">
+                  <div class="detail-web-head">
+                    <div class="cover green s96"><span>合</span></div>
+                    <div>
+                      <div class="preview-kind"><span class="eyebrow">Bilibili · 视频合集</span><span class="pill">12 集</span></div>
+                      <div class="detail-title">从零开始做个人知识库</div>
+                      <div class="detail-meta">UP 主：老周 · 约 6 小时 20 分 · 来源：space.bilibili.com/42/...</div>
+                      <div class="detail-status"><span class="pill gold">3 处理中</span><span class="pill danger">2 失败</span><span class="pill green">3 完成</span><span class="pill">4 排队</span><span class="pill">已听 2/12</span></div>
+                      <div class="detail-progress"><div class="progress"><span style="width:25%"></span></div><div class="detail-progress-meta"><span>处理进度</span><span>3/12</span></div></div>
+                    </div>
+                    <div class="detail-web-actions">
+                      <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+                      <button class="btn danger-ghost"><svg class="icon"><use href="#i-trash"/></svg>删除合集</button>
+                    </div>
+                  </div>
+                  <div class="alert-web danger"><strong>2 集失败。</strong> 失败不影响其他集，可单独重试；已完成内容不受影响。</div>
+                </section>
+
+                <section class="web-panel web-episode-list">
+                  <div class="list-head"><h2>单集</h2><span>12 集 · 按上游顺序</span></div>
+                  <div class="web-episode-row">
+                    <span class="num">01</span>
+                    <div class="cover blue s44"><span>为</span></div>
+                    <div><div class="ep-title">为什么要做个人知识库</div><div class="ep-meta">28:14 · 已听 80%</div></div>
+                    <span class="ep-state"><span class="pill green">已完成</span></span>
+                    <div class="ep-actions"><button class="btn ghost">查看 Item</button></div>
+                  </div>
+                  <div class="web-episode-row">
+                    <span class="num">02</span>
+                    <div class="cover clay s44"><span>选</span></div>
+                    <div><div class="ep-title">选择你的第一个容器</div><div class="ep-meta">35:02 · 转写中 62%</div></div>
+                    <span class="ep-state"><span class="pill gold">处理中</span></span>
+                    <div class="ep-actions"><button class="btn ghost">查看 Item</button></div>
+                  </div>
+                  <div class="web-episode-row">
+                    <span class="num">03</span>
+                    <div class="cover green s44"><span>采</span></div>
+                    <div><div class="ep-title">采集：从链接到内容包</div><div class="ep-meta">41:37 · 未开始</div></div>
+                    <span class="ep-state"><span class="pill green">已完成</span></span>
+                    <div class="ep-actions"><button class="btn ghost">查看 Item</button></div>
+                  </div>
+                  <div class="web-episode-row">
+                    <span class="num">04</span>
+                    <div class="cover gold s44"><span>整</span></div>
+                    <div><div class="ep-title">整理：Tag 和摘要</div><div class="ep-meta">33:18 · 转写失败</div></div>
+                    <span class="ep-state"><span class="pill danger">失败</span></span>
+                    <div class="ep-actions"><button class="btn ghost">重试</button><button class="btn ghost">查看 Item</button></div>
+                  </div>
+                  <div class="web-episode-row">
+                    <span class="num">05</span>
+                    <div class="cover ink s44"><span>检</span></div>
+                    <div><div class="ep-title">检索：两字中文词</div><div class="ep-meta">26:45 · 排队中</div></div>
+                    <span class="ep-state"><span class="pill">排队</span></span>
+                    <div class="ep-actions"><button class="btn ghost">查看 Item</button></div>
+                  </div>
+                </section>
+
+                <p class="note-strip"><svg class="icon"><use href="#i-file"/></svg><span>只读：不支持重命名、编辑 Tag 或改封面；删除和重试会同步到 App。</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">详情页不做元数据编辑，但保留“重试失败项”和“删除合集”这两个生命周期操作。</p>
+      </div>
+
+      <!-- H7 删除对话框 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>H7 · 删除合集</strong><span>与 App 相同语义</span></p>
+        <div class="browser-frame">
+          <div class="browser-chrome">
+            <div class="traffic"><i></i><i></i><i></i></div>
+            <div class="browser-url"><svg class="icon"><use href="#i-link"/></svg>http://127.0.0.1:8765/collections/coll_01</div>
+          </div>
+          <div class="browser" data-shot="host-collection-delete">
+            <div class="web-app">
+              <header class="web-topbar">
+                <div class="web-brand"><span class="mark">拾</span><span class="name">Trove</span><span class="sub">藏</span></div>
+                <nav class="web-nav">
+                  <a href="#" class="active">Library</a><a href="#">Continue</a><a href="#">Search</a><a href="#">Add</a>
+                </nav>
+                <button class="web-logout">退出</button>
+              </header>
+              <div class="web-shell">
+                <div class="breadcrumb"><svg class="icon"><use href="#i-back"/></svg><a href="#">合集</a><span>/</span><span>从零开始做个人知识库</span></div>
+                <section class="web-panel">
+                  <div class="detail-web-head">
+                    <div class="cover green s96"><span>合</span></div>
+                    <div>
+                      <div class="preview-kind"><span class="eyebrow">Bilibili · 视频合集</span><span class="pill">12 集</span></div>
+                      <div class="detail-title">从零开始做个人知识库</div>
+                      <div class="detail-meta">UP 主：老周 · 约 6 小时 20 分</div>
+                      <div class="detail-status"><span class="pill green">10 完成</span><span class="pill danger">2 失败</span></div>
+                    </div>
+                    <div class="detail-web-actions">
+                      <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+                      <button class="btn danger-ghost"><svg class="icon"><use href="#i-trash"/></svg>删除合集</button>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div class="host-dialog-scrim">
+                <div class="host-dialog" role="dialog" aria-modal="true" aria-label="删除合集">
+                  <h2>删除合集？</h2>
+                  <p class="dialog-copy">「从零开始做个人知识库」包含 12 集，其中 3 集已下载到手机。两种操作都会立即同步到 App。</p>
+                  <div class="dialog-actions">
+                    <button class="dialog-option danger">
+                      <strong>删除合集及全部 12 集</strong>
+                      <span>从 Host 和手机移除，无法撤销。</span>
+                    </button>
+                    <button class="dialog-option">
+                      <strong>仅移除合集分组，保留 12 集</strong>
+                      <span>单集作为独立内容留在 Library，进度和文件不变。</span>
+                    </button>
+                    <button class="dialog-cancel">取消</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">Host 与 App 使用同一套两种删除语义，按钮文案写清集数；不提供“只删 Host 不删手机”的分叉。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <p class="frame-note" style="max-width: 900px; margin-top: 34px; font-size: 11px;">
+    原型说明：Host Console 为服务端渲染 + HTMX；这里的静态线框只确认信息架构与文案，
+    实现会复用现有 <code>app.css</code>、<code>panel</code>、<code>chip</code>、<code>queue-list</code> 的视觉语言。
+  </p>
+</main>
+</body>
+</html>

@@ -169,7 +169,7 @@ def test_navigation_skeleton_and_empty_state(host):
     assert "Library 还是空的" in library
     assert "添加第一条内容" in library
     add = host.client.get("/add").text
-    assert "视频链接" in add
+    assert "识别链接" in add
     assert "播客 feed" in add
 
 

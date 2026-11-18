@@ -21,7 +21,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
         PendingMutationEntity::class,
         PendingDeletionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TroveDatabase : RoomDatabase() {
@@ -71,10 +71,20 @@ abstract class TroveDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN collection_id TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN collection_index INTEGER")
+                db.execSQL("ALTER TABLE items ADD COLUMN collection_title TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN collection_platform TEXT")
+                db.execSQL("ALTER TABLE items ADD COLUMN collection_source_url TEXT")
+            }
+        }
+
         fun create(context: Context): TroveDatabase =
             Room.databaseBuilder(context, TroveDatabase::class.java, NAME)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
 
         fun inMemory(context: Context): TroveDatabase =

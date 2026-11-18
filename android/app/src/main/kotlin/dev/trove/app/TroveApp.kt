@@ -36,6 +36,7 @@ import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.ui.NavDisplay
 import dev.trove.app.add.AddScreen
 import dev.trove.app.add.AddViewModel
+import dev.trove.app.collection.CollectionScreen
 import dev.trove.app.download.DownloadsScreen
 import dev.trove.app.library.LibraryScreen
 import dev.trove.app.library.LibraryViewModel
@@ -69,6 +70,9 @@ data object AddRoute : NavKey
 
 @Serializable
 data class PlayerRoute(val itemId: String) : NavKey
+
+@Serializable
+data class CollectionRoute(val collectionId: String) : NavKey
 
 @Serializable
 data class TranscriptRoute(
@@ -263,6 +267,7 @@ private fun MainShell(
                         transcript = playerState.transcript,
                         onRefresh = libraryViewModel::refresh,
                         onOpenItem = ::openItem,
+                        onOpenCollection = { backStack.add(CollectionRoute(it)) },
                         onQuickPlay = { itemId ->
                             val item = libraryState.allItems.firstOrNull { it.id == itemId }
                             if (item?.let { it.isBookOnly } == true) {
@@ -291,6 +296,8 @@ private fun MainShell(
                         onSource = libraryViewModel::setSource,
                         onSettings = { backStack.add(SettingsRoute) },
                         onDismissConflict = libraryViewModel::dismissConflict,
+                        onClearCollectionActionError =
+                            libraryViewModel::clearCollectionActionError,
                     )
                 }
                 entry<SearchRoute> {
@@ -326,6 +333,7 @@ private fun MainShell(
                         onLibrary = { root(LibraryRoute) },
                         onSearch = { root(SearchRoute) },
                         onOpenItem = ::openItem,
+                        onOpenCollection = { backStack.add(CollectionRoute(it)) },
                     )
                 }
                 entry<SettingsRoute> {
@@ -345,6 +353,27 @@ private fun MainShell(
                         onAllowMetered = libraryViewModel::setAllowMetered,
                         onChargingOnly = libraryViewModel::setChargingOnly,
                         onQuota = libraryViewModel::setQuotaBytes,
+                    )
+                }
+                entry<CollectionRoute> { route ->
+                    CollectionScreen(
+                        collectionId = route.collectionId,
+                        items = libraryState.allItems,
+                        actionError = libraryState.collectionActionError,
+                        onClearError = libraryViewModel::clearCollectionActionError,
+                        onBack = { backStack.removeAt(backStack.lastIndex) },
+                        onOpenItem = ::openItem,
+                        onPlayItem = { playerViewModel.open(it, autoPlay = true) },
+                        onRetryItem = libraryViewModel::retryCollectionItem,
+                        onRetryFailed = {
+                            libraryViewModel.retryCollectionFailed(route.collectionId)
+                        },
+                        onDelete = { mode ->
+                            libraryViewModel.deleteCollection(route.collectionId, mode)
+                            if (backStack.lastOrNull() is CollectionRoute) {
+                                backStack.removeAt(backStack.lastIndex)
+                            }
+                        },
                     )
                 }
                 entry<PlayerRoute> { route ->
