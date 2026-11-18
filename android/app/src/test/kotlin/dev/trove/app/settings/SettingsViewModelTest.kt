@@ -8,6 +8,7 @@ import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.FakeTroveApi
 import dev.trove.app.testing.FakeTroveApiFactory
+import dev.trove.app.testing.MainDispatcherRule
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
 import dev.trove.core.db.ItemEntity
@@ -18,11 +19,7 @@ import dev.trove.core.search.SearchIndex
 import dev.trove.core.storage.ArtifactFileStore
 import dev.trove.core.storage.LocalDataRepository
 import dev.trove.core.sync.SyncEngine
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,10 +32,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SettingsViewModelTest {
+    @get:Rule
+    val mainDispatcher = MainDispatcherRule()
+
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
@@ -53,7 +52,6 @@ class SettingsViewModelTest {
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(Dispatchers.Unconfined)
         val context = ApplicationProvider.getApplicationContext<Context>()
         database = TroveDatabase.inMemory(context)
         fileStore = ArtifactFileStore(temporaryFolder.newFolder("artifacts"))
@@ -94,7 +92,6 @@ class SettingsViewModelTest {
     @After
     fun tearDown() {
         database.close()
-        Dispatchers.resetMain()
     }
 
     @Test

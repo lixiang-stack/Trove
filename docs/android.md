@@ -52,6 +52,16 @@ scripts/android/release-check.sh
 # checks: signed, not debuggable, permissions allowlist, <= 35 MiB target
 ```
 
+## CI
+
+- `android` workflow: `assembleProdDebug`, JVM/Compose tests, lint, and the LAN
+  flavor smoke. It runs on PRs that touch Android inputs, the contract fixtures,
+  `tests/fixtures`, or `scripts/android`.
+- `android-release` workflow: signed `prodRelease` plus
+  `scripts/android/release-check.sh` (R8/resource shrink, signature, permissions,
+  35 MiB target). It runs on `main`, manual dispatch, and PRs that touch release
+  configuration (R8 rules, manifest, network security, build/version files).
+
 ## HTTPS and Caddy
 
 Release builds reject `http://` in both the Android network security config and

@@ -3,8 +3,6 @@ package dev.trove.app
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -17,6 +15,8 @@ import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.FakeTroveApi
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveNetworkException
@@ -33,14 +33,8 @@ class LoginFlowTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
     private fun fillForm(host: String = "https://host.example") {
-        waitForTag("host-url")
+        waitForTag(compose, "host-url")
         compose.onNodeWithTag("host-url").performTextInput(host)
         compose.onNodeWithTag("password").performTextInput("pw")
         compose.onNodeWithTag("device-name").performTextClearance()
@@ -57,8 +51,8 @@ class LoginFlowTest {
 
         fillForm()
 
-        waitForTag("trove-shell")
-        waitForTag("library-screen")
+        waitForTag(compose, "trove-shell")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithTag("library-screen").assertIsDisplayed()
         assertEquals("test-token", harness.tokenStore.credential?.token)
         assertEquals("https://host.example", harness.settingsStore.current)
@@ -76,7 +70,7 @@ class LoginFlowTest {
 
         fillForm()
 
-        waitForTag("login-error")
+        waitForTag(compose, "login-error")
         compose.onNodeWithText("密码错误").assertExists()
     }
 
@@ -90,7 +84,7 @@ class LoginFlowTest {
 
         fillForm()
 
-        waitForTag("login-error")
+        waitForTag(compose, "login-error")
         compose.onNodeWithText("无法连接 Host，请检查地址和网络").assertExists()
     }
 
@@ -103,7 +97,7 @@ class LoginFlowTest {
 
         fillForm(host = "http://192.168.1.10:8765")
 
-        waitForTag("login-error")
+        waitForTag(compose, "login-error")
         compose.onNodeWithText("正式版本只允许 HTTPS Host").assertExists()
         assertEquals(0, harness.apiFactory.requests.size)
     }
@@ -119,8 +113,8 @@ class LoginFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("trove-shell")
-        waitForTag("library-screen")
+        waitForTag(compose, "trove-shell")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithTag("library-screen").assertIsDisplayed()
     }
 
@@ -134,14 +128,11 @@ class LoginFlowTest {
         )
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
-        waitForTag("trove-shell")
+        waitForTag(compose, "trove-shell")
 
         harness.container.sessionController.onUnauthorized("auth.device_revoked")
 
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("登录已失效，请重新登录")
-                .fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForText(compose, "登录已失效，请重新登录")
         compose.onNodeWithText("登录已失效，请重新登录").assertExists()
         compose.onNodeWithTag("host-url").assertIsDisplayed()
     }
@@ -156,12 +147,12 @@ class LoginFlowTest {
         )
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
-        waitForTag("trove-shell")
+        waitForTag(compose, "trove-shell")
 
         compose.onNodeWithContentDescription("更多").performClick()
         compose.onNodeWithText("退出登录").performClick()
 
-        waitForTag("host-url")
+        waitForTag(compose, "host-url")
         assertEquals(listOf("device-1"), harness.api.revokedDevices)
         assertEquals(null, harness.tokenStore.credential)
     }

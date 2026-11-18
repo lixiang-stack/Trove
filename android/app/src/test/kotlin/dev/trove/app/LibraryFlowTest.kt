@@ -3,7 +3,6 @@ package dev.trove.app
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -11,10 +10,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
+import dev.trove.app.testing.COMPOSE_TIMEOUT_MS
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.TestHarness
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
 import dev.trove.core.db.ItemEntity
@@ -30,24 +32,16 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-private const val PLAYBACK_TIMEOUT_MS = 30_000L
-
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class LibraryFlowTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
     private fun waitForPlaybackRequest(harness: TestHarness) {
         // waitUntil only drives the Compose clock; pump the main looper so the
         // Room-backed ViewModel coroutine can resume and call the player.
-        compose.waitUntil(PLAYBACK_TIMEOUT_MS) {
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
             compose.waitForIdle()
             harness.player.requests.isNotEmpty()
         }
@@ -73,7 +67,7 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-item-1")
+        waitForTag(compose, "library-item-item-1")
         compose.onNodeWithText("记忆是智能体的瓶颈").assertIsDisplayed()
 
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
@@ -85,7 +79,7 @@ class LibraryFlowTest {
         )
 
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
-        waitForTag("player-screen")
+        waitForTag(compose, "player-screen")
     }
 
 
@@ -127,7 +121,7 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("continue-item-1")
+        waitForTag(compose, "continue-item-1")
         compose.onNodeWithTag("continue-item-1").performClick()
         compose.waitForIdle()
         waitForPlaybackRequest(harness)
@@ -152,13 +146,13 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-item-1")
+        waitForTag(compose, "library-item-item-1")
         compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
         waitForPlaybackRequest(harness)
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
-        waitForTag("player-screen")
-        waitForTag("player-error")
+        waitForTag(compose, "player-screen")
+        waitForTag(compose, "player-error")
 
         compose.onNodeWithText("网络连接失败，无法播放。请检查网络后重试。").assertIsDisplayed()
     }
@@ -180,13 +174,14 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-ready")
-        waitForTag("library-item-failed")
+        waitForTag(compose, "library-item-ready")
+        waitForTag(compose, "library-item-failed")
         compose.onNodeWithText("Ready item").assertIsDisplayed()
 
         compose.onNodeWithTag("filter-inbox").performScrollTo().performClick()
 
-        compose.waitUntil(5_000) {
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
             compose.onAllNodesWithText("Ready item").fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithText("Failed item").assertIsDisplayed()
@@ -202,9 +197,7 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("离线 · 显示已同步内容").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForText(compose, "离线 · 显示已同步内容")
         compose.onNodeWithText("已同步的 Item").assertIsDisplayed()
     }
 

@@ -1,0 +1,63 @@
+name: android-release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - "android/app/proguard-rules.pro"
+      - "android/app/src/main/AndroidManifest.xml"
+      - "android/app/src/main/res/xml/network_security_config.xml"
+      - "android/app/build.gradle.kts"
+      - "android/build.gradle.kts"
+      - "android/settings.gradle.kts"
+      - "android/gradle.properties"
+      - "android/gradle/libs.versions.toml"
+      - "android/gradle/wrapper/gradle-wrapper.properties"
+      - "scripts/android/release-check.sh"
+      - ".github/workflows/android-release.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: android-actions/setup-android@v4
+
+      - name: Install Android SDK 37
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-37.0" "build-tools;36.0.0" "platform-tools"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Signed release artifact check
+        working-directory: android
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/trove-release.jks" \
+            -storetype PKCS12 -alias trove-release \
+            -keyalg RSA -keysize 2048 -validity 3650 \
+            -storepass ci-release -keypass ci-release \
+            -dname "CN=Trove CI, O=Trove, C=CN"
+          export TROVE_RELEASE_STORE_FILE="$RUNNER_TEMP/trove-release.jks"
+          export TROVE_RELEASE_STORE_PASSWORD=ci-release
+          export TROVE_RELEASE_KEY_ALIAS=trove-release
+          export TROVE_RELEASE_KEY_PASSWORD=ci-release
+          ./gradlew :app:assembleProdRelease --no-daemon
+          ../scripts/android/release-check.sh app/build/outputs/apk/prod/release/app-prod-release.apk

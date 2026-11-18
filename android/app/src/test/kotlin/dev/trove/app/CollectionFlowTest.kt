@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -14,11 +13,13 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
+import dev.trove.app.testing.COMPOSE_TIMEOUT_MS
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.scrollAndClick
 import dev.trove.app.testing.scrollAndClickText
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.CollectionCreateResponseDto
 import dev.trove.core.network.CollectionDto
@@ -90,16 +91,16 @@ class CollectionFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput(url)
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
         compose.scrollAndClick("add-preview-submit")
-        waitForTag("add-collection-result")
+        waitForTag(compose, "add-collection-result")
         compose.onNodeWithText("合集已加入").performScrollTo().assertIsDisplayed()
         compose.scrollAndClickText("打开合集")
-        waitForTag("collection-screen")
+        waitForTag(compose, "collection-screen")
         compose.onNodeWithText("Fixture Collection").assertIsDisplayed()
         compose.onNodeWithText("Episode One").assertIsDisplayed()
         compose.onNodeWithText("Episode Two").assertIsDisplayed()
@@ -126,11 +127,11 @@ class CollectionFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput(url)
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
 
         compose.onNodeWithText("时长未知", substring = true).performScrollTo().assertIsDisplayed()
     }
@@ -158,11 +159,11 @@ class CollectionFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput(url)
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
 
         compose.onAllNodesWithText("链接里的播放列表参数已忽略，只添加当前视频。")
             .assertCountEquals(1)
@@ -185,14 +186,14 @@ class CollectionFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-collection-collection-1")
+        waitForTag(compose, "library-collection-collection-1")
         compose.onNodeWithTag("library-collection-collection-1").performClick()
-        waitForTag("collection-screen")
+        waitForTag(compose, "collection-screen")
         compose.onNodeWithContentDescription("更多").performClick()
         compose.onNodeWithText("删除合集").performClick()
-        waitForTag("collection-delete-option-ungroup")
+        waitForTag(compose, "collection-delete-option-ungroup")
         compose.onNodeWithTag("collection-delete-option-ungroup").performClick()
-        compose.waitUntil(5_000) {
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
             harness.api.deletedCollections.contains("collection-1" to "ungroup")
         }
     }
@@ -213,10 +214,4 @@ class CollectionFlowTest {
         hasAudio = false,
         hasBook = false,
     )
-
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(8_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
 }

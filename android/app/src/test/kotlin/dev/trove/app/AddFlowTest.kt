@@ -3,8 +3,6 @@ package dev.trove.app
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -12,10 +10,13 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
+import dev.trove.app.testing.COMPOSE_TIMEOUT_MS
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.scrollAndClick
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.ItemCreateResponseDto
 import dev.trove.core.network.ItemDto
@@ -32,6 +33,7 @@ import org.robolectric.annotation.Config
 class AddFlowTest {
     @get:Rule
     val compose = createComposeRule()
+
 
     private fun harness(context: Context) = testHarness(
         context,
@@ -55,15 +57,15 @@ class AddFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
         compose.scrollAndClick("add-preview-submit")
 
-        compose.waitUntil(5_000) { harness.api.createCalls.isNotEmpty() }
-        waitForTag("add-processing")
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) { harness.api.createCalls.isNotEmpty() }
+        waitForTag(compose, "add-processing")
         assertEquals("https://youtu.be/abc", harness.api.createCalls.single().url)
         compose.onNodeWithText("新视频").performScrollTo().assertIsDisplayed()
     }
@@ -80,16 +82,14 @@ class AddFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://example.com/video")
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
         compose.scrollAndClick("add-preview-submit")
 
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("不支持这个平台。").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForText(compose, "不支持这个平台。")
         compose.onNodeWithText("不支持这个平台。").performScrollTo().assertIsDisplayed()
     }
 
@@ -109,19 +109,13 @@ class AddFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithText("添加").performClick()
-        waitForTag("add-url-input")
+        waitForTag(compose, "add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        waitForTag("add-preview")
+        waitForTag(compose, "add-preview")
         compose.scrollAndClick("add-preview-submit")
 
-        waitForTag("player-screen")
-    }
-
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForTag(compose, "player-screen")
     }
 }
