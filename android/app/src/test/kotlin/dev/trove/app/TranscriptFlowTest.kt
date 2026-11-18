@@ -12,10 +12,12 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
+import dev.trove.app.testing.COMPOSE_TIMEOUT_MS
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.TestHarness
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
 import dev.trove.core.db.ItemEntity
@@ -34,12 +36,6 @@ class TranscriptFlowTest {
     @get:Rule
     val compose = createComposeRule()
 
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
-    }
-
     @Test
     fun transcriptRendersAndSearchesOfflineCopy() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -53,21 +49,22 @@ class TranscriptFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-item-1")
+        waitForTag(compose, "library-item-item-1")
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
-        waitForTag("player-screen")
-        waitForTag("player-transcript-open")
+        waitForTag(compose, "player-screen")
+        waitForTag(compose, "player-transcript-open")
 
         compose.onNodeWithTag("player-transcript-open").performScrollTo().performClick()
-        waitForTag("player-transcript-full")
+        waitForTag(compose, "player-transcript-full")
         compose.onNodeWithTag("player-transcript-full").performScrollTo().performClick()
-        waitForTag("transcript-screen")
-        waitForTag("transcript-segment-0")
+        waitForTag(compose, "transcript-screen")
+        waitForTag(compose, "transcript-segment-0")
         compose.onNodeWithText("3 段").assertIsDisplayed()
 
         compose.onNodeWithTag("transcript-search").performTextInput("上下文")
 
-        compose.waitUntil(5_000) {
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
             compose.onAllNodesWithTag("transcript-segment-0").fetchSemanticsNodes().isEmpty()
         }
         compose.onNodeWithTag("transcript-segment-1").assertIsDisplayed()
@@ -93,9 +90,9 @@ class TranscriptFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-item-1")
+        waitForTag(compose, "library-item-item-1")
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
-        waitForTag("player-screen")
+        waitForTag(compose, "player-screen")
 
         compose.onNodeWithText("Transcript 尚未下载")
             .performScrollTo()

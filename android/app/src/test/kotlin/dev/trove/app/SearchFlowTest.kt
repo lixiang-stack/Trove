@@ -3,7 +3,6 @@ package dev.trove.app
 import android.content.Context
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -14,6 +13,8 @@ import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.SyncFileDto
@@ -52,14 +53,12 @@ class SearchFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-item-a")
+        waitForTag(compose, "library-item-a")
         compose.onNodeWithText("搜索").performClick()
-        waitForTag("search-screen")
+        waitForTag(compose, "search-screen")
         compose.onNodeWithTag("search-input").performTextInput("2025")
 
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("Alpha 2025").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForText(compose, "Alpha 2025")
         compose.onNodeWithText("Alpha 2025").assertIsDisplayed()
         assertTrue(compose.onAllNodesWithText("Beta").fetchSemanticsNodes().isEmpty())
     }
@@ -100,20 +99,12 @@ class SearchFlowTest {
         compose.setContent { TroveApp(viewModel, harness.container) }
 
         compose.onNodeWithText("搜索").performClick()
-        waitForTag("search-screen")
+        waitForTag(compose, "search-screen")
         compose.onNodeWithTag("search-input").performTextInput("智能")
 
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("人工智能正在改变记忆方式").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForText(compose, "人工智能正在改变记忆方式")
         compose.onNodeWithText("人工智能正在改变记忆方式").performClick()
-        waitForTag("transcript-screen")
-    }
-
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForTag(compose, "transcript-screen")
     }
 
     private fun item(id: String, title: String) = SyncItemDto(

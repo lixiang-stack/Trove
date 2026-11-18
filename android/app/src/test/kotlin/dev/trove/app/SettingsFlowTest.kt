@@ -14,6 +14,7 @@ import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.testHarness
+import dev.trove.app.testing.waitForTag
 import dev.trove.core.auth.StoredCredential
 import org.junit.Rule
 import org.junit.Test
@@ -38,10 +39,10 @@ class SettingsFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag("library-screen")
+        waitForTag(compose, "library-screen")
         compose.onNodeWithContentDescription("更多").performClick()
         compose.onNodeWithText("设置").performClick()
-        waitForTag("settings-screen")
+        waitForTag(compose, "settings-screen")
 
         compose.onNodeWithText("https://host.example").assertIsDisplayed()
         compose.onNodeWithText("Pixel").assertIsDisplayed()
@@ -50,11 +51,5 @@ class SettingsFlowTest {
         compose.onNodeWithText("清除本地数据").performScrollTo().assertIsDisplayed()
         val texts = compose.onAllNodesWithTag("settings-screen").fetchSemanticsNodes()
         check(texts.isNotEmpty())
-    }
-
-    private fun waitForTag(tag: String) {
-        compose.waitUntil(5_000) {
-            compose.onAllNodesWithTag(tag).fetchSemanticsNodes().isNotEmpty()
-        }
     }
 }

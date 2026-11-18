@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.player.PlayerViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
+import dev.trove.app.testing.MainDispatcherRule
 import dev.trove.app.testing.TestAppContainer
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.PendingDeletionEntity
@@ -19,14 +20,10 @@ import dev.trove.core.network.SyncStateItemDto
 import dev.trove.core.network.TombstoneDto
 import dev.trove.core.network.TroveNetworkException
 import dev.trove.core.storage.ArtifactFileStore
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.test.resetMain
-import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -41,10 +38,12 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
-@OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class SyncHardeningFlowTest {
+    @get:Rule
+    val mainDispatcher = MainDispatcherRule()
+
     @get:Rule
     val temporaryFolder = TemporaryFolder()
 
@@ -54,7 +53,6 @@ class SyncHardeningFlowTest {
 
     @Before
     fun setUp() {
-        Dispatchers.setMain(Dispatchers.Unconfined)
         context = ApplicationProvider.getApplicationContext()
         container = newContainer()
     }
@@ -64,7 +62,6 @@ class SyncHardeningFlowTest {
         playerViewModels.forEach { it.viewModelScope.cancel() }
         container.close()
         container.database.close()
-        Dispatchers.resetMain()
     }
 
     private fun playerViewModel(): PlayerViewModel =

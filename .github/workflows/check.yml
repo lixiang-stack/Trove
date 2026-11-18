@@ -31,6 +31,25 @@ jobs:
       - name: Run fast checks
         run: ./scripts/check.sh --fast
 
+      - name: SQLite diagnostics
+        # FTS5 failures under xdist are hard to diagnose without the SQLite build.
+        if: failure()
+        run: |
+          uv run python - <<'PY'
+          import sqlite3
+          import sys
+
+          print("python:", sys.version)
+          print("sqlite:", sqlite3.sqlite_version)
+          with sqlite3.connect(":memory:") as db:
+              options = [
+                  row[0]
+                  for row in db.execute("pragma compile_options")
+                  if "FTS5" in row[0]
+              ]
+          print("fts5:", options or "missing")
+          PY
+
       - name: Docs check
         run: python3 scripts/check-docs.py
 
