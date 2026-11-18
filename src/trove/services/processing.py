@@ -35,6 +35,7 @@ from trove.domain.items import (
     STAGE_ORGANIZING,
     STAGE_TRANSCRIBING,
     RunState,
+    SourceType,
     stages_for,
 )
 from trove.domain.organization import MAX_EXISTING_TAGS
@@ -474,6 +475,19 @@ class ProcessingService:
         item.language = result.language or item.language
         item.updated_at = utc_ms()
         self._sync_source(item, source)
+        if source.source_type == SourceType.EPUB_URL:
+            self.book_extractor.validate(result.path)
+            self._install_artifact(
+                session,
+                item,
+                kind=ArtifactKind.BOOK,
+                temp_path=result.path,
+                extension=None,
+                mime="application/epub+zip",
+                duration=None,
+            )
+            context.log(f"downloaded EPUB {result.path.name}")
+            return
         context.log(f"downloaded media {result.path.name}")
 
     def _stage_extract_audio(
@@ -697,7 +711,7 @@ class ProcessingService:
         *,
         kind: ArtifactKind,
         temp_path: Path,
-        extension: str,
+        extension: str | None = None,
         mime: str | None,
         duration: float | None,
     ) -> Artifact:

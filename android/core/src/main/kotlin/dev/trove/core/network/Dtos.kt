@@ -61,6 +61,11 @@ data class SyncItemDto(
     val version: Int,
     @SerialName("source_type") val sourceType: String,
     val platform: String,
+    @SerialName("collection_id") val collectionId: String? = null,
+    @SerialName("collection_index") val collectionIndex: Int? = null,
+    @SerialName("collection_title") val collectionTitle: String? = null,
+    @SerialName("collection_platform") val collectionPlatform: String? = null,
+    @SerialName("collection_source_url") val collectionSourceUrl: String? = null,
     val title: String,
     val author: String? = null,
     @SerialName("published_at") val publishedAt: String? = null,
@@ -162,6 +167,11 @@ data class ItemDto(
     val version: Int = 0,
     @SerialName("source_type") val sourceType: String = "video_url",
     val platform: String = "",
+    @SerialName("collection_id") val collectionId: String? = null,
+    @SerialName("collection_index") val collectionIndex: Int? = null,
+    @SerialName("collection_title") val collectionTitle: String? = null,
+    @SerialName("collection_platform") val collectionPlatform: String? = null,
+    @SerialName("collection_source_url") val collectionSourceUrl: String? = null,
     val title: String = "",
     val author: String? = null,
     @SerialName("published_at") val publishedAt: String? = null,
@@ -266,4 +276,133 @@ data class MutationResponseDto(
     val item: MutationItemDto,
     @SerialName("field_clocks") val fieldClocks: Map<String, FieldClockDto> = emptyMap(),
     val warnings: List<String> = emptyList(),
+)
+
+@Serializable
+data class LinkInspectRequestDto(
+    val url: String,
+)
+
+@Serializable
+data class LinkEpisodeDto(
+    val title: String,
+    val url: String,
+    @SerialName("source_key") val sourceKey: String,
+    val index: Int,
+    @SerialName("duration_sec") val durationSec: Double? = null,
+)
+
+@Serializable
+data class LinkWarningDto(
+    val code: String,
+    val message: String,
+    val count: Int? = null,
+)
+
+@Serializable
+data class LinkInspectResponseDto(
+    val kind: String,
+    @SerialName("raw_url") val rawUrl: String,
+    @SerialName("canonical_url") val canonicalUrl: String,
+    val title: String,
+    val author: String? = null,
+    val platform: String,
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    @SerialName("episode_count") val episodeCount: Int = 0,
+    @SerialName("total_duration_sec") val totalDurationSec: Double? = null,
+    @SerialName("file_size") val fileSize: Long? = null,
+    @SerialName("content_type") val contentType: String? = null,
+    val episodes: List<LinkEpisodeDto> = emptyList(),
+    val feed: FeedPreviewResponseDto? = null,
+    @SerialName("existing_collection_id") val existingCollectionId: String? = null,
+    @SerialName("existing_episode_count") val existingEpisodeCount: Int = 0,
+    @SerialName("upstream_removed_count") val upstreamRemovedCount: Int = 0,
+    @SerialName("conflict_count") val conflictCount: Int = 0,
+    @SerialName("attachable_count") val attachableCount: Int = 0,
+    val deduplicated: Boolean = false,
+    @SerialName("ignored_playlist") val ignoredPlaylist: Boolean = false,
+    val warnings: List<LinkWarningDto> = emptyList(),
+)
+
+@Serializable
+data class CollectionStatusDto(
+    val queued: Int = 0,
+    val processing: Int = 0,
+    val completed: Int = 0,
+    val failed: Int = 0,
+    val cancelled: Int = 0,
+    val total: Int = 0,
+)
+
+@Serializable
+data class CollectionConsumptionDto(
+    val unstarted: Int = 0,
+    @SerialName("in_progress") val inProgress: Int = 0,
+    val finished: Int = 0,
+)
+
+@Serializable
+data class CollectionEpisodeDto(
+    val id: String,
+    val title: String,
+    @SerialName("collection_index") val collectionIndex: Int? = null,
+    @SerialName("duration_sec") val durationSec: Double? = null,
+    @SerialName("processing_state") val processingState: String,
+    @SerialName("processing_label") val processingLabel: String = "",
+    @SerialName("status_category") val statusCategory: String,
+    @SerialName("consumption_state") val consumptionState: String,
+    @SerialName("consumption_label") val consumptionLabel: String = "",
+    @SerialName("has_audio") val hasAudio: Boolean = false,
+    @SerialName("has_book") val hasBook: Boolean = false,
+    @SerialName("cover_url") val coverUrl: String? = null,
+    @SerialName("error_code") val errorCode: String? = null,
+    @SerialName("error_message") val errorMessage: String? = null,
+)
+
+@Serializable
+data class CollectionDto(
+    val id: String,
+    @SerialName("source_key") val sourceKey: String,
+    val platform: String,
+    @SerialName("platform_label") val platformLabel: String = "",
+    @SerialName("source_url_raw") val sourceUrlRaw: String? = null,
+    @SerialName("source_url_canonical") val sourceUrlCanonical: String? = null,
+    val title: String,
+    val author: String? = null,
+    @SerialName("episode_count") val episodeCount: Int = 0,
+    @SerialName("total_duration_sec") val totalDurationSec: Double? = null,
+    @SerialName("created_at") val createdAt: Long = 0,
+    @SerialName("updated_at") val updatedAt: Long = 0,
+    val status: CollectionStatusDto = CollectionStatusDto(),
+    val consumption: CollectionConsumptionDto = CollectionConsumptionDto(),
+    @SerialName("cover_url") val coverUrl: String? = null,
+    val items: List<CollectionEpisodeDto> = emptyList(),
+)
+
+@Serializable
+data class CollectionListResponseDto(
+    val collections: List<CollectionDto> = emptyList(),
+    val count: Int = 0,
+)
+
+@Serializable
+data class CollectionCreateRequestDto(
+    val url: String,
+)
+
+@Serializable
+data class CollectionCreateResponseDto(
+    val collection: CollectionDto,
+    @SerialName("added_count") val addedCount: Int = 0,
+    @SerialName("attached_count") val attachedCount: Int = 0,
+    @SerialName("skipped_count") val skippedCount: Int = 0,
+    @SerialName("run_count") val runCount: Int = 0,
+    val warnings: List<LinkWarningDto> = emptyList(),
+)
+
+@Serializable
+data class CollectionDeleteResponseDto(
+    val deleted: Boolean = false,
+    @SerialName("deleted_items") val deletedItems: Int = 0,
+    val mode: String = "",
 )

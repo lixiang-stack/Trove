@@ -187,6 +187,22 @@
     });
   }
 
+  function bindDialogs() {
+    document.addEventListener("click", (event) => {
+      const opener = event.target.closest("[data-open-dialog]");
+      if (opener) {
+        const dialog = document.getElementById(opener.dataset.openDialog);
+        if (dialog && typeof dialog.showModal === "function") dialog.showModal();
+        return;
+      }
+      const closer = event.target.closest("[data-close-dialog]");
+      if (closer) {
+        const dialog = closer.closest("dialog");
+        if (dialog) dialog.close();
+      }
+    });
+  }
+
   function initExportSelection(root = document) {
     const form = root.querySelector("#export-form");
     if (!form || form.dataset.exportBound === "true") return;
@@ -220,6 +236,7 @@
 
   function init() {
     bindConfirmation();
+    bindDialogs();
     refresh(document, { scroll: true });
     document.body.addEventListener("htmx:afterSwap", (event) => {
       const target = event.target || document;

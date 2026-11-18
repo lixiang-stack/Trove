@@ -58,7 +58,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.onNodeWithTag("add-preview-submit").performScrollTo().performClick()
 
         compose.waitUntil(5_000) { harness.api.createCalls.isNotEmpty() }
         waitForTag("add-processing")
@@ -82,7 +83,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://example.com/video")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.onNodeWithTag("add-preview-submit").performScrollTo().performClick()
 
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("不支持这个平台。").fetchSemanticsNodes().isNotEmpty()
@@ -110,7 +112,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.onNodeWithTag("add-preview-submit").performScrollTo().performClick()
 
         waitForTag("player-screen")
     }

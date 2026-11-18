@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.trove.app.AppContainer
+import dev.trove.app.session.SessionController
 import dev.trove.core.download.DownloadManager
 import dev.trove.core.download.DownloadPreferences
 import dev.trove.core.download.DownloadSettingsStore
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 
 data class LibraryUiState(
     val items: List<LibraryItem> = emptyList(),
+    val entries: List<LibraryEntry> = emptyList(),
     val allItems: List<LibraryItem> = emptyList(),
     val options: LibraryFilterOptions = LibraryFilterOptions(
         types = emptyList(),
@@ -41,6 +43,14 @@ data class LibraryUiState(
     val downloadPreferences: DownloadPreferences = DownloadPreferences(),
     val continueItems: List<LibraryItem> = emptyList(),
     val conflictNotice: String? = null,
+    val collectionActionError: String? = null,
+)
+
+private data class LibraryActionState(
+    val filters: LibraryFilters,
+    val sort: LibrarySort,
+    val conflictNotice: String?,
+    val collectionActionError: String?,
 )
 
 class LibraryViewModel(
@@ -48,26 +58,34 @@ class LibraryViewModel(
     private val syncEngine: SyncEngine,
     private val downloadManager: DownloadManager,
     private val downloadSettings: DownloadSettingsStore,
+    private val sessionController: SessionController,
 ) : ViewModel() {
     private val filters = MutableStateFlow(LibraryFilters())
     private val sort = MutableStateFlow(LibrarySort.RECENT_ADDED)
     private val conflict = MutableStateFlow<String?>(null)
+    private val collectionActionError = MutableStateFlow<String?>(null)
 
     val state: StateFlow<LibraryUiState> = combine(
         repository.observeLibrary(),
         syncEngine.status,
         downloadSettings.preferences,
         repository.observeDownloads(),
-        combine(filters, sort, conflict) { activeFilters, activeSort, notice ->
-            Triple(activeFilters, activeSort, notice)
+        combine(filters, sort, conflict, collectionActionError) {
+                activeFilters, activeSort, notice, actionError ->
+            LibraryActionState(activeFilters, activeSort, notice, actionError)
         },
-    ) { items, status, preferences, downloads, (activeFilters, activeSort, notice) ->
+    ) { items, status, preferences, downloads, action ->
         LibraryUiState(
-            items = applyLibraryQuery(items, activeFilters, activeSort),
+            items = applyLibraryQuery(items, action.filters, action.sort),
+            entries = applyLibraryEntryQuery(
+                items.toLibraryEntries(),
+                action.filters,
+                action.sort,
+            ),
             allItems = items,
             options = filterOptions(items),
-            filters = activeFilters,
-            sort = activeSort,
+            filters = action.filters,
+            sort = action.sort,
             syncing = status is SyncStatus.Syncing,
             offline = status is SyncStatus.Offline,
             errorCode = (status as? SyncStatus.Error)?.code,
@@ -81,7 +99,8 @@ class LibraryViewModel(
                 .filter { it.consumptionState == "in_progress" }
                 .sortedByDescending { it.lastConsumedAt ?: 0L }
                 .take(3),
-            conflictNotice = notice,
+            conflictNotice = action.conflictNotice,
+            collectionActionError = action.collectionActionError,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -97,6 +116,46 @@ class LibraryViewModel(
 
     fun dismissConflict() {
         conflict.value = null
+    }
+
+    fun clearCollectionActionError() {
+        collectionActionError.value = null
+    }
+
+    fun deleteCollection(collectionId: String, mode: String) {
+        val client = sessionController.currentClient() ?: return
+        viewModelScope.launch {
+            try {
+                client.deleteCollection(collectionId, mode)
+                syncEngine.sync()
+            } catch (error: Exception) {
+                collectionActionError.value = error.message ?: "删除合集失败"
+            }
+        }
+    }
+
+    fun retryCollectionItem(itemId: String) {
+        val client = sessionController.currentClient() ?: return
+        viewModelScope.launch {
+            try {
+                client.retryItem(itemId)
+                syncEngine.sync()
+            } catch (error: Exception) {
+                collectionActionError.value = error.message ?: "重试失败"
+            }
+        }
+    }
+
+    fun retryCollectionFailed(collectionId: String) {
+        val client = sessionController.currentClient() ?: return
+        viewModelScope.launch {
+            try {
+                client.retryCollectionFailed(collectionId)
+                syncEngine.sync()
+            } catch (error: Exception) {
+                collectionActionError.value = error.message ?: "重试失败"
+            }
+        }
     }
 
     fun refresh() {
@@ -175,6 +234,7 @@ class LibraryViewModel(
                     syncEngine = container.syncEngine,
                     downloadManager = container.downloadManager,
                     downloadSettings = container.downloadSettingsStore,
+                    sessionController = container.sessionController,
                 )
             }
         }

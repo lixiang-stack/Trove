@@ -58,6 +58,27 @@ interface TroveApi {
     @POST("api/items/{itemId}/retry")
     suspend fun retryItem(@Path("itemId") itemId: String): ItemDto
 
+    @POST("api/intake/inspect")
+    suspend fun inspectLink(@Body body: LinkInspectRequestDto): LinkInspectResponseDto
+
+    @POST("api/collections")
+    suspend fun createCollection(@Body body: CollectionCreateRequestDto): CollectionCreateResponseDto
+
+    @GET("api/collections/{collectionId}")
+    suspend fun collection(@Path("collectionId") collectionId: String): CollectionDto
+
+    @DELETE("api/collections/{collectionId}")
+    suspend fun deleteCollection(
+        @Path("collectionId") collectionId: String,
+        @Query("mode") mode: String,
+    ): CollectionDeleteResponseDto
+
+    @POST("api/collections/{collectionId}/retry-failed")
+    suspend fun retryCollectionFailed(@Path("collectionId") collectionId: String): CollectionDto
+
+    @GET("api/collections")
+    suspend fun collections(): CollectionListResponseDto
+
     @POST("api/feeds/preview")
     suspend fun previewFeed(@Body body: FeedPreviewRequestDto): FeedPreviewResponseDto
 

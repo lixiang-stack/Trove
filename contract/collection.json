@@ -1,0 +1,62 @@
+{
+  "id": "5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c11",
+  "source_key": "https://www.youtube.com/playlist?list=PLtestcollection",
+  "platform": "youtube",
+  "platform_label": "YouTube",
+  "source_url_raw": "https://www.youtube.com/playlist?list=PLtestcollection",
+  "source_url_canonical": "https://www.youtube.com/playlist?list=PLtestcollection",
+  "title": "Fixture Collection",
+  "author": "Fixture Channel",
+  "episode_count": 2,
+  "total_duration_sec": 120.0,
+  "created_at": 1793512800000,
+  "updated_at": 1793512800000,
+  "status": {
+    "queued": 2,
+    "processing": 0,
+    "completed": 0,
+    "failed": 0,
+    "cancelled": 0,
+    "total": 2
+  },
+  "consumption": {
+    "unstarted": 2,
+    "in_progress": 0,
+    "finished": 0
+  },
+  "cover_url": null,
+  "items": [
+    {
+      "id": "episode-0001",
+      "title": "Episode One",
+      "collection_index": 1,
+      "duration_sec": 60.0,
+      "processing_state": "queued",
+      "processing_label": "Queued",
+      "status_category": "processing",
+      "consumption_state": "unstarted",
+      "consumption_label": "Unstarted",
+      "has_audio": false,
+      "has_book": false,
+      "cover_url": null,
+      "error_code": null,
+      "error_message": null
+    },
+    {
+      "id": "episode-0002",
+      "title": "Episode Two",
+      "collection_index": 2,
+      "duration_sec": 60.0,
+      "processing_state": "queued",
+      "processing_label": "Queued",
+      "status_category": "processing",
+      "consumption_state": "unstarted",
+      "consumption_label": "Unstarted",
+      "has_audio": false,
+      "has_book": false,
+      "cover_url": null,
+      "error_code": null,
+      "error_message": null
+    }
+  ]
+}

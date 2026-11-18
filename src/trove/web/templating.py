@@ -70,6 +70,17 @@ def datetime_filter(value: int | None) -> str:
     return moment.strftime("%Y-%m-%d %H:%M UTC")
 
 
+def filesize(value: int | float | None) -> str:
+    if value is None:
+        return "—"
+    size = float(value)
+    for unit in ("B", "KB", "MB", "GB"):
+        if size < 1024 or unit == "GB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size:.1f} GB"
+
+
 def cover_tone(item_id: str) -> str:
     digest = hashlib.sha256(item_id.encode("utf-8")).digest()
     return COVER_TONES[digest[0] % len(COVER_TONES)]
@@ -78,6 +89,7 @@ def cover_tone(item_id: str) -> str:
 templates.env.filters["duration"] = duration
 templates.env.filters["clock"] = clock_ms
 templates.env.filters["datetime"] = datetime_filter
+templates.env.filters["filesize"] = filesize
 templates.env.filters["cover_tone"] = cover_tone
 templates.env.filters["ref_label"] = ref_label
 templates.env.filters["error_label"] = error_label

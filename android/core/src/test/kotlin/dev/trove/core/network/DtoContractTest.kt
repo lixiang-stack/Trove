@@ -100,4 +100,24 @@ class DtoContractTest {
         assertEquals(true, health.capabilities["device_tokens"])
         assertEquals(true, health.capabilities["file_download"])
     }
+
+    @Test
+    fun inspectFixtureParsesCollectionPreview() {
+        val inspect = json.decodeFromString<LinkInspectResponseDto>(resource("inspect.json"))
+        assertEquals("collection", inspect.kind)
+        assertEquals(2, inspect.episodeCount)
+        assertEquals("Episode One", inspect.episodes.first().title)
+        assertEquals(120.0, inspect.totalDurationSec ?: 0.0, 0.0)
+        assertTrue(inspect.warnings.isEmpty())
+    }
+
+    @Test
+    fun collectionFixtureParsesEpisodes() {
+        val collection = json.decodeFromString<CollectionDto>(resource("collection.json"))
+        assertEquals("Fixture Collection", collection.title)
+        assertEquals(2, collection.episodeCount)
+        assertEquals(2, collection.status.queued)
+        assertEquals(1, collection.items.first().collectionIndex)
+        assertEquals("Episode Two", collection.items[1].title)
+    }
 }

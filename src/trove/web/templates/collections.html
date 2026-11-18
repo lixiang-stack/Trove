@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}合集 · 拾藏{% endblock %}
+{% block main %}
+<section class="library-head">
+  <div>
+    <p class="eyebrow">COLLECTIONS</p>
+    <h1>合集</h1>
+    <p class="subtitle">{{ collection_count }} 个合集 · {{ episode_count }} 集</p>
+  </div>
+  <div class="library-actions">
+    <a href="/library" class="secondary" hx-get="/library" hx-target="#main" hx-select="#main" hx-push-url="true">返回 Library</a>
+    <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加内容</a>
+  </div>
+</section>
+
+{% if collections %}
+<div class="collection-grid">
+  {% for collection in collections %}
+  <article class="collection-card">
+    <a class="collection-cover cover {% if collection.cover_url %}has-image{% else %}cover-{{ collection.id|cover_tone }}{% endif %}"
+       href="/collections/{{ collection.id }}"
+       hx-get="/collections/{{ collection.id }}" hx-target="#main" hx-select="#main" hx-push-url="true"
+       aria-hidden="true" tabindex="-1">
+      {% if collection.cover_url %}
+      <img src="{{ collection.cover_url }}" alt="">
+      {% else %}
+      <span>{{ collection.title[:1] }}</span>
+      {% endif %}
+    </a>
+    <div class="collection-body">
+      <p class="eyebrow">{{ collection.platform_label }}</p>
+      <h2><a href="/collections/{{ collection.id }}"
+             hx-get="/collections/{{ collection.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">{{ collection.title }}</a></h2>
+      <p class="queue-meta">
+        {{ collection.author or "未知作者" }} · {{ collection.episode_count }} 集
+        {% if collection.total_duration_sec %} · 约 {{ collection.total_duration_sec|duration }}{% endif %}
+        · 最近添加 {{ collection.updated_at|datetime }}
+      </p>
+      <div class="queue-state">
+        {% if collection.status.processing %}
+        <span class="badge badge-processing">{{ collection.status.processing }} 处理中</span>
+        {% endif %}
+        {% if collection.status.queued %}
+        <span class="badge badge-cancelled">{{ collection.status.queued }} 排队</span>
+        {% endif %}
+        {% if collection.status.failed %}
+        <span class="badge badge-failed">{{ collection.status.failed }} 失败</span>
+        {% endif %}
+        {% if collection.status.completed %}
+        <span class="badge badge-ready">{{ collection.status.completed }} 完成</span>
+        {% endif %}
+        {% if collection.consumption.finished %}
+        <span class="consumption state-finished">已听 {{ collection.consumption.finished }}/{{ collection.episode_count }}</span>
+        {% endif %}
+      </div>
+      {% set total = collection.episode_count if collection.episode_count else 1 %}
+      <span class="progress-line"><span style="width: {{ ((collection.status.completed / total) * 100)|round(1) }}%"></span></span>
+      <div class="collection-footer">
+        {% if collection.status.failed %}
+        <span class="muted">失败项可单独重试</span>
+        {% elif collection.status.queued %}
+        <span class="muted">等待 worker 处理</span>
+        {% else %}
+        <span class="muted">处理完成</span>
+        {% endif %}
+        <a class="chip" href="/collections/{{ collection.id }}"
+           hx-get="/collections/{{ collection.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">打开合集</a>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<section class="empty-state">
+  <div class="empty-mark">合</div>
+  <h2>还没有合集</h2>
+  <p>在添加页粘贴 B 站多 P/合集、系列或 YouTube playlist 链接。</p>
+  <a href="/add" role="button" hx-get="/add" hx-target="#main" hx-select="#main" hx-push-url="true">添加合集</a>
+</section>
+{% endif %}
+{% endblock %}

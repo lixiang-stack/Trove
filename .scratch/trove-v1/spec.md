@@ -58,7 +58,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 
 28. 作为手机用户，我想从其他 App 分享一个 URL 到 Trove，以便不复制粘贴也能入库。
 29. 作为内容收藏者，我想粘贴一条 B 站或 YouTube 单视频 URL 并入库，以便把它变成可听、可检索的内容。
-30. 作为内容收藏者，我想在粘贴播放列表或多 P 链接时被明确拒绝，以便不会只处理其中一条。
+30. 作为内容收藏者，我想在粘贴播放列表或多 P 链接时看到自动识别与合集预览，以便一次性正确入库，而不是只处理其中一条。
 31. 作为内容收藏者，我想在重复添加同一 URL 时看到“已存在”并打开原 Item，以便不重复下载和处理。
 32. 作为播客听众，我想粘贴 RSS feed URL、预览最近单集并选择一集入库，以便不需要订阅或轮询。
 33. 作为内容收藏者，我想在入库前看到“转写/书文本会发送给 DeepSeek”的提示，以便知道数据流向。
@@ -305,7 +305,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 ### 入库与处理状态
 
 - Add 支持：系统分享 `text/plain`（提取第一个 URL）、手动粘贴 URL、播客 feed 预览后选集。
-- URL 校验、平台白名单、playlist/多 P 拒绝、SSRF/大小/类型限制全部由 Host 执行；Android 只展示 Host 返回的稳定错误码和中文提示。
+- URL 校验、平台白名单、合集/单集识别、合集上限、SSRF/大小/类型限制全部由 Host 执行；Android 只展示 Host 返回的稳定错误码和中文提示。
 - 重复添加返回已有 Item 并直接打开详情；不创建第二个 Processing Run。
 - Add 页持续显示 DeepSeek 数据流提示；MVP 的 per-item 开关仍不做。
 - 添加成功后进入 Item 详情/Inbox，显示 Processing State；App 在前台时轮询 Item/Run 状态（有上限和退避），后台由周期同步更新；不使用 WebSocket。
@@ -382,7 +382,7 @@ V1 采用两个 seam：
 |---|---|---|
 | 连接/认证 | 输入 Host；错误密码；token 失效；Host 离线；TLS 错误 | 明确错误/重试；不丢本地数据 |
 | Library | 全量/增量；过滤；排序；Processing State；Inbox；离线列表 | 可见 Item/状态正确；空/加载/错误状态 |
-| Add | 分享文本；粘贴 URL；重复；playlist 拒绝；播客预览；DeepSeek 提示 | 预填/错误/已有 Item；处理状态可见 |
+| Add | 分享文本；粘贴 URL；重复；合集识别/预览；播客预览；DeepSeek 提示 | 预填/错误/已有 Item；处理状态可见 |
 | 播放 | 播放/暂停/seek/倍速；恢复位置；本地/流式；播放错误 | 状态正确；位置保存；不因同步中断 |
 | 下载 | 排队；暂停/继续；Wi-Fi 约束；sha 校验；断点续传；配额不足 | 下载状态/通知/文件正确；失败可重试 |
 | 阅读 | EPUB 翻章；图片/脚注；阅读位置；离线；书内搜索；transcript 搜索 | 内容/位置/高亮正确；错误可读 |
@@ -412,6 +412,18 @@ V1 采用两个 seam：
 - `tests/test_host_seam.py`、`tests/test_api_contract.py`、`tests/test_browser.py`、`tests/test_security.py`、`tests/test_processing.py` 是 Host seam 的现有范例：真实 Host、fake 外部依赖、HTTP/UI 行为断言。
 - `tests/test_domain_search.py`、`tests/test_domain_*` 风格的纯函数表驱动测试用于 CJK/URL/Tag/locator/LWW。
 - Android 测试是新代码：Compose UI test + Robolectric/JVM + 少量 instrumented tests；不引入第三套 seam。共享 fixture 是两边契约的唯一来源。
+
+## 追加需求 · 2026-11-17：视频合集与电子书直链
+
+本节反转原「playlist/多 P 拒绝、一个 URL 最多一个 Item」的约束。详细规格见 [collections-ebooks spec](../collections-ebooks/spec.md)、[ADR-0010](../../docs/adr/0010-video-collection-aggregate.md)、[ADR-0011](../../docs/adr/0011-epub-url-intake.md)。
+
+- 添加页改为单链接自动识别：单集视频 / 视频合集 / EPUB 直链 / 播客 feed；先预览确认再入库。
+- 视频合集：B 站多 P/合集/系列、YouTube playlist；按单集 `source_key` 幂等展开成 Item；合集在 Library 中聚合为一张卡片，新增合集详情；单集仍独立处理/播放/下载。
+- 合集上限默认 100 集/100 小时；全量处理，单集失败隔离；重复添加只追加新集；删除支持「删除全部单集」和「仅移除分组」。
+- 电子书只支持可直接下载的 DRM-free、可重排 EPUB 直链；新增 `EPUB_URL` SourceType，复用现有 EPUB 解析/阅读/搜索/导出；PDF/详情页/需登录链接明确拒绝。
+- Host Console：添加页统一链接面板；Library 增加合集入口；新增 `/collections` 列表与只读详情（重试/删除）。
+- Android 不新增 Collection Room 表/同步流：Host 在 Item 上携带合集字段，客户端派生合集卡片/详情；删除/解散通过 Item content_seq 同步。
+- 非目标：自动追更、合集级 AI 摘要/Tag、播放全部/Up Next、合集自动下载到手机、合集内选集入库、PDF、站点解析。
 
 ## Out of Scope
 
