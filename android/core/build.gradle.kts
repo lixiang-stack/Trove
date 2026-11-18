@@ -31,6 +31,7 @@ android {
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../contract"))
     sourceSets.getByName("test").resources.srcDir(rootProject.file("../tests/fixtures"))
     sourceSets.getByName("test").assets.srcDir("$projectDir/schemas")
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 ksp {

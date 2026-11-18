@@ -342,7 +342,10 @@ private fun PreviewCard(
                 }
             }
 
-            if (inspection.ignoredPlaylist) {
+            if (
+                inspection.ignoredPlaylist &&
+                inspection.warnings.none { it.code == "link.ignored_playlist" }
+            ) {
                 PreviewNotice("链接里的播放列表参数已忽略，只添加当前视频。")
             }
             inspection.warnings.forEach { warning ->
@@ -683,7 +686,7 @@ private fun previewMeta(inspection: LinkInspectResponseDto): String = listOfNotN
     inspection.author,
     if (inspection.kind == "collection") {
         "${inspection.episodeCount} 集" +
-            (inspection.totalDurationSec?.let { " · 约 ${formatDuration(it)}" } ?: "")
+            (inspection.totalDurationSec?.let { " · 约 ${formatDuration(it)}" } ?: " · 时长未知")
     } else if (inspection.kind == "ebook") {
         inspection.fileSize?.let { formatBytes(it) }
     } else {

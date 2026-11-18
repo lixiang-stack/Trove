@@ -1,9 +1,11 @@
 package dev.trove.app
 
 import android.content.Context
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -23,6 +25,7 @@ import dev.trove.core.network.CollectionDto
 import dev.trove.core.network.CollectionStatusDto
 import dev.trove.core.network.LinkEpisodeDto
 import dev.trove.core.network.LinkInspectResponseDto
+import dev.trove.core.network.LinkWarningDto
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.SyncItemDto
 import org.junit.Rule
@@ -100,6 +103,69 @@ class CollectionFlowTest {
         compose.onNodeWithText("Fixture Collection").assertIsDisplayed()
         compose.onNodeWithText("Episode One").assertIsDisplayed()
         compose.onNodeWithText("Episode Two").assertIsDisplayed()
+    }
+
+    @Test
+    fun collectionPreviewShowsUnknownDurationWhenUpstreamOmitsIt() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        val url = "https://www.bilibili.com/video/BVtest"
+        harness.api.inspectResponse = LinkInspectResponseDto(
+            kind = "collection",
+            rawUrl = url,
+            canonicalUrl = url,
+            title = "Fixture Collection",
+            platform = "bilibili",
+            episodeCount = 2,
+            totalDurationSec = null,
+            episodes = listOf(
+                LinkEpisodeDto("Episode One", url, url, 1, null),
+                LinkEpisodeDto("Episode Two", "$url?p=2", "$url?p=2", 2, null),
+            ),
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag("library-screen")
+        compose.onNodeWithText("添加").performClick()
+        waitForTag("add-url-input")
+        compose.onNodeWithTag("add-url-input").performTextInput(url)
+        waitForTag("add-preview")
+
+        compose.onNodeWithText("时长未知", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun ignoredPlaylistWarningIsShownOnce() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        val url = "https://www.youtube.com/watch?v=abc&list=PLtest"
+        harness.api.inspectResponse = LinkInspectResponseDto(
+            kind = "video",
+            rawUrl = url,
+            canonicalUrl = url,
+            title = "Fixture Video",
+            platform = "youtube",
+            durationSec = 60.0,
+            ignoredPlaylist = true,
+            warnings = listOf(
+                LinkWarningDto(
+                    code = "link.ignored_playlist",
+                    message = "链接里的播放列表参数已忽略，只添加当前视频。",
+                )
+            ),
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag("library-screen")
+        compose.onNodeWithText("添加").performClick()
+        waitForTag("add-url-input")
+        compose.onNodeWithTag("add-url-input").performTextInput(url)
+        waitForTag("add-preview")
+
+        compose.onAllNodesWithText("链接里的播放列表参数已忽略，只添加当前视频。")
+            .assertCountEquals(1)
     }
 
     @Test
