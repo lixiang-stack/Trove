@@ -114,6 +114,13 @@ def video_collection(
 
 
 class FakeDownloader:
+    """Copy fixtures without network.
+
+    Video titles are replaced with "Fixture Video"; browser tests that assert
+    static UI should use the no-worker ``api_host`` fixture, or assert stable
+    fields such as row counts and collection titles.
+    """
+
     def __init__(self, fixture: Path | None = None, epub_fixture: Path | None = None) -> None:
         self.fixture = fixture or FIXTURES / "short.wav"
         self.epub_fixture = epub_fixture or FIXTURES / "aesop.epub"

@@ -1046,31 +1046,32 @@ def test_tag_edit_updates_library_and_search(host, browser):
     context.close()
 
 
-def test_collection_pages_and_delete_dialog(host, browser):
-    host.login()
+def test_collection_pages_and_delete_dialog(api_host, browser):
+    api_host.login()
     playlist = "https://www.youtube.com/playlist?list=PLbrowser"
-    host.stack.video_inspector.collections[playlist] = video_collection(
+    api_host.stack.video_inspector.collections[playlist] = video_collection(
         "Browser Collection",
         [
             ("Browser Episode One", "https://www.youtube.com/watch?v=episode0001", 60.0),
             ("Browser Episode Two", "https://www.youtube.com/watch?v=episode0002", 60.0),
         ],
     )
-    created = host.client.post("/api/collections", json={"url": playlist})
+    created = api_host.client.post("/api/collections", json={"url": playlist})
     assert created.status_code == 201, created.text
     assert created.json()["collection"]["episode_count"] == 2, created.text
     assert created.json()["collection"]["items"], created.text
     collection_id = created.json()["collection"]["id"]
 
-    context = _context(browser, host)
+    context = _context(browser, api_host)
     page = context.new_page()
-    page.goto(f"{host.base_url}/collections", wait_until="domcontentloaded")
+    page.goto(f"{api_host.base_url}/collections", wait_until="domcontentloaded")
     assert "Browser Collection" in page.text_content("main")
     page.goto(
-        f"{host.base_url}/collections/{collection_id}",
+        f"{api_host.base_url}/collections/{collection_id}",
         wait_until="domcontentloaded",
     )
     assert page.locator("article.episode-row").count() == 2
+    assert "Browser Episode One" in page.text_content("main")
     assert "Browser Collection" in page.text_content("main")
     page.click("[data-open-dialog='delete-collection']")
     page.wait_for_selector("#delete-collection[open]")

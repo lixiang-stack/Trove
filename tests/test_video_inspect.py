@@ -6,6 +6,43 @@ from trove.adapters import video_inspect
 from trove.adapters.video_inspect import YtDlpVideoInspector
 from trove.config import Config
 
+from .fakes import FIXTURES
+
+
+def test_parse_real_youtube_playlist_fixture():
+    data = json.loads(
+        (FIXTURES / "yt_dlp_youtube_playlist.json").read_text(encoding="utf-8")
+    )
+    info = video_inspect._parse_info(data)
+    assert info.is_playlist is True
+    assert info.title == "Opera Gems in the Public Domain"
+    assert len(info.entries) == 3
+    assert all(
+        entry.url.startswith("https://www.youtube.com/watch?v=")
+        for entry in info.entries
+    )
+    assert all(entry.title and entry.duration_sec for entry in info.entries)
+
+
+def test_parse_real_bilibili_multipart_fixture():
+    data = json.loads(
+        (FIXTURES / "yt_dlp_bilibili_multipart.json").read_text(encoding="utf-8")
+    )
+    info = video_inspect._parse_info(data)
+    assert info.is_playlist is True
+    assert info.title and "FFmpeg" in info.title
+    assert [entry.url for entry in info.entries] == [
+        "https://www.bilibili.com/video/BV1Ft411s7Xa?p=1",
+        "https://www.bilibili.com/video/BV1Ft411s7Xa?p=2",
+        "https://www.bilibili.com/video/BV1Ft411s7Xa?p=3",
+    ]
+    assert [entry.title for entry in info.entries] == [
+        "Episode 1",
+        "Episode 2",
+        "Episode 3",
+    ]
+    assert all(entry.duration_sec is None for entry in info.entries)
+
 
 def _completed(payload: dict, returncode: int = 0, stderr: str = ""):
     return video_inspect.subprocess.CompletedProcess(

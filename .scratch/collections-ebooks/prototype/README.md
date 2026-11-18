@@ -13,6 +13,19 @@
 
 截图在 `screenshots/`，按下方清单命名。
 
+## 重新生成截图
+
+需要 Playwright Chromium：
+
+```bash
+uv run playwright install chromium
+uv run python scripts/prototype-capture.py \
+  .scratch/collections-ebooks/prototype \
+  --out .scratch/collections-ebooks/prototype/screenshots
+```
+
+脚本会截取所有带 `data-shot` 的 frame，并生成每个 HTML 的 overview。
+
 ## 已落实到原型里的共识
 
 1. **一个链接框**：视频单集、视频合集、EPUB 直链、播客 feed 自动识别。
