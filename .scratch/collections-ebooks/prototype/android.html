@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Trove · 合集与电子书 · Android 原型</title>
+<link rel="stylesheet" href="shared.css">
+<link rel="stylesheet" href="android.css">
+<!--
+  PROTOTYPE — throwaway. 静态线框，不接后端。
+  本轮确认：添加页单链接自动检测、合集预览、电子书直链预览、
+  Library 合集卡片、合集详情、两种删除语义。
+-->
+</head>
+<body class="prototype">
+<svg class="svg-defs" aria-hidden="true" width="0" height="0">
+  <symbol id="i-back" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m15 5-7 7 7 7"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.25" fill="currentColor"/><circle cx="12" cy="12" r="1.25" fill="currentColor"/><circle cx="19" cy="12" r="1.25" fill="currentColor"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path fill="currentColor" d="M8 5.4v13.2L19 12z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.6" height="14" rx="1" fill="currentColor"/><rect x="13.9" y="5" width="3.6" height="14" rx="1" fill="currentColor"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M5 4h6a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H5zM19 4h-3a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h3z"/></symbol>
+  <symbol id="i-headphones" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M4 14v-2a8 8 0 0 1 16 0v2M4 14h3v5H5a1 1 0 0 1-1-1zM20 14h-3v5h2a1 1 0 0 0 1-1z"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m5 12.5 4.5 4.5L19 6.5"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="m8 12.3 2.7 2.7 5.5-5.7"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 4 3 20h18zM12 9v5M12 17h.01"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M11 4.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13Zm4.7 11.2L20 20"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M19 8a7 7 0 1 0 1 6M19 4v4h-4"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m6 6 12 12M18 6 6 18"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.7 1.7M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.7-1.7"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m12 4 8 4-8 4-8-4zM4 12l8 4 8-4M4 16l8 4 8-4"/></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l4 4v14H7zM14 3v5h5"/></symbol>
+  <symbol id="i-rss" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M5 5a14 14 0 0 1 14 14M5 11a8 8 0 0 1 8 8M5.5 18.5h.01"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 24 24"><path fill="currentColor" d="M4 17h3v3H4zm5-4h3v7H9zm5-4h3v11h-3zm5-4h3v15h-3z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 9a13 13 0 0 1 16 0M7 12.5a8.5 8.5 0 0 1 10 0M10 16a4 4 0 0 1 4 0M12 19h.01"/></symbol>
+  <symbol id="i-battery" viewBox="0 0 24 24"><rect x="3" y="8" width="16" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="20" y="10.5" width="1.8" height="3" rx=".8" fill="currentColor"/><rect x="5" y="10" width="11" height="4" rx="1" fill="currentColor"/></symbol>
+</svg>
+
+<main class="gallery">
+  <header class="gallery-head">
+    <div>
+      <p class="eyebrow">PROTOTYPE · REVIEW ONLY</p>
+      <h1>合集与电子书 · Android</h1>
+      <p class="lede">
+        添加页从“单条视频”升级为单链接自动识别；合集在 Library 中聚合为卡片，
+        并有独立详情页。重点确认：识别结果是否清楚、合集规模是否可判断、删除合集的两种语义是否安全。
+      </p>
+    </div>
+    <div class="meta">
+      <span class="pill accent">C 队列列表 + B Now Playing 基线</span>
+      <span class="pill">Material 3</span>
+      <span class="pill">390 × 844</span>
+    </div>
+  </header>
+
+  <!-- ===================================================================== -->
+  <section class="gallery-section">
+    <h2>添加页 · 自动识别</h2>
+    <p class="section-note">
+      一个链接框，粘贴后检测；检测不下载媒体。预览卡先告诉用户“识别成什么、规模多大、会做什么”，
+      用户确认后才创建。单集仍是一键确认，不额外多一步。
+    </p>
+    <div class="gallery-grid">
+
+      <!-- A1 空状态 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A1 · 空状态</strong><span>粘贴前</span></p>
+        <div class="phone" data-shot="add-empty">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="placeholder">B 站 / YouTube 视频或合集、EPUB 直链、播客 feed</span>
+              </div>
+              <p class="input-hint">粘贴后自动识别，不会立即下载。</p>
+              <button class="btn primary block">识别链接</button>
+
+              <div class="support-card">
+                <div class="support-row">
+                  <svg class="icon"><use href="#i-play"/></svg>
+                  <div class="support-body"><strong>单集视频</strong><span>B 站 / YouTube 单条链接</span></div>
+                </div>
+                <div class="support-row">
+                  <svg class="icon"><use href="#i-layers"/></svg>
+                  <div class="support-body"><strong>视频合集</strong><span>B 站多 P / 合集 / 系列，YouTube playlist</span></div>
+                </div>
+                <div class="support-row">
+                  <svg class="icon"><use href="#i-file"/></svg>
+                  <div class="support-body"><strong>电子书</strong><span>可直接下载的 EPUB 直链</span></div>
+                </div>
+                <div class="support-row">
+                  <svg class="icon"><use href="#i-rss"/></svg>
+                  <div class="support-body"><strong>播客</strong><span>RSS feed，预览最近单集并选一集</span></div>
+                </div>
+              </div>
+
+              <p class="privacy-note">转写/书文本会分块发送给 DeepSeek 生成摘要和 Tag；Host 会执行 URL、平台、SSRF 和大小校验。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">空状态把“支持什么”说清楚，减少用户拿详情页/PDF 去试错。</p>
+      </div>
+
+      <!-- A2 识别中 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A2 · 识别中</strong><span>读取标题 / 集数 / 时长</span></p>
+        <div class="phone" data-shot="add-detecting">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://www.bilibili.com/video/BV1xx411c7mD</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+              <p class="input-hint">已识别平台，正在读取合集信息。</p>
+              <button class="btn primary block" disabled><span class="spinner white"></span>识别中…</button>
+
+              <div class="detect-card">
+                <span class="spinner"></span>
+                <div class="detect-body">
+                  <strong>正在识别链接</strong>
+                  <span>读取标题、集数和时长，不会下载媒体。通常需要 2–10 秒。</span>
+                </div>
+              </div>
+
+              <div class="panel detect-skeleton">
+                <div class="skeleton w40"></div>
+                <div class="skeleton w80"></div>
+                <div class="skeleton w60"></div>
+              </div>
+
+              <button class="btn ghost block">取消检测</button>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">检测超时约 20 秒；失败给出可重试的原因，不静默降级成单集。</p>
+      </div>
+
+      <!-- A3 单集 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A3 · 单集视频</strong><span>YouTube watch?v=&amp;list=</span></p>
+        <div class="phone" data-shot="add-single">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://www.youtube.com/watch?v=8aGhZQkoFbQ&amp;list=PLrAXtmEr</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+
+              <div class="panel preview-card">
+                <div class="preview-head">
+                  <div class="cover blue s64"><span>单</span></div>
+                  <div>
+                    <div class="preview-kind"><span class="eyebrow">识别为 · 单集视频</span><span class="pill">YouTube</span></div>
+                    <div class="preview-title">为什么我们总是高估短期</div>
+                    <div class="preview-meta">王五 · 42 分钟 · 视频转音频 + 转写</div>
+                  </div>
+                </div>
+                <div class="preview-body">
+                  <div class="notice info">
+                    <svg class="icon"><use href="#i-alert"/></svg>
+                    <span>链接里的播放列表参数已忽略，只添加当前视频。</span>
+                  </div>
+                </div>
+                <div class="preview-actions">
+                  <button class="btn primary block">开始处理</button>
+                  <button class="btn ghost block">重新检测</button>
+                </div>
+              </div>
+
+              <p class="privacy-note">转写/书文本会分块发送给 DeepSeek 生成摘要和 Tag；Host 会执行 URL、平台、SSRF 和大小校验。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">watch?v=&amp;list= 明确按单集处理；提示“忽略列表参数”，避免用户以为会拉整个列表。</p>
+      </div>
+
+      <!-- A4 合集 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A4 · 视频合集</strong><span>有已有单集 / 上游移除提示</span></p>
+        <div class="phone" data-shot="add-collection">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://space.bilibili.com/42/channel/collectiondetail?sid=88</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+
+              <div class="panel preview-card">
+                <div class="preview-head">
+                  <div class="cover green s64"><span>合</span></div>
+                  <div>
+                    <div class="preview-kind"><span class="eyebrow">识别为 · 视频合集</span><span class="pill">Bilibili</span></div>
+                    <div class="preview-title">从零开始做个人知识库</div>
+                    <div class="preview-meta">UP 主：老周 · 12 集 · 约 6 小时 20 分</div>
+                  </div>
+                </div>
+                <div class="preview-body">
+                  <div class="notice info">
+                    <svg class="icon"><use href="#i-check-circle"/></svg>
+                    <span>其中 1 集已在库中，将并入合集并保留已有进度。</span>
+                  </div>
+                  <div class="notice warn mt8">
+                    <svg class="icon"><use href="#i-alert"/></svg>
+                    <span>上游已移除 1 集；本地会保留，不自动删除。</span>
+                  </div>
+                  <div class="episode-preview">
+                    <div class="episode-preview-row"><span class="ep-index">01</span><span class="ep-title">为什么要做个人知识库</span><span class="ep-duration">28:14</span></div>
+                    <div class="episode-preview-row"><span class="ep-index">02</span><span class="ep-title">选择你的第一个容器</span><span class="ep-duration">35:02</span></div>
+                    <div class="episode-preview-row"><span class="ep-index">03</span><span class="ep-title">采集：从链接到内容包</span><span class="ep-duration">41:37</span></div>
+                    <div class="ep-more">+ 9 集 · 按上游顺序处理</div>
+                  </div>
+                </div>
+                <div class="preview-actions">
+                  <button class="btn primary block">添加合集（12 集）</button>
+                  <button class="btn ghost block">重新检测</button>
+                </div>
+                <p class="preview-footnote">将全部处理，可能需要较长时间；单集失败不影响其他集。</p>
+              </div>
+
+              <p class="privacy-note">转写/书文本会分块发送给 DeepSeek 生成摘要和 Tag；Host 会执行 URL、平台、SSRF 和大小校验。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">预览卡同时展示规模、已有单集、上游移除和“会全部处理”；确认按钮写清集数。</p>
+      </div>
+
+      <!-- A5 电子书 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A5 · 电子书</strong><span>EPUB 直链</span></p>
+        <div class="phone" data-shot="add-ebook">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://example.com/books/design-of-everyday-things.epub</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+
+              <div class="panel preview-card">
+                <div class="preview-head">
+                  <div class="cover gold s64"><span>书</span></div>
+                  <div>
+                    <div class="preview-kind"><span class="eyebrow">识别为 · 电子书</span><span class="pill">EPUB</span></div>
+                    <div class="preview-title">design-of-everyday-things.epub</div>
+                    <div class="preview-meta">3.2 MB · 直接下载 · DRM-free 校验</div>
+                  </div>
+                </div>
+                <div class="preview-body">
+                  <div class="notice info">
+                    <svg class="icon"><use href="#i-file"/></svg>
+                    <span>书名、作者和封面会在下载解析后更新。</span>
+                  </div>
+                  <div class="notice warn mt8">
+                    <svg class="icon"><use href="#i-alert"/></svg>
+                    <span>仅支持可直接下载的 EPUB 直链；详情页、PDF 和需要登录的链接暂不支持。</span>
+                  </div>
+                </div>
+                <div class="preview-actions">
+                  <button class="btn primary block">添加电子书</button>
+                  <button class="btn ghost block">重新检测</button>
+                </div>
+              </div>
+
+              <p class="privacy-note">Host 会下载并校验 EPUB 结构、DRM 和固定版式；原文和书文件只保存在你的 Mac 上。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">检测只做 HEAD 和大小/类型判断，预览用文件名；真实书名在下载解析后补齐。</p>
+      </div>
+
+      <!-- A6 播客 feed -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A6 · 播客 feed</strong><span>统一入口后保留选集</span></p>
+        <div class="phone" data-shot="add-feed">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://feeds.example.com/kernel-panic.xml</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+
+              <div class="panel preview-card">
+                <div class="preview-kind"><span class="eyebrow">识别为 · 播客 feed</span><span class="pill">RSS</span></div>
+                <div class="preview-title">内核恐慌</div>
+                <div class="preview-meta">最近 20 集 · 选择一集入库</div>
+                <div class="preview-body">
+                  <div class="feed-episode">
+                    <div><div class="feed-title">EP 128 · 我们为什么还在做播客</div><div class="feed-meta">1 小时 12 分 · 2026-11-12</div></div>
+                    <button class="text-btn">添加</button>
+                  </div>
+                  <div class="feed-episode">
+                    <div><div class="feed-title">EP 127 · 本地优先的代价</div><div class="feed-meta">58 分钟 · 2026-11-05</div></div>
+                    <button class="text-btn">添加</button>
+                  </div>
+                  <div class="feed-episode">
+                    <div><div class="feed-title">EP 126 · 一次失败的迁移</div><div class="feed-meta">1 小时 03 分 · 2026-10-29</div></div>
+                    <button class="text-btn">添加</button>
+                  </div>
+                  <div class="ep-more">查看全部 20 集</div>
+                </div>
+                <div class="preview-actions">
+                  <button class="btn ghost block">重新检测</button>
+                </div>
+              </div>
+
+              <p class="privacy-note">播客仍按单集入库；不会把整个 feed 变成合集或自动追更。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">播客 feed 也走同一个链接框；识别后展开最近单集，保留现有“选一集”交互。</p>
+      </div>
+
+      <!-- A7 错误 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A7 · 无法识别</strong><span>明确的失败原因</span></p>
+        <div class="phone" data-shot="add-error">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="add-form">
+              <label class="field-label">链接</label>
+              <div class="input-field focused">
+                <span class="value">https://example.com/book/12345</span>
+                <svg class="icon"><use href="#i-close"/></svg>
+              </div>
+
+              <div class="panel error-card">
+                <div class="error-head">
+                  <svg class="icon"><use href="#i-alert"/></svg>
+                  <strong>无法识别这个链接</strong>
+                </div>
+                <p class="error-copy">
+                  这看起来是电子书详情页，不是 EPUB 文件。当前只支持 B 站 / YouTube 单集与合集、
+                  EPUB 直链、播客 feed；电子书详情页和 PDF 暂不支持。
+                </p>
+                <span class="error-code">intake.unsupported_link</span>
+                <div class="preview-actions">
+                  <button class="btn ghost block">重新检测</button>
+                </div>
+              </div>
+
+              <p class="privacy-note">如果你有 EPUB 文件本身，可以直接上传到 Host Console，或在 App 里粘贴可下载的 EPUB 直链。</p>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">失败原因要具体到“详情页 / PDF / 平台不支持”，并给可操作的下一步。</p>
+      </div>
+
+      <!-- A8 已加入 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>A8 · 合集已加入</strong><span>处理进度与入口</span></p>
+        <div class="phone" data-shot="add-result">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>添加</h1>
+          </div>
+          <div class="screen-body add-screen">
+            <div class="panel result-card">
+              <div class="result-head">
+                <span class="result-mark"><svg class="icon"><use href="#i-check"/></svg></span>
+                <div><strong>合集已加入</strong><span>12 集已创建，Host 会按顺序处理</span></div>
+              </div>
+              <div class="result-title">从零开始做个人知识库</div>
+              <div class="result-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="result-progress">
+                <div class="row between"><span>3 已完成 · 2 处理中 · 7 排队</span><span class="tabular">25%</span></div>
+                <div class="progress thick"><span style="width:25%"></span></div>
+              </div>
+              <div class="notice success mt10">
+                <svg class="icon"><use href="#i-check-circle"/></svg>
+                <span>1 集已在库中，已并入合集并保留进度；1 集因归属其他合集已跳过。</span>
+              </div>
+              <div class="result-actions">
+                <button class="btn primary">打开合集</button>
+                <button class="btn ghost">继续添加</button>
+              </div>
+              <p class="preview-footnote">可以离开此页，Host 会继续处理；失败的单集可以在合集详情单独重试。</p>
+            </div>
+
+            <div class="support-card mt12">
+              <div class="support-row">
+                <svg class="icon"><use href="#i-link"/></svg>
+                <div class="support-body"><strong>继续添加</strong><span>粘贴下一条视频、合集、EPUB 直链或播客 feed</span></div>
+              </div>
+            </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn active"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">结果卡给出整体进度、冲突/并入结果和“打开合集”；不逼用户停在添加页等待。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <section class="gallery-section">
+    <h2>Library · 合集卡片</h2>
+    <p class="section-note">
+      合集在主列表只占一张卡片，子集不混入队列；筛选把合集当整体——任一子集命中就显示合集。
+      “8 条内容”按可见条目计数，合集算 1 条。
+    </p>
+    <div class="gallery-grid">
+
+      <!-- L1 全部 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>L1 · 全部</strong><span>合集 + 独立单集混排</span></p>
+        <div class="phone" data-shot="library-all">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="library-scroll">
+          <div class="lib-head">
+            <div>
+              <div class="brand-row"><h1>拾藏</h1><span>TROVE</span></div>
+              <div class="lib-sub">8 条内容 · 3 个合集</div>
+            </div>
+            <div class="lib-actions">
+              <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </div>
+          <div class="sync-strip"><svg class="icon"><use href="#i-check"/></svg><span>已同步</span><span class="spacer"></span><svg class="icon"><use href="#i-refresh"/></svg></div>
+
+          <div class="continue-strip">
+            <div class="cover vermilion s44"><span>记</span></div>
+            <div class="continue-body"><div class="continue-title">记忆是智能体的瓶颈</div><div class="continue-meta">42% · 继续听</div></div>
+            <svg class="icon"><use href="#i-play"/></svg>
+          </div>
+
+          <div class="filters-row">
+            <span class="chip active">全部</span>
+            <span class="chip">进行中</span>
+            <span class="chip">处理中</span>
+            <span class="chip">已完成</span>
+            <span class="chip">筛选</span>
+          </div>
+
+          <div class="library-list">
+            <div class="collection-card">
+              <div class="cover green s52"><span>合</span></div>
+              <div class="collection-body">
+                <div class="collection-title-row">
+                  <span class="collection-title">从零开始做个人知识库</span>
+                  <span class="pill accent">合集</span>
+                </div>
+                <div class="collection-meta">Bilibili · 老周 · 12 集</div>
+                <div class="collection-status bad">3 处理中 · 2 失败</div>
+                <div class="collection-progress">
+                  <div class="progress"><span style="width:25%"></span></div>
+                  <div class="collection-progress-meta"><span>已听 2/12</span><span>3/12 完成</span></div>
+                </div>
+              </div>
+              <button class="collection-open" aria-label="打开合集"><svg class="icon"><use href="#i-chevron-right"/></svg></button>
+            </div>
+
+            <div class="item-row">
+              <div class="cover green s52"><span>注</span></div>
+              <div class="item-body">
+                <div class="item-title">The Art of Noticing</div>
+                <div class="item-meta">Rob Walker · EPUB</div>
+                <div class="item-state">18% 已读</div>
+              </div>
+              <button class="item-play" aria-label="阅读"><svg class="icon"><use href="#i-book"/></svg></button>
+            </div>
+
+            <div class="item-row">
+              <div class="cover vermilion s52"><span>记</span></div>
+              <div class="item-body">
+                <div class="item-title">记忆是智能体的瓶颈</div>
+                <div class="item-meta">张三 · 小宇宙 · 1 小时 12 分</div>
+                <div class="item-state good">42% 已听</div>
+              </div>
+              <button class="item-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button>
+            </div>
+
+            <div class="item-row">
+              <div class="cover ink s52"><span>本</span></div>
+              <div class="item-body">
+                <div class="item-title">本地优先软件的三个误解</div>
+                <div class="item-meta">陈七 · YouTube · 35 分钟</div>
+                <div class="item-state">未开始</div>
+              </div>
+              <button class="item-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button>
+            </div>
+          </div>
+          </div>
+          <nav class="bottom-nav">
+            <button class="nav-btn active"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">合集卡片的“已听 2/12”和“3/12 完成”分别表达消费进度与处理进度，不混为一谈。</p>
+      </div>
+
+      <!-- L2 处理中筛选 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>L2 · “处理中”筛选</strong><span>合集整体匹配</span></p>
+        <div class="phone" data-shot="library-processing">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="library-scroll">
+          <div class="lib-head">
+            <div>
+              <div class="brand-row"><h1>拾藏</h1><span>TROVE</span></div>
+              <div class="lib-sub">3 条内容 · 3 个合集</div>
+            </div>
+            <div class="lib-actions">
+              <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </div>
+          <div class="sync-strip"><svg class="icon"><use href="#i-check"/></svg><span>已同步</span><span class="spacer"></span><svg class="icon"><use href="#i-refresh"/></svg></div>
+
+          <div class="filters-row">
+            <span class="chip">全部</span>
+            <span class="chip">进行中</span>
+            <span class="chip active">处理中</span>
+            <span class="chip">已完成</span>
+            <span class="chip">筛选</span>
+          </div>
+
+          <div class="library-list">
+            <div class="collection-card">
+              <div class="cover green s52"><span>合</span></div>
+              <div class="collection-body">
+                <div class="collection-title-row"><span class="collection-title">从零开始做个人知识库</span><span class="pill accent">合集</span></div>
+                <div class="collection-meta">Bilibili · 老周 · 12 集</div>
+                <div class="collection-status cooking">3 集处理中 · 2 集失败</div>
+                <div class="collection-progress">
+                  <div class="progress"><span style="width:25%"></span></div>
+                  <div class="collection-progress-meta"><span>排队 7 集</span><span>3/12 完成</span></div>
+                </div>
+              </div>
+              <button class="collection-open" aria-label="打开合集"><svg class="icon"><use href="#i-chevron-right"/></svg></button>
+            </div>
+
+            <div class="item-row">
+              <div class="cover blue s52"><span>短</span></div>
+              <div class="item-body">
+                <div class="item-title">为什么我们总是高估短期</div>
+                <div class="item-meta">王五 · YouTube · 42 分钟</div>
+                <div class="item-state bad">转写失败：网络中断</div>
+              </div>
+              <button class="item-play disabled" aria-label="处理失败"><svg class="icon"><use href="#i-alert"/></svg></button>
+            </div>
+
+            <div class="item-row">
+              <div class="cover clay s52"><span>AI</span></div>
+              <div class="item-body">
+                <div class="item-title">AI 产品经理的 2026 观察</div>
+                <div class="item-meta">李四 · Bilibili · 28 分钟</div>
+                <div class="item-state cooking">转写中 · 62%</div>
+              </div>
+              <button class="item-play disabled" aria-label="处理中"><svg class="icon"><use href="#i-headphones"/></svg></button>
+            </div>
+          </div>
+          </div>
+
+          <nav class="bottom-nav">
+            <button class="nav-btn active"><svg class="icon"><use href="#i-list"/></svg><span>资料库</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-search"/></svg><span>搜索</span></button>
+            <button class="nav-btn"><svg class="icon"><use href="#i-plus"/></svg><span>添加</span></button>
+          </nav>
+        </div>
+        <p class="frame-note">“处理中”不是只看合集本身，而是任一子集处于处理中/失败；这样失败的单集不会被筛掉。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <section class="gallery-section">
+    <h2>合集详情 · 单集列表</h2>
+    <p class="section-note">
+      点合集卡片进入。单集是完整的 Item，可播放/阅读、单独重试、单独下载；
+      不做“播放全部/自动下一集”，避免引入 Up Next。
+    </p>
+    <div class="gallery-grid">
+
+      <!-- D1 处理中 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>D1 · 处理中 + 部分失败</strong><span>整体进度与单集状态</span></p>
+        <div class="phone" data-shot="collection-processing">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>合集</h1>
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="detail-scroll">
+          <div class="detail-hero">
+            <div class="cover green s88"><span>合</span></div>
+            <div>
+              <div class="detail-title">从零开始做个人知识库</div>
+              <div class="detail-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="detail-status"><span class="pill gold">3 处理中</span><span class="pill danger">2 失败</span><span class="pill green">3 完成</span><span class="pill">4 排队</span></div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+          </div>
+
+          <div class="detail-warning">
+            <div class="notice danger">
+              <svg class="icon"><use href="#i-alert"/></svg>
+              <span>2 集处理失败，不影响其他集；可以单独重试，已完成内容不受影响。</span>
+            </div>
+          </div>
+
+          <div class="episode-head"><h2>单集</h2><span>按上游顺序 · 3/12 完成</span></div>
+          <div class="episode-list">
+            <div class="episode-row">
+              <span class="ep-index">01</span>
+              <div class="cover blue s44"><span>为</span></div>
+              <div class="ep-body"><div class="ep-name">为什么要做个人知识库</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>28:14</span><span>·</span><span>已听 80%</span></div><div class="progress ep-inline-progress"><span style="width:80%"></span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button><span class="ep-download"><svg class="icon"><use href="#i-download"/></svg></span></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">02</span>
+              <div class="cover clay s44"><span>选</span></div>
+              <div class="ep-body"><div class="ep-name">选择你的第一个容器</div><div class="ep-meta"><span class="ep-state processing">转写中 62%</span><span>35:02</span></div><div class="progress ep-inline-progress"><span style="width:62%"></span></div></div>
+              <div class="ep-action"><button class="ep-play disabled" aria-label="处理中"><svg class="icon"><use href="#i-headphones"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">03</span>
+              <div class="cover green s44"><span>采</span></div>
+              <div class="ep-body"><div class="ep-name">采集：从链接到内容包</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>41:37</span><span>·</span><span>未开始</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">04</span>
+              <div class="cover gold s44"><span>整</span></div>
+              <div class="ep-body"><div class="ep-name">整理：Tag 和摘要</div><div class="ep-meta"><span class="ep-state failed">转写失败</span><span>33:18</span></div></div>
+              <div class="ep-action"><button class="text-btn danger">重试</button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">05</span>
+              <div class="cover ink s44"><span>检</span></div>
+              <div class="ep-body"><div class="ep-name">检索：两字中文词</div><div class="ep-meta"><span class="ep-state queued">排队中</span><span>26:45</span></div></div>
+              <div class="ep-action"><button class="ep-play disabled" aria-label="排队中"><svg class="icon"><use href="#i-clock"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">06</span>
+              <div class="cover vermilion s44"><span>复</span></div>
+              <div class="ep-body"><div class="ep-name">复习：让库开始工作</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>38:20</span><span>·</span><span>已听完</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="ep-more">还有 6 集 · 向下滚动</div>
+          </div>
+          </div>
+        </div>
+        <p class="frame-note">失败单集给出具体原因和“重试”；处理中的单集不可播放，排队中的显示时钟。</p>
+      </div>
+
+      <!-- D2 完成 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>D2 · 全部完成</strong><span>消费进度 + 下载状态</span></p>
+        <div class="phone" data-shot="collection-complete">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>合集</h1>
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="detail-scroll">
+          <div class="detail-hero">
+            <div class="cover green s88"><span>合</span></div>
+            <div>
+              <div class="detail-title">从零开始做个人知识库</div>
+              <div class="detail-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="detail-status"><span class="pill green">12 集已完成</span><span class="pill">已听 4/12</span></div>
+              <div class="detail-progress"><div class="progress green"><span style="width:100%"></span></div><div class="detail-progress-meta"><span>处理完成</span><span>100%</span></div></div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>刷新状态</button>
+          </div>
+
+          <div class="episode-head"><h2>单集</h2><span>12 集 · 按上游顺序</span></div>
+          <div class="episode-list">
+            <div class="episode-row">
+              <span class="ep-index">01</span>
+              <div class="cover blue s44"><span>为</span></div>
+              <div class="ep-body"><div class="ep-name">为什么要做个人知识库</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>28:14</span><span>·</span><span>已听完</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button><span class="ep-download"><svg class="icon"><use href="#i-download"/></svg></span></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">02</span>
+              <div class="cover clay s44"><span>选</span></div>
+              <div class="ep-body"><div class="ep-name">选择你的第一个容器</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>35:02</span><span>·</span><span>已听 64%</span></div><div class="progress ep-inline-progress"><span style="width:64%"></span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button><span class="ep-download"><svg class="icon"><use href="#i-download"/></svg></span></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">03</span>
+              <div class="cover green s44"><span>采</span></div>
+              <div class="ep-body"><div class="ep-name">采集：从链接到内容包</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>41:37</span><span>·</span><span>已听完</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button><span class="ep-download"><svg class="icon"><use href="#i-download"/></svg></span></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">04</span>
+              <div class="cover gold s44"><span>整</span></div>
+              <div class="ep-body"><div class="ep-name">整理：Tag 和摘要</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>33:18</span><span>·</span><span>已听 20%</span></div><div class="progress ep-inline-progress"><span style="width:20%"></span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">05</span>
+              <div class="cover ink s44"><span>检</span></div>
+              <div class="ep-body"><div class="ep-name">检索：两字中文词</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>26:45</span><span>·</span><span>未开始</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">06</span>
+              <div class="cover vermilion s44"><span>复</span></div>
+              <div class="ep-body"><div class="ep-name">复习：让库开始工作</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>38:20</span><span>·</span><span>未开始</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="ep-more">还有 6 集 · 向下滚动</div>
+          </div>
+          </div>
+        </div>
+        <p class="frame-note">完成后不再显示“重试失败项”；下载状态只在单集右侧用小图标表达，不做合集级“下载全部”。</p>
+      </div>
+
+      <!-- D3 部分失败 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>D3 · 部分失败</strong><span>可单独重试</span></p>
+        <div class="phone" data-shot="collection-partial">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>合集</h1>
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="detail-scroll">
+          <div class="detail-hero">
+            <div class="cover green s88"><span>合</span></div>
+            <div>
+              <div class="detail-title">从零开始做个人知识库</div>
+              <div class="detail-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="detail-status"><span class="pill green">10 集完成</span><span class="pill danger">2 集失败</span></div>
+              <div class="detail-progress"><div class="progress"><span style="width:83%"></span></div><div class="detail-progress-meta"><span>处理进度</span><span>10/12</span></div></div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn danger-ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+          </div>
+
+          <div class="detail-warning">
+            <div class="notice danger">
+              <svg class="icon"><use href="#i-alert"/></svg>
+              <span>2 集失败：1 集源视频不可用，1 集转写失败。已完成的 10 集不受影响。</span>
+            </div>
+          </div>
+
+          <div class="episode-head"><h2>单集</h2><span>失败项优先显示</span></div>
+          <div class="episode-list">
+            <div class="episode-row">
+              <span class="ep-index">04</span>
+              <div class="cover gold s44"><span>整</span></div>
+              <div class="ep-body"><div class="ep-name">整理：Tag 和摘要</div><div class="ep-meta"><span class="ep-state failed">下载失败：源视频不可用</span><span>33:18</span></div></div>
+              <div class="ep-action"><button class="text-btn danger">重试</button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">09</span>
+              <div class="cover clay s44"><span>标</span></div>
+              <div class="ep-body"><div class="ep-name">标注：让内容可回看</div><div class="ep-meta"><span class="ep-state failed">转写失败：音频为空</span><span>29:40</span></div></div>
+              <div class="ep-action"><button class="text-btn danger">重试</button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">01</span>
+              <div class="cover blue s44"><span>为</span></div>
+              <div class="ep-body"><div class="ep-name">为什么要做个人知识库</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>28:14</span><span>·</span><span>已听完</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">02</span>
+              <div class="cover clay s44"><span>选</span></div>
+              <div class="ep-body"><div class="ep-name">选择你的第一个容器</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>35:02</span><span>·</span><span>已听 64%</span></div><div class="progress ep-inline-progress"><span style="width:64%"></span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">03</span>
+              <div class="cover green s44"><span>采</span></div>
+              <div class="ep-body"><div class="ep-name">采集：从链接到内容包</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>41:37</span><span>·</span><span>未开始</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="ep-more">还有 7 集 · 向下滚动</div>
+          </div>
+          </div>
+        </div>
+        <p class="frame-note">失败项置顶但保留原序号；顶部“重试失败项”是批量入口，单集也可单独重试。</p>
+      </div>
+
+      <!-- D4 更多菜单 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>D4 · 更多菜单</strong><span>删除入口</span></p>
+        <div class="phone" data-shot="collection-menu">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>合集</h1>
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="detail-scroll">
+          <div class="detail-hero">
+            <div class="cover green s88"><span>合</span></div>
+            <div>
+              <div class="detail-title">从零开始做个人知识库</div>
+              <div class="detail-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="detail-status"><span class="pill green">10 集完成</span><span class="pill danger">2 集失败</span></div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+          </div>
+
+          <div class="episode-head"><h2>单集</h2><span>12 集 · 按上游顺序</span></div>
+          <div class="episode-list">
+            <div class="episode-row">
+              <span class="ep-index">01</span>
+              <div class="cover blue s44"><span>为</span></div>
+              <div class="ep-body"><div class="ep-name">为什么要做个人知识库</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>28:14</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">02</span>
+              <div class="cover clay s44"><span>选</span></div>
+              <div class="ep-body"><div class="ep-name">选择你的第一个容器</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>35:02</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+          </div>
+          </div>
+
+          <div class="more-menu">
+            <button class="danger">删除合集</button>
+          </div>
+        </div>
+        <p class="frame-note">删除入口放在右上角“更多”菜单，避免正常浏览时出现高风险的 destructive 按钮。</p>
+      </div>
+
+      <!-- D5 删除对话框 -->
+      <div class="frame-card">
+        <p class="frame-label"><strong>D5 · 删除合集</strong><span>两种语义</span></p>
+        <div class="phone" data-shot="collection-delete">
+          <div class="statusbar"><span>9:41</span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+          <div class="appbar">
+            <button class="icon-btn" aria-label="返回"><svg class="icon"><use href="#i-back"/></svg></button>
+            <h1>合集</h1>
+            <span class="spacer"></span>
+            <button class="icon-btn" aria-label="更多"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+
+          <div class="detail-scroll">
+          <div class="detail-hero">
+            <div class="cover green s88"><span>合</span></div>
+            <div>
+              <div class="detail-title">从零开始做个人知识库</div>
+              <div class="detail-meta">Bilibili · 老周 · 12 集 · 约 6 小时 20 分</div>
+              <div class="detail-status"><span class="pill green">10 集完成</span><span class="pill danger">2 集失败</span></div>
+            </div>
+          </div>
+
+          <div class="detail-actions">
+            <button class="btn ghost"><svg class="icon"><use href="#i-refresh"/></svg>重试失败项</button>
+          </div>
+
+          <div class="episode-head"><h2>单集</h2><span>12 集 · 按上游顺序</span></div>
+          <div class="episode-list">
+            <div class="episode-row">
+              <span class="ep-index">01</span>
+              <div class="cover blue s44"><span>为</span></div>
+              <div class="ep-body"><div class="ep-name">为什么要做个人知识库</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>28:14</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+            <div class="episode-row">
+              <span class="ep-index">02</span>
+              <div class="cover clay s44"><span>选</span></div>
+              <div class="ep-body"><div class="ep-name">选择你的第一个容器</div><div class="ep-meta"><span class="ep-state done">已完成</span><span>35:02</span></div></div>
+              <div class="ep-action"><button class="ep-play" aria-label="播放"><svg class="icon"><use href="#i-play"/></svg></button></div>
+            </div>
+          </div>
+          </div>
+
+          <div class="dialog-scrim">
+            <div class="dialog" role="dialog" aria-modal="true" aria-label="删除合集">
+              <h2>删除合集？</h2>
+              <p class="dialog-copy">「从零开始做个人知识库」包含 12 集，其中 3 集已下载到手机。</p>
+              <button class="dialog-option danger">
+                <strong>删除合集及全部 12 集</strong>
+                <span>会从 Host 和手机移除，无法撤销。</span>
+              </button>
+              <button class="dialog-option">
+                <strong>仅移除合集分组，保留 12 集</strong>
+                <span>单集会作为独立内容留在 Library，进度和文件不变。</span>
+              </button>
+              <button class="dialog-cancel">取消</button>
+            </div>
+          </div>
+        </div>
+        <p class="frame-note">默认/显眼的 destructive 项写清“12 集”；第二个选项保留内容但拆分组，避免误删。</p>
+      </div>
+
+    </div>
+  </section>
+
+  <p class="frame-note" style="max-width: 900px; margin-top: 34px; font-size: 11px;">
+    原型说明：所有数据均为占位；视觉沿用 paper/ink/accent 与宋体标题。真实实现会复用
+    <code>ui/theme/Theme.kt</code> 与 <code>ui/components/</code>，不新增第二套设计语言。
+  </p>
+</main>
+</body>
+</html>

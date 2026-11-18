@@ -24,6 +24,8 @@ DEFAULT_MAX_AUDIO_BYTES = 500 * MB
 DEFAULT_MAX_EPUB_BYTES = 100 * MB
 DEFAULT_MAX_FEED_BYTES = 10 * MB
 DEFAULT_MAX_PODCAST_MEDIA_BYTES = GB
+DEFAULT_MAX_COLLECTION_ITEMS = 100
+DEFAULT_MAX_COLLECTION_DURATION_SEC = 100 * 60 * 60
 DEFAULT_ASR_MODEL = "mlx-community/whisper-large-v3-turbo"
 DEFAULT_LLM_MODEL = "deepseek-flash"
 DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
@@ -59,6 +61,8 @@ class Config:
     max_epub_bytes: int = DEFAULT_MAX_EPUB_BYTES
     max_feed_bytes: int = DEFAULT_MAX_FEED_BYTES
     max_podcast_media_bytes: int = DEFAULT_MAX_PODCAST_MEDIA_BYTES
+    max_collection_items: int = DEFAULT_MAX_COLLECTION_ITEMS
+    max_collection_duration_sec: int = DEFAULT_MAX_COLLECTION_DURATION_SEC
     llm_enabled: bool = True
     llm_model: str = DEFAULT_LLM_MODEL
     llm_base_url: str = DEFAULT_LLM_BASE_URL
@@ -289,6 +293,15 @@ def load_config(home: Path | str | None = None) -> Config:
         ),
         max_podcast_media_bytes=int(
             os.environ.get("TROVE_MAX_PODCAST_BYTES", str(DEFAULT_MAX_PODCAST_MEDIA_BYTES))
+        ),
+        max_collection_items=int(
+            os.environ.get("TROVE_MAX_COLLECTION_ITEMS", str(DEFAULT_MAX_COLLECTION_ITEMS))
+        ),
+        max_collection_duration_sec=int(
+            os.environ.get(
+                "TROVE_MAX_COLLECTION_DURATION_SEC",
+                str(DEFAULT_MAX_COLLECTION_DURATION_SEC),
+            )
         ),
         llm_enabled=os.environ.get("TROVE_LLM_ENABLED", "true").lower() not in {"0", "false", "no"},
         asr_model=os.environ.get("TROVE_ASR_MODEL", DEFAULT_ASR_MODEL),

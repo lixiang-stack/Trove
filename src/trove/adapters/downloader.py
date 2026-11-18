@@ -31,6 +31,8 @@ class DefaultDownloader:
     def download(self, source: SourceDocument, context: StageContext) -> DownloadResult:
         if source.source_type == SourceType.PODCAST_EPISODE:
             return self._download_podcast(source, context)
+        if source.source_type == SourceType.EPUB_URL:
+            return self._download_epub(source, context)
         return self._download_video(source, context)
 
     # ------------------------------------------------------------------
@@ -82,6 +84,38 @@ class DefaultDownloader:
             published_at=_upload_date(metadata.get("upload_date")),
             duration_sec=_float(metadata.get("duration")),
             language=_string(metadata.get("language")),
+        )
+
+    # ------------------------------------------------------------------
+    # EPUB URL
+    # ------------------------------------------------------------------
+    def _download_epub(
+        self, source: SourceDocument, context: StageContext
+    ) -> DownloadResult:
+        url = source.source_url_canonical or source.source_url_raw or ""
+        if not url:
+            raise ProcessingError("ebook.not_found", "EPUB URL is missing")
+        destination = context.work_dir / "source.epub"
+        try:
+            content_type, _ = self.http.download_to_file(
+                url,
+                destination,
+                max_bytes=self.config.max_epub_bytes,
+            )
+        except SafeHttpError as exc:
+            code = exc.code if exc.code.startswith(("ebook.", "download.")) else "ebook.not_found"
+            raise ProcessingError(code, exc.message) from exc
+        if content_type in {
+            "text/html",
+            "application/xhtml+xml",
+        }:
+            raise ProcessingError(
+                "ebook.invalid_type",
+                "The link points to an HTML page, not an EPUB file",
+            )
+        return DownloadResult(
+            path=destination,
+            title=source.title or "Untitled book",
         )
 
     # ------------------------------------------------------------------

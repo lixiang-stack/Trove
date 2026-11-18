@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Trove · 合集与电子书 · 原型</title>
+<link rel="stylesheet" href="shared.css">
+<style>
+  .proto-index { width: min(980px, calc(100% - 48px)); margin: 0 auto; padding: 56px 0 90px; }
+  .proto-index h1 { font-size: clamp(30px, 4vw, 46px); line-height: 1.1; margin-bottom: 10px; }
+  .proto-index .lede { max-width: 700px; color: var(--muted); font-size: 14px; line-height: 1.75; }
+  .proto-index .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 28px; }
+  .proto-index .card {
+    display: block; padding: 22px; border: 1px solid var(--line); border-radius: 20px;
+    background: rgba(251,248,242,.82); color: var(--ink);
+  }
+  .proto-index .card:hover { border-color: #c9b8a6; background: var(--paper-2); }
+  .proto-index .card .eyebrow { margin-bottom: 6px; }
+  .proto-index .card h2 { font-size: 24px; margin-bottom: 6px; }
+  .proto-index .card p { color: var(--muted); font-size: 12px; line-height: 1.65; }
+  .proto-index .card .pill { margin-top: 12px; }
+  .proto-index .checklist { margin-top: 34px; padding: 20px 22px; border: 1px solid var(--line); border-radius: 18px; background: var(--paper-2); }
+  .proto-index .checklist h2 { font-size: 18px; margin-bottom: 10px; }
+  .proto-index .checklist ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; line-height: 1.8; }
+  .proto-index .checklist li strong { color: var(--ink); }
+  .proto-index .back { display: inline-flex; align-items: center; gap: 6px; margin-top: 28px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body class="prototype">
+<main class="proto-index">
+  <p class="eyebrow">PROTOTYPE · REVIEW ONLY</p>
+  <h1>合集与电子书</h1>
+  <p class="lede">
+    这是按已确认共识稿出的静态原型，用于确认页面结构与交互，不接后端、不写生产代码。
+    请先看 Android 的添加页 / Library / 合集详情，再看 Host Console 的统一链接面板、合集列表和只读详情。
+  </p>
+
+  <div class="cards">
+    <a class="card" href="android.html">
+      <p class="eyebrow">ANDROID · 390 × 844</p>
+      <h2>Android 原型</h2>
+      <p>添加页 8 个状态、Library 合集卡片与筛选、合集详情 4 个状态、更多菜单、删除合集对话框。</p>
+      <span class="pill accent">先看这个</span>
+    </a>
+    <a class="card" href="host-console.html">
+      <p class="eyebrow">HOST CONSOLE · 1280 × 900</p>
+      <h2>Host Console 原型</h2>
+      <p>统一链接面板、合集/电子书预览、Library 合集入口、合集列表、只读详情与删除。</p>
+      <span class="pill">与 App 同语义</span>
+    </a>
+  </div>
+
+  <section class="checklist">
+    <h2>请重点确认</h2>
+    <ul>
+      <li><strong>添加页：</strong>单链接自动识别是否清楚；“识别为单集 / 合集 / 电子书 / 播客 feed”的卡片信息是否足够。</li>
+      <li><strong>合集预览：</strong>集数、总时长、已在库、上游移除、全部处理的提示是否足够让用户判断规模。</li>
+      <li><strong>Library：</strong>合集只占一张卡片、子集不混入主列表；筛选把合集当整体。</li>
+      <li><strong>合集详情：</strong>不做播放全部；单集播放/阅读、重试失败项、下载状态是否好理解。</li>
+      <li><strong>删除：</strong>“删除合集及全部单集”与“仅移除分组”两种选择是否安全、文案是否清楚。</li>
+      <li><strong>Host Console：</strong>合集入口放在 Library 头部、独立 <code>/collections</code> 页是否符合管理习惯。</li>
+    </ul>
+  </section>
+
+  <a class="back" href="README.md">查看原型说明与截图清单 →</a>
+</main>
+</body>
+</html>

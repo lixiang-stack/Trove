@@ -5,7 +5,8 @@ from typing import Annotated
 from fastapi import APIRouter, File, Form, Request, UploadFile
 from fastapi.responses import RedirectResponse
 
-from trove.errors import TroveError
+from trove.domain.links import LinkKind
+from trove.errors import TroveError, ValidationError
 from trove.web.deps import add_context, render, runtime
 
 router = APIRouter()
@@ -14,6 +15,79 @@ router = APIRouter()
 @router.get("/add", include_in_schema=False)
 def add_page(request: Request):
     return render(request, "add.html", add_context())
+
+
+@router.post("/add/link/preview", include_in_schema=False)
+def preview_link(request: Request, url: Annotated[str, Form()]):
+    app_runtime = runtime(request)
+    try:
+        inspection = app_runtime.inspect.inspect(url)
+    except TroveError as exc:
+        if request.headers.get("HX-Request") == "true":
+            return render(
+                request,
+                "link_preview.html",
+                {"link_error": exc.message, "url": url},
+                status_code=exc.status_code,
+            )
+        return render(
+            request,
+            "add.html",
+            add_context(link_error=exc.message, link_url=url),
+            status_code=exc.status_code,
+        )
+    if request.headers.get("HX-Request") == "true":
+        return render(
+            request,
+            "link_preview.html",
+            {"inspection": inspection, "url": url},
+        )
+    return render(
+        request,
+        "add.html",
+        add_context(inspection=inspection, link_url=url),
+    )
+
+
+@router.post("/add/link", include_in_schema=False)
+def add_link(request: Request, url: Annotated[str, Form()]):
+    app_runtime = runtime(request)
+    try:
+        inspection = app_runtime.inspect.inspect(url)
+        if inspection.kind == LinkKind.VIDEO:
+            bundle, _ = app_runtime.intake.add_video_url(inspection.canonical_url)
+            return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
+        if inspection.kind == LinkKind.EBOOK:
+            bundle, _ = app_runtime.intake.add_epub_url(
+                url, canonical_url=inspection.canonical_url
+            )
+            return RedirectResponse(f"/items/{bundle.item.id}", status_code=303)
+        if inspection.kind == LinkKind.COLLECTION:
+            result = app_runtime.intake.add_collection(inspection)
+            return RedirectResponse(
+                f"/collections/{result.collection.collection.id}", status_code=303
+            )
+        if inspection.kind == LinkKind.PODCAST_FEED:
+            return render(
+                request,
+                "add.html",
+                add_context(
+                    inspection=inspection,
+                    link_url=url,
+                    link_error="请选择一集播客入库。",
+                ),
+            )
+        raise ValidationError(
+            "Please choose one episode from the podcast feed",
+            details={"code": "feed.select_episode"},
+        )
+    except TroveError as exc:
+        return render(
+            request,
+            "add.html",
+            add_context(link_error=exc.message, link_url=url),
+            status_code=exc.status_code,
+        )
 
 
 @router.post("/add/url", include_in_schema=False)

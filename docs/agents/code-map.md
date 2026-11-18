@@ -31,7 +31,7 @@ android/
 ```text
 src/trove/web/
 ├── routes.py      # router assembly only
-├── html/          # Host Console HTML: library, items, add, export, auth
+├── html/          # Host Console HTML: library, items, add, collections, export, auth
 ├── shell.py       # Consumer Web Shell HTML: listen, read, continue, transcript
 ├── api/           # JSON API by resource
 ├── schemas.py     # request models
@@ -52,6 +52,9 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 |---|---|
 | New HTML page or form action | `web/html/` (Host Console) or `web/shell.py` (consumption) |
 | New JSON endpoint | `web/api/<resource>.py` |
+| Link classification / inspection | `domain/urls.py` + `domain/links.py` + `services/inspect.py` + `adapters/video_inspect.py` |
+| Collection aggregate / membership | `services/collections.py` + `db/models.py` (Collection, Item.collection_*) |
+| EPUB URL intake | `domain/items.py` (`EPUB_URL`) + `adapters/downloader.py` + `services/intake.py` |
 | Business workflow / transaction | `services/` |
 | Pure rule / value object | `domain/` |
 | External system | `ports.py` + `adapters/` |

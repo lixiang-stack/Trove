@@ -5,8 +5,16 @@ Trove is a personal long-content library: audio is the primary way to consume, t
 ## Content
 
 **Item**:
-One consumable content unit: a video, a podcast episode, or a book. In the MVP, one ingested URL produces at most one Item; playlist and multi-part URLs are rejected.
+One consumable content unit: a video, a podcast episode, or a book. One ingested URL produces one Item, except a Collection URL, which produces one Item per episode. Each Item remains independently playable, readable, downloadable, and consumable.
 _Avoid_: Content, file, media
+
+**Collection**:
+A named group of video Items that originate from one upstream collection or playlist (Bilibili multi-part/collection/series, YouTube playlist). A Collection is not consumable itself; its episodes are Items. It carries the group's title, platform, source URL, and episode order. A Collection has no Processing Run of its own; its status is derived from its episodes.
+_Avoid_: Playlist (implementation-level), album, folder, series
+
+**Collection Episode**:
+An Item that belongs to a Collection. It keeps its own Processing State, Consumption State, artifacts, and download state; removing the Collection grouping does not delete the episode.
+_Avoid_: Part, track
 
 **Source**:
 The origin of an Item: an original URL, platform, or local file path.

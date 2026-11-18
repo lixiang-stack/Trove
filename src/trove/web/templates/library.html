@@ -9,6 +9,7 @@
     <p class="subtitle">{{ items|length }} 条内容{% if inbox %} · Inbox{% endif %}</p>
   </div>
   <div class="library-actions">
+    <a href="/collections" class="secondary" hx-get="/collections" hx-target="#main" hx-select="#main" hx-push-url="true">合集 {{ collection_count }}</a>
     <form id="export-form" method="get" action="/export" class="inline-form">
       <input type="hidden" name="ids" value="">
       <button type="button" class="secondary" data-export-select-all>全选</button>

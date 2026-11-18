@@ -6,7 +6,7 @@
     <div>
       <p class="eyebrow">INTAKE</p>
       <h1>添加内容</h1>
-      <p class="subtitle">链接、本地文件、EPUB 或播客单集。</p>
+      <p class="subtitle">粘贴链接自动识别单集、合集、电子书或播客；也可以上传本地文件。</p>
     </div>
   </header>
 
@@ -14,18 +14,27 @@
   <div class="alert alert-error" role="alert">{{ error }}</div>
   {% endif %}
 
-  <div class="add-grid">
-    <section class="panel">
-      <h2>视频链接</h2>
-      <form method="post" action="/add/url" class="stack-form">
-        <label>B 站 / YouTube 单条视频 URL
-          <input name="url" type="url" required placeholder="https://www.youtube.com/watch?v=...">
-        </label>
-        <p class="hint">播放列表、直播链接会被拒绝；B 站多 P 请保留 ?p= 分 P 参数。</p>
-        <button type="submit">添加到处理队列</button>
-      </form>
-    </section>
+  <section class="panel link-panel">
+    <div class="link-panel-head">
+      <h2>链接</h2>
+      <span class="badge">自动识别</span>
+    </div>
+    <form method="post" action="/add/link/preview"
+          hx-post="/add/link/preview" hx-target="#link-preview" hx-swap="innerHTML"
+          class="link-form">
+      <label>B 站 / YouTube 视频或合集、EPUB 直链、播客 feed
+        <input name="url" type="url" required value="{{ link_url or '' }}"
+               placeholder="https://www.youtube.com/watch?v=... 或 https://example.com/book.epub">
+      </label>
+      <button type="submit">识别链接</button>
+    </form>
+    <p class="hint">检测只读取元数据，不会立即下载；确认后才创建 Item 或合集。</p>
+    <div id="link-preview">
+      {% include "link_preview.html" %}
+    </div>
+  </section>
 
+  <div class="add-grid">
     <section class="panel">
       <h2>本地路径</h2>
       <form method="post" action="/add/path" class="stack-form">
@@ -43,24 +52,10 @@
         <label>音频 / 视频 / EPUB
           <input id="upload-input" name="file" type="file" accept="audio/*,video/*,.epub" required>
         </label>
-        <button type="submit">上传并处理</button>
-        <progress id="upload-progress" max="100" value="0" hidden></progress>
         <p class="hint" id="upload-note">视频最大 4 GB，音频 500 MB，EPUB 100 MB。</p>
+        <progress id="upload-progress" max="100" value="0" hidden></progress>
+        <button type="submit">上传并处理</button>
       </form>
-    </section>
-
-    <section class="panel">
-      <h2>播客 feed</h2>
-      <form method="post" action="/add/feed/preview"
-            hx-post="/add/feed/preview" hx-target="#feed-preview" hx-swap="innerHTML" class="stack-form">
-        <label>RSS feed URL
-          <input name="feed_url" type="url" required placeholder="https://example.com/feed.xml">
-        </label>
-        <button type="submit">预览最近单集</button>
-      </form>
-      <div id="feed-preview">
-        {% include "feed_preview.html" %}
-      </div>
     </section>
   </div>
 

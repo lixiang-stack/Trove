@@ -9,6 +9,7 @@ class SourceType(StrEnum):
     LOCAL_AUDIO = "local_audio"
     LOCAL_VIDEO = "local_video"
     EPUB = "epub"
+    EPUB_URL = "epub_url"
 
 
 class Platform(StrEnum):
@@ -16,6 +17,7 @@ class Platform(StrEnum):
     YOUTUBE = "youtube"
     PODCAST = "podcast"
     LOCAL = "local"
+    WEB = "web"
 
 
 class ConsumptionState(StrEnum):
@@ -112,6 +114,12 @@ STAGES_BY_SOURCE: dict[str, tuple[str, ...]] = {
         STAGE_ORGANIZING,
         STAGE_INDEXING,
     ),
+    SourceType.EPUB_URL: (
+        STAGE_DOWNLOADING,
+        STAGE_EXTRACTING_TEXT,
+        STAGE_ORGANIZING,
+        STAGE_INDEXING,
+    ),
 }
 
 STAGE_LABELS = {
@@ -133,6 +141,7 @@ SOURCE_TYPE_LABELS: dict[str, str] = {
     SourceType.LOCAL_AUDIO: "Audio",
     SourceType.LOCAL_VIDEO: "Video",
     SourceType.EPUB: "Book",
+    SourceType.EPUB_URL: "Book",
 }
 
 PLATFORM_LABELS: dict[str, str] = {
@@ -140,6 +149,7 @@ PLATFORM_LABELS: dict[str, str] = {
     Platform.YOUTUBE: "YouTube",
     Platform.PODCAST: "Podcast",
     Platform.LOCAL: "Local",
+    Platform.WEB: "Web",
 }
 
 CONSUMPTION_LABELS: dict[str, str] = {
@@ -175,6 +185,20 @@ ERROR_LABELS = {
         "Only reflowable EPUBs are supported; fixed-layout books cannot be imported"
     ),
     "epub.parse": "EPUB parsing failed",
+    "link.empty": "URL cannot be empty",
+    "link.scheme": "Only http/https URLs are supported",
+    "link.credentials": "URL must not contain a username or password",
+    "link.unsupported": "This link type is not supported",
+    "link.live_not_supported": "Live URLs are not supported",
+    "inspect.timeout": "Link inspection timed out",
+    "inspect.failed": "Could not inspect the link",
+    "collection.too_large": "Collection exceeds the episode or duration limit",
+    "collection.empty": "Collection has no downloadable episodes",
+    "collection.not_found": "Collection not found",
+    "collection.episode_invalid": "One or more collection episodes are invalid",
+    "ebook.invalid_type": "Link does not point to an EPUB file",
+    "ebook.too_large": "EPUB exceeds the size limit",
+    "ebook.not_found": "EPUB link could not be reached",
     "storage.error": "Failed to write the content package",
     "storage.source_missing": "Source file or package metadata is missing",
     "run.reclaimed": "Host restarted; run requeued",

@@ -21,10 +21,13 @@ from trove.ports import (
     DownloadResult,
     FeedClient,
     FeedPreview,
+    LinkProbeResult,
     OrganizationResult,
     StageContext,
     TranscriptResult,
     TranscriptSegmentData,
+    VideoEntry,
+    VideoInfo,
 )
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -53,9 +56,74 @@ def make_feed_client(http: FakeHttp | None = None) -> FeedClient:
     return PodcastFeedClient(http or FakeHttp(), max_bytes=10 * 1024 * 1024)
 
 
+class FakeLinkProbe:
+    def __init__(self) -> None:
+        self.responses: dict[str, LinkProbeResult] = {}
+        self.default: LinkProbeResult | None = None
+        self.error: SafeHttpError | None = None
+        self.urls: list[str] = []
+
+    def head(self, url: str) -> LinkProbeResult:
+        self.urls.append(url)
+        if self.error is not None:
+            raise self.error
+        if url in self.responses:
+            return self.responses[url]
+        if self.default is not None:
+            return self.default
+        raise SafeHttpError("ebook.not_found", "fake link probe has no response")
+
+
+class FakeVideoInspector:
+    def __init__(self) -> None:
+        self.singles: dict[str, VideoInfo] = {}
+        self.collections: dict[str, VideoInfo] = {}
+        self.default_single = VideoInfo(
+            is_playlist=False,
+            title="Fixture Video",
+            author="Fixture Author",
+            duration_sec=2.0,
+        )
+        self.calls: list[tuple[str, bool]] = []
+
+    def inspect(self, url: str, *, playlist: bool) -> VideoInfo:
+        self.calls.append((url, playlist))
+        if playlist and url in self.collections:
+            return self.collections[url]
+        if not playlist and url in self.singles:
+            return self.singles[url]
+        return self.default_single
+
+
+def video_collection(
+    title: str,
+    entries: list[tuple[str, str, float | None]],
+    *,
+    author: str = "Fixture Channel",
+) -> VideoInfo:
+    return VideoInfo(
+        is_playlist=True,
+        title=title,
+        author=author,
+        duration_sec=None,
+        entries=[
+            VideoEntry(title=entry_title, url=url, index=index, duration_sec=duration)
+            for index, (entry_title, url, duration) in enumerate(entries, start=1)
+        ],
+    )
+
+
 class FakeDownloader:
-    def __init__(self, fixture: Path | None = None) -> None:
+    """Copy fixtures without network.
+
+    Video titles are replaced with "Fixture Video"; browser tests that assert
+    static UI should use the no-worker ``api_host`` fixture, or assert stable
+    fields such as row counts and collection titles.
+    """
+
+    def __init__(self, fixture: Path | None = None, epub_fixture: Path | None = None) -> None:
         self.fixture = fixture or FIXTURES / "short.wav"
+        self.epub_fixture = epub_fixture or FIXTURES / "aesop.epub"
         self.calls: list[dict] = []
         self.fail_code: str | None = None
         self.started = threading.Event()
@@ -72,6 +140,10 @@ class FakeDownloader:
                     raise ProcessingCancelled("cancelled")
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake download failure")
+        if source.source_type == SourceType.EPUB_URL:
+            destination = context.work_dir / "source.epub"
+            shutil.copyfile(self.epub_fixture, destination)
+            return DownloadResult(path=destination, title=source.title or "Fixture Book")
         destination = context.work_dir / DOWNLOAD_MEDIA_FILENAME
         shutil.copyfile(self.fixture, destination)
         title = (
@@ -205,6 +277,8 @@ class FakeStack:
         self.organizer = FakeOrganizer()
         self.audio_extractor = FakeAudioExtractor()
         self.book_extractor = FakeBookExtractor()
+        self.video_inspector = FakeVideoInspector()
+        self.link_probe = FakeLinkProbe()
 
     def ports(self) -> Ports:
         return Ports(
@@ -214,6 +288,8 @@ class FakeStack:
             transcriber=self.transcriber,
             organizer=self.organizer,
             book_extractor=self.book_extractor,
+            video_inspector=self.video_inspector,
+            link_probe=self.link_probe,
         )
 
 
@@ -235,10 +311,13 @@ __all__ = [
     "FakeBookExtractor",
     "FakeDownloader",
     "FakeHttp",
+    "FakeLinkProbe",
     "FakeOrganizer",
     "FakeStack",
     "FakeTranscriber",
+    "FakeVideoInspector",
     "FeedPreview",
     "make_feed_client",
+    "video_collection",
     "wait_until",
 ]

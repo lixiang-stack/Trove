@@ -8,6 +8,11 @@ import dev.trove.core.db.TroveDatabase
 import dev.trove.core.download.DownloadManager
 import dev.trove.core.download.DownloadPreferences
 import dev.trove.core.download.DownloadSettingsStore
+import dev.trove.core.network.CollectionCreateRequestDto
+import dev.trove.core.network.CollectionCreateResponseDto
+import dev.trove.core.network.CollectionDeleteResponseDto
+import dev.trove.core.network.CollectionDto
+import dev.trove.core.network.CollectionListResponseDto
 import dev.trove.core.network.DeviceDto
 import dev.trove.core.network.DeviceListResponse
 import dev.trove.core.network.DeviceTokenResponse
@@ -17,6 +22,8 @@ import dev.trove.core.network.HealthDto
 import dev.trove.core.network.ItemCreateRequestDto
 import dev.trove.core.network.ItemCreateResponseDto
 import dev.trove.core.network.ItemDto
+import dev.trove.core.network.LinkInspectRequestDto
+import dev.trove.core.network.LinkInspectResponseDto
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.MutationItemDto
 import dev.trove.core.network.MutationResponseDto
@@ -142,6 +149,19 @@ class FakeTroveApi : TroveApi {
     var createResponse: ItemCreateResponseDto? = null
     var createError: Throwable? = null
     val createCalls = CopyOnWriteArrayList<ItemCreateRequestDto>()
+    var inspectResponse: LinkInspectResponseDto? = null
+    var inspectError: Throwable? = null
+    val inspectCalls = CopyOnWriteArrayList<String>()
+    var collectionCreateResponse: CollectionCreateResponseDto? = null
+    var collectionCreateError: Throwable? = null
+    val collectionCreateCalls = CopyOnWriteArrayList<String>()
+    var collectionResponse: CollectionDto? = null
+    var collectionError: Throwable? = null
+    var collectionDeleteError: Throwable? = null
+    val deletedCollections = CopyOnWriteArrayList<Pair<String, String>>()
+    var collectionRetryError: Throwable? = null
+    val retriedCollections = CopyOnWriteArrayList<String>()
+    var collectionsResponse = CollectionListResponseDto()
     var itemResponse: ItemDto? = null
     var itemError: Throwable? = null
     var feedResponse: FeedPreviewResponseDto = FeedPreviewResponseDto(title = "Feed")
@@ -246,6 +266,65 @@ class FakeTroveApi : TroveApi {
         itemError?.let { throw it }
         return itemResponse ?: ItemDto(id = itemId, title = "Item", processingState = "queued")
     }
+
+    override suspend fun inspectLink(body: LinkInspectRequestDto): LinkInspectResponseDto {
+        inspectError?.let { throw it }
+        inspectCalls += body.url
+        return inspectResponse ?: LinkInspectResponseDto(
+            kind = "video",
+            rawUrl = body.url,
+            canonicalUrl = body.url,
+            title = "Fixture Video",
+            platform = "youtube",
+            durationSec = 60.0,
+            episodeCount = 1,
+            totalDurationSec = 60.0,
+        )
+    }
+
+    override suspend fun createCollection(body: CollectionCreateRequestDto): CollectionCreateResponseDto {
+        collectionCreateError?.let { throw it }
+        collectionCreateCalls += body.url
+        return collectionCreateResponse ?: CollectionCreateResponseDto(
+            collection = CollectionDto(
+                id = "collection-1",
+                sourceKey = body.url,
+                platform = "youtube",
+                title = "Fixture Collection",
+                episodeCount = 2,
+            ),
+            addedCount = 2,
+            runCount = 2,
+        )
+    }
+
+    override suspend fun collection(collectionId: String): CollectionDto {
+        collectionError?.let { throw it }
+        return collectionResponse ?: CollectionDto(
+            id = collectionId,
+            sourceKey = collectionId,
+            platform = "youtube",
+            title = "Fixture Collection",
+            episodeCount = 0,
+        )
+    }
+
+    override suspend fun deleteCollection(
+        collectionId: String,
+        mode: String,
+    ): CollectionDeleteResponseDto {
+        collectionDeleteError?.let { throw it }
+        deletedCollections += collectionId to mode
+        return CollectionDeleteResponseDto(deleted = true, deletedItems = 1, mode = mode)
+    }
+
+    override suspend fun retryCollectionFailed(collectionId: String): CollectionDto {
+        collectionRetryError?.let { throw it }
+        retriedCollections += collectionId
+        return collection(collectionId)
+    }
+
+    override suspend fun collections(): CollectionListResponseDto = collectionsResponse
 
     override suspend fun previewFeed(body: FeedPreviewRequestDto): FeedPreviewResponseDto {
         feedError?.let { throw it }

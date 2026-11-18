@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}{{ collection.title }} · 合集 · 拾藏{% endblock %}
+{% block main %}
+<div class="breadcrumb">
+  <a href="/collections" hx-get="/collections" hx-target="#main" hx-select="#main" hx-push-url="true">← 合集</a>
+  <span>/</span>
+  <span>{{ collection.title }}</span>
+</div>
+
+<section class="panel collection-detail-head">
+  <div class="collection-detail-cover cover {% if collection.cover_url %}has-image{% else %}cover-{{ collection.id|cover_tone }}{% endif %}">
+    {% if collection.cover_url %}
+    <img src="{{ collection.cover_url }}" alt="">
+    {% else %}
+    <span>{{ collection.title[:1] }}</span>
+    {% endif %}
+  </div>
+  <div class="collection-detail-body">
+    <p class="eyebrow">{{ collection.platform_label }} · 视频合集</p>
+    <h1>{{ collection.title }}</h1>
+    <p class="subtitle">
+      {{ collection.author or "未知作者" }} · {{ collection.episode_count }} 集
+      {% if collection.total_duration_sec %} · 约 {{ collection.total_duration_sec|duration }}{% endif %}
+    </p>
+    <div class="queue-state">
+      {% if collection.status.processing %}
+      <span class="badge badge-processing">{{ collection.status.processing }} 处理中</span>
+      {% endif %}
+      {% if collection.status.queued %}
+      <span class="badge badge-cancelled">{{ collection.status.queued }} 排队</span>
+      {% endif %}
+      {% if collection.status.failed %}
+      <span class="badge badge-failed">{{ collection.status.failed }} 失败</span>
+      {% endif %}
+      {% if collection.status.completed %}
+      <span class="badge badge-ready">{{ collection.status.completed }} 完成</span>
+      {% endif %}
+      {% if collection.consumption.finished %}
+      <span class="consumption state-finished">已听 {{ collection.consumption.finished }}/{{ collection.episode_count }}</span>
+      {% endif %}
+    </div>
+    {% set total = collection.episode_count if collection.episode_count else 1 %}
+    <span class="progress-line"><span style="width: {{ ((collection.status.completed / total) * 100)|round(1) }}%"></span></span>
+    <p class="hint">处理进度 {{ collection.status.completed }}/{{ collection.episode_count }}</p>
+  </div>
+  <div class="collection-detail-actions">
+    {% if collection.status.failed %}
+    <form method="post" action="/collections/{{ collection.id }}/retry-failed">
+      <button type="submit" class="secondary">重试失败项</button>
+    </form>
+    {% endif %}
+    <button type="button" class="contrast" data-open-dialog="delete-collection">删除合集</button>
+  </div>
+</section>
+
+{% if collection.status.failed %}
+<div class="alert alert-error" role="status">
+  {{ collection.status.failed }} 集处理失败。失败不影响其他集，可单独重试。
+</div>
+{% endif %}
+
+<section class="panel collection-episodes">
+  <div class="section-head">
+    <h2>单集</h2>
+    <span>{{ collection.episode_count }} 集 · 按上游顺序</span>
+  </div>
+  {% if collection["items"] %}
+  <div class="episode-list">
+    {% for item in collection["items"] %}
+    <article class="episode-row">
+      <span class="episode-index">{{ "%02d"|format(item.collection_index or loop.index) }}</span>
+      <a class="cover episode-cover {% if item.cover_url %}has-image{% else %}cover-{{ item.id|cover_tone }}{% endif %}"
+         href="/items/{{ item.id }}"
+         hx-get="/items/{{ item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true"
+         aria-hidden="true" tabindex="-1">
+        {% if item.cover_url %}
+        <img src="{{ item.cover_url }}" alt="">
+        {% else %}
+        <span>{{ item.title[:1] }}</span>
+        {% endif %}
+      </a>
+      <div class="episode-body">
+        <a class="episode-title" href="/items/{{ item.id }}"
+           hx-get="/items/{{ item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">{{ item.title }}</a>
+        <div class="queue-state">
+          <span class="badge badge-{{ item.status_category }}">{{ item.processing_label }}</span>
+          <span class="consumption state-{{ item.consumption_state }}">{{ item.consumption_label }}</span>
+          {% if item.duration_sec %}<span class="duration">{{ item.duration_sec|duration }}</span>{% endif %}
+          {% if item.error_code %}<span class="error-code">{{ item.error_code }}</span>{% endif %}
+        </div>
+        {% if item.error_message %}<p class="episode-error">{{ item.error_message }}</p>{% endif %}
+        {% if item.has_audio or item.has_book %}
+        <a class="episode-open" href="/items/{{ item.id }}"
+           hx-get="/items/{{ item.id }}" hx-target="#main" hx-select="#main" hx-push-url="true">
+          {% if item.has_book %}阅读{% else %}查看 Item{% endif %}
+        </a>
+        {% endif %}
+      </div>
+      <div class="episode-actions">
+        {% if item.status_category == "failed" %}
+        <form method="post" action="/collections/{{ collection.id }}/items/{{ item.id }}/retry">
+          <button type="submit" class="secondary">重试</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="muted">这个合集还没有单集。可以重新添加合集链接，Host 会补齐新集。</p>
+  {% endif %}
+</section>
+
+<p class="hint">只读：不支持重命名、编辑 Tag 或改封面；删除和重试会同步到 App。</p>
+
+<dialog id="delete-collection" class="confirm-dialog">
+  <h2>删除合集？</h2>
+  <p>「{{ collection.title }}」包含 {{ collection.episode_count }} 集。两种操作都会立即同步到 App。</p>
+  <form method="post" action="/collections/{{ collection.id }}/delete" class="dialog-actions">
+    <button type="submit" name="mode" value="delete_items" class="contrast">
+      删除合集及全部 {{ collection.episode_count }} 集
+    </button>
+    <button type="submit" name="mode" value="ungroup" class="secondary">
+      仅移除合集分组，保留 {{ collection.episode_count }} 集
+    </button>
+    <button type="button" class="link-button" data-close-dialog>取消</button>
+  </form>
+</dialog>
+{% endblock %}

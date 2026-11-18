@@ -8,6 +8,8 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from trove.ports import LinkProbeResult
+
 MAX_REDIRECTS = 5
 USER_AGENT = "Trove/0.1 (+local personal library)"
 CHUNK_SIZE = 1024 * 1024
@@ -71,10 +73,65 @@ def _is_public_address(address: str) -> bool:
     )
 
 
+def _header_length(headers: httpx.Headers) -> int | None:
+    value = headers.get("content-length")
+    if value and value.isdigit():
+        return int(value)
+    content_range = headers.get("content-range") or ""
+    if "/" in content_range:
+        total = content_range.rsplit("/", 1)[-1]
+        if total.isdigit():
+            return int(total)
+    return None
+
+
 class SafeHttpClient:
     def __init__(self, *, timeout: float = 20.0, max_redirects: int = MAX_REDIRECTS) -> None:
         self.timeout = timeout
         self.max_redirects = max_redirects
+
+    def head(self, url: str) -> LinkProbeResult:
+        current = validate_public_url(url)
+        with httpx.Client(
+            follow_redirects=False,
+            timeout=self.timeout,
+            headers={"User-Agent": USER_AGENT},
+        ) as client:
+            for _ in range(self.max_redirects + 1):
+                try:
+                    response = client.head(current)
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise SafeHttpError(
+                                "ebook.not_found", "Redirect is missing a Location header"
+                            )
+                        current = validate_public_url(urljoin(current, location))
+                        continue
+                    if response.status_code in {405, 501}:
+                        response = self._range_probe(client, current)
+                    if response.status_code >= 400:
+                        raise SafeHttpError(
+                            "ebook.not_found",
+                            f"Request failed: HTTP {response.status_code}",
+                        )
+                    content_type = (response.headers.get("content-type") or "").split(";")[0]
+                    length = _header_length(response.headers)
+                    return LinkProbeResult(
+                        content_type=content_type or None,
+                        content_length=length,
+                        final_url=str(response.url),
+                    )
+                except httpx.HTTPError as exc:
+                    raise SafeHttpError(
+                        "ebook.not_found", f"Network request failed: {exc}"
+                    ) from exc
+            raise SafeHttpError("ebook.not_found", "Too many redirects")
+
+    @staticmethod
+    def _range_probe(client: httpx.Client, url: str) -> httpx.Response:
+        with client.stream("GET", url, headers={"Range": "bytes=0-0"}) as response:
+            return response
 
     def get_bytes(self, url: str, *, max_bytes: int) -> HttpResponse:
         current = validate_public_url(url)

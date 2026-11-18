@@ -5,8 +5,10 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
+import androidx.sqlite.SQLiteConnection
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
+import androidx.sqlite.execSQL
 
 @Database(
     entities = [
@@ -21,7 +23,7 @@ import androidx.sqlite.driver.bundled.BundledSQLiteDriver
         PendingMutationEntity::class,
         PendingDeletionEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class TroveDatabase : RoomDatabase() {
@@ -45,16 +47,20 @@ abstract class TroveDatabase : RoomDatabase() {
         const val NAME = "trove.db"
 
         val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
+            override fun migrate(db: SupportSQLiteDatabase) = migrate { db.execSQL(it) }
+
+            override fun migrate(connection: SQLiteConnection) = migrate { connection.execSQL(it) }
+
+            private fun migrate(execSQL: (String) -> Unit) {
+                execSQL(
                     "ALTER TABLE artifacts ADD COLUMN downloaded_bytes INTEGER NOT NULL DEFAULT 0"
                 )
-                db.execSQL(
+                execSQL(
                     "UPDATE artifacts SET downloaded_bytes = size WHERE download_state = 'completed'"
                 )
-                db.execSQL("ALTER TABLE artifacts ADD COLUMN etag TEXT")
-                db.execSQL("ALTER TABLE artifacts ADD COLUMN error_code TEXT")
-                db.execSQL(
+                execSQL("ALTER TABLE artifacts ADD COLUMN etag TEXT")
+                execSQL("ALTER TABLE artifacts ADD COLUMN error_code TEXT")
+                execSQL(
                     """
                     CREATE TABLE IF NOT EXISTS pending_deletions (
                         path TEXT NOT NULL PRIMARY KEY,
@@ -66,15 +72,33 @@ abstract class TroveDatabase : RoomDatabase() {
         }
 
         val MIGRATION_2_3 = object : Migration(2, 3) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(SearchFtsSchema.CREATE)
+            override fun migrate(db: SupportSQLiteDatabase) = migrate { db.execSQL(it) }
+
+            override fun migrate(connection: SQLiteConnection) = migrate { connection.execSQL(it) }
+
+            private fun migrate(execSQL: (String) -> Unit) {
+                execSQL(SearchFtsSchema.CREATE)
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) = migrate { db.execSQL(it) }
+
+            override fun migrate(connection: SQLiteConnection) = migrate { connection.execSQL(it) }
+
+            private fun migrate(execSQL: (String) -> Unit) {
+                execSQL("ALTER TABLE items ADD COLUMN collection_id TEXT")
+                execSQL("ALTER TABLE items ADD COLUMN collection_index INTEGER")
+                execSQL("ALTER TABLE items ADD COLUMN collection_title TEXT")
+                execSQL("ALTER TABLE items ADD COLUMN collection_platform TEXT")
+                execSQL("ALTER TABLE items ADD COLUMN collection_source_url TEXT")
             }
         }
 
         fun create(context: Context): TroveDatabase =
             Room.databaseBuilder(context, TroveDatabase::class.java, NAME)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
 
         fun inMemory(context: Context): TroveDatabase =

@@ -33,6 +33,11 @@ __all__ = [
     "Transcriber",
     "TranscriptResult",
     "TranscriptSegmentData",
+    "VideoEntry",
+    "VideoInfo",
+    "VideoInspector",
+    "LinkProbe",
+    "LinkProbeResult",
 ]
 
 
@@ -82,6 +87,30 @@ class FeedPreview:
     author: str | None
     link: str | None
     episodes: list[FeedEpisode] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class VideoEntry:
+    title: str
+    url: str
+    index: int
+    duration_sec: float | None = None
+
+
+@dataclass(slots=True)
+class VideoInfo:
+    is_playlist: bool
+    title: str | None
+    author: str | None
+    duration_sec: float | None
+    entries: list[VideoEntry] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class LinkProbeResult:
+    content_type: str | None
+    content_length: int | None
+    final_url: str
 
 
 @dataclass(slots=True)
@@ -193,6 +222,14 @@ class Downloader(Protocol):
 
 class FeedClient(Protocol):
     def preview(self, feed_url: str) -> FeedPreview: ...
+
+
+class VideoInspector(Protocol):
+    def inspect(self, url: str, *, playlist: bool) -> VideoInfo: ...
+
+
+class LinkProbe(Protocol):
+    def head(self, url: str) -> LinkProbeResult: ...
 
 
 class AudioExtractor(Protocol):
