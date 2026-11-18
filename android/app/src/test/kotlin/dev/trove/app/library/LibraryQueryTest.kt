@@ -116,6 +116,48 @@ class LibraryQueryTest {
         assertTrue("query took ${elapsedMs}ms", elapsedMs < 2_000)
     }
 
+    @Test
+    fun collectionsGroupChildrenAndFiltersMatchAnyChild() {
+        val items = listOf(
+            item(
+                "episode-2",
+                fetchedAt = 20,
+                processingState = "completed",
+                consumptionState = "in_progress",
+                collectionId = "c1",
+                collectionIndex = 2,
+                collectionTitle = "Collection One",
+            ),
+            item(
+                "episode-1",
+                fetchedAt = 10,
+                processingState = "transcribing",
+                collectionId = "c1",
+                collectionIndex = 1,
+                collectionTitle = "Collection One",
+            ),
+            item("standalone", fetchedAt = 30),
+        )
+        val entries = items.toLibraryEntries()
+        assertEquals(2, entries.size)
+        val collection = entries.filterIsInstance<LibraryEntry.CollectionCard>().single()
+        assertEquals("Collection One", collection.title)
+        assertEquals(listOf("episode-1", "episode-2"), collection.items.map { it.id })
+        assertEquals(2, collection.episodeCount)
+        assertEquals(1, collection.completedCount)
+        assertEquals(1, collection.processingCount)
+
+        val inbox = applyLibraryEntryQuery(entries, LibraryFilters(inbox = true), LibrarySort.RECENT_ADDED)
+        assertEquals(listOf("c1"), inbox.map { it.id })
+
+        val inProgress = applyLibraryEntryQuery(
+            entries,
+            LibraryFilters(consumption = "in_progress"),
+            LibrarySort.RECENT_ADDED,
+        )
+        assertEquals(listOf("c1"), inProgress.map { it.id })
+    }
+
     private fun item(
         id: String,
         fetchedAt: Long = 1,
@@ -125,11 +167,19 @@ class LibraryQueryTest {
         sourceType: String = "video_url",
         platform: String = "youtube",
         tags: List<String> = emptyList(),
+        collectionId: String? = null,
+        collectionIndex: Int? = null,
+        collectionTitle: String? = null,
     ) = LibraryItem(
         id = id,
         version = 1,
         sourceType = sourceType,
         platform = platform,
+        collectionId = collectionId,
+        collectionIndex = collectionIndex,
+        collectionTitle = collectionTitle,
+        collectionPlatform = if (collectionId != null) "youtube" else null,
+        collectionSourceUrl = null,
         title = "Item $id",
         author = null,
         fetchedAt = fetchedAt,

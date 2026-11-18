@@ -14,6 +14,7 @@ import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
+import dev.trove.app.testing.scrollAndClick
 import dev.trove.app.testing.testHarness
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.ItemCreateResponseDto
@@ -58,7 +59,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.scrollAndClick("add-preview-submit")
 
         compose.waitUntil(5_000) { harness.api.createCalls.isNotEmpty() }
         waitForTag("add-processing")
@@ -82,7 +84,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://example.com/video")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.scrollAndClick("add-preview-submit")
 
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("不支持这个平台。").fetchSemanticsNodes().isNotEmpty()
@@ -110,7 +113,8 @@ class AddFlowTest {
         compose.onNodeWithText("添加").performClick()
         waitForTag("add-url-input")
         compose.onNodeWithTag("add-url-input").performTextInput("https://youtu.be/abc")
-        compose.onNodeWithTag("add-submit").performClick()
+        waitForTag("add-preview")
+        compose.scrollAndClick("add-preview-submit")
 
         waitForTag("player-screen")
     }

@@ -1,0 +1,75 @@
+{% if link_error %}
+<div class="alert alert-error" role="alert">{{ link_error }}</div>
+{% endif %}
+
+{% if inspection %}
+{% set kind = inspection.kind.value %}
+<section class="link-preview">
+  <div class="link-preview-head">
+    <div class="cover link-preview-cover cover-{{ 'green' if kind == 'collection' else 'gold' if kind == 'ebook' else 'vermilion' }}">
+      <span>{{ '合' if kind == 'collection' else '书' if kind == 'ebook' else '单' if kind == 'video' else '播' }}</span>
+    </div>
+    <div class="link-preview-body">
+      <p class="eyebrow">
+        {% if kind == 'video' %}识别为 · 单集视频
+        {% elif kind == 'collection' %}识别为 · 视频合集
+        {% elif kind == 'ebook' %}识别为 · 电子书
+        {% else %}识别为 · 播客 feed{% endif %}
+      </p>
+      <h3>{{ inspection.title }}</h3>
+      <p class="muted">
+        {{ inspection.platform }}
+        {% if inspection.author %} · {{ inspection.author }}{% endif %}
+        {% if kind == 'collection' %} · {{ inspection.episode_count }} 集{% if inspection.total_duration_sec %} · 约 {{ inspection.total_duration_sec|duration }}{% endif %}
+        {% elif kind == 'video' and inspection.duration_sec %} · {{ inspection.duration_sec|duration }}
+        {% elif kind == 'ebook' and inspection.file_size %} · {{ inspection.file_size|filesize }}
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {% for warning in inspection.warnings %}
+  <div class="alert alert-warning" role="status">{{ warning.message }}</div>
+  {% endfor %}
+
+  {% if kind == 'collection' %}
+  {% if inspection.episodes %}
+  <table class="episode-table">
+    <thead><tr><th>#</th><th>单集标题</th><th>时长</th></tr></thead>
+    <tbody>
+      {% for episode in inspection.episodes[:10] %}
+      <tr>
+        <td>{{ "%02d"|format(episode.index) }}</td>
+        <td>{{ episode.title }}</td>
+        <td>{{ episode.duration_sec|duration if episode.duration_sec else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if inspection.episode_count > 10 %}
+  <p class="hint">+ {{ inspection.episode_count - 10 }} 集 · 按上游顺序处理</p>
+  {% endif %}
+  {% endif %}
+  {% endif %}
+
+  {% if kind == 'podcast_feed' %}
+  {% set feed = inspection.feed %}
+  {% set feed_url = inspection.canonical_url %}
+  {% include "feed_preview.html" %}
+  {% else %}
+  <form method="post" action="/add/link" class="preview-actions">
+    <input type="hidden" name="url" value="{{ inspection.raw_url }}">
+    <button type="submit">
+      {% if kind == 'collection' %}添加合集（{{ inspection.episode_count }} 集）
+      {% elif kind == 'ebook' %}添加电子书
+      {% else %}开始处理{% endif %}
+    </button>
+    <span class="hint">
+      {% if kind == 'collection' %}将全部处理，单集失败不影响其他集。
+      {% elif kind == 'ebook' %}下载后解析书名/作者/封面。
+      {% else %}Host 会下载、抽音频、转写并生成摘要/Tag。{% endif %}
+    </span>
+  </form>
+  {% endif %}
+</section>
+{% endif %}

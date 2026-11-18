@@ -11,6 +11,12 @@ fun processingLabel(state: String): String = when (state) {
     "failed" -> stringResource(R.string.processing_failed)
     "queued" -> stringResource(R.string.processing_queued)
     "cancelled" -> stringResource(R.string.processing_cancelled)
+    "downloading" -> "下载中"
+    "extracting_audio" -> "抽取音频"
+    "extracting_text" -> "提取文本"
+    "transcribing" -> "转写中"
+    "organizing" -> "整理中"
+    "indexing" -> "索引中"
     else -> stringResource(R.string.processing_running)
 }
 
@@ -40,6 +46,7 @@ fun sourceTypeLabel(value: String): String = when (value) {
     "local_audio" -> stringResource(R.string.type_local_audio)
     "local_video" -> stringResource(R.string.type_local_video)
     "epub" -> stringResource(R.string.type_epub)
+    "epub_url" -> stringResource(R.string.type_epub)
     else -> value
 }
 
@@ -49,6 +56,7 @@ fun platformLabel(value: String): String = when (value) {
     "bilibili" -> stringResource(R.string.platform_bilibili)
     "podcast" -> stringResource(R.string.platform_podcast)
     "local" -> stringResource(R.string.platform_local)
+    "web" -> "Web"
     else -> value
 }
 

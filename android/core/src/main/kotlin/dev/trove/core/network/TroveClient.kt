@@ -74,6 +74,23 @@ class TroveClient(
 
     suspend fun retryItem(itemId: String): ItemDto = call { api.retryItem(itemId) }
 
+    suspend fun inspectLink(url: String): LinkInspectResponseDto =
+        call { api.inspectLink(LinkInspectRequestDto(url)) }
+
+    suspend fun createCollection(url: String): CollectionCreateResponseDto =
+        call { api.createCollection(CollectionCreateRequestDto(url)) }
+
+    suspend fun collection(collectionId: String): CollectionDto =
+        call { api.collection(collectionId) }
+
+    suspend fun collections(): CollectionListResponseDto = call { api.collections() }
+
+    suspend fun deleteCollection(collectionId: String, mode: String): CollectionDeleteResponseDto =
+        call { api.deleteCollection(collectionId, mode) }
+
+    suspend fun retryCollectionFailed(collectionId: String): CollectionDto =
+        call { api.retryCollectionFailed(collectionId) }
+
     suspend fun previewFeed(url: String): FeedPreviewResponseDto =
         call { api.previewFeed(FeedPreviewRequestDto(url)) }
 

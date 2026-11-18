@@ -50,6 +50,7 @@
 涉及 App 页面展示或交互时，先读 [手机壳原型](../.scratch/trove-mvp/prototype/mobile-shell.html)，以已选方向 **C（队列列表）+ B（Now Playing）** 为基线：
 
 - 页面结构、信息层级、可点击区域、内联播放/抽屉/transcript 展开方式以原型为准；Material 3 是组件与无障碍基线，不是替代原型的默认视觉语言。
+- 原型工作流、目录布局和截图脚本见 [`docs/agents/prototype.md`](../docs/agents/prototype.md)。
 - 新页面或原型未覆盖的重大交互，**先向用户确认选型/范围，再写代码**；不要默默选一种布局实现后再让用户验收。
 - 视觉 token 复用 `ui/theme/Theme.kt` 与 `ui/components/`（paper/ink/accent、宋体标题、封面占位、圆角、底栏），不要在页面里散落新色值。
 - UI 完成标准包含真机截图对比：受影响页面至少截 Library、Now Playing、抽屉/transcript；原型差异要么修正，要么在交付说明中明确列出。
@@ -105,6 +106,7 @@ python3 scripts/check-docs.py
 - P0 功能（后台播放、下载续传、离线阅读、媒体通知）必须真机手动验收；模拟器通过不算。
 - 新增/修改契约时，先更新 Host fixture，再让 Android DTO/测试消费同一组 fixture。
 - Test fake 的调用记录可能由 Main/worker 线程写入、由测试线程读取；这类 `requests`/`calls` 列表必须用线程安全集合（如 `CopyOnWriteArrayList`）或 `StateFlow`，不能用普通 `mutableListOf`。
+- Compose 测试点击滚动区域内的节点前先 `performScrollTo()`；复用 `android/app/src/test/.../testing/ComposeActions.kt` 的 `scrollAndClick` / `scrollAndClickText`。
 
 ## 8. 安全红线
 

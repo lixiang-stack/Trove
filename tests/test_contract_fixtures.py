@@ -6,8 +6,10 @@ from pathlib import Path
 from trove.domain.items import CONSUMPTION_LABELS, SOURCE_TYPE_LABELS
 from trove.domain.search import document_tokens
 from trove.web.schemas import (
+    CollectionSchema,
     ErrorResponse,
     HealthResponse,
+    LinkInspectResponse,
     ManifestResponse,
     MutationResponse,
     SearchResponse,
@@ -87,7 +89,23 @@ def test_health_contract_fixture_matches_host_schema():
     assert health.capabilities["device_tokens"] is True
     assert health.capabilities["file_download"] is True
     assert health.database["fts5"] is True
-    assert health.database["migration"]["head"] == "0004_v1_sync_schema"
+    assert health.database["migration"]["head"] == "0005_collections"
+
+
+def test_inspect_contract_fixture_matches_host_schema():
+    inspect = LinkInspectResponse.model_validate(_load("inspect.json"))
+    assert inspect.kind == "collection"
+    assert inspect.episode_count == 2
+    assert inspect.episodes[0].source_key.endswith("episode0001")
+    assert inspect.total_duration_sec == 120.0
+
+
+def test_collection_contract_fixture_matches_host_schema():
+    collection = CollectionSchema.model_validate(_load("collection.json"))
+    assert collection.episode_count == 2
+    assert collection.status.queued == 2
+    assert collection.items[0].collection_index == 1
+    assert collection.items[1].title == "Episode Two"
 
 
 def test_health_fixture_matches_live_migration_head(api_host):

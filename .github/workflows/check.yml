@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v10.3.3
         with:
@@ -28,3 +30,14 @@ jobs:
 
       - name: Run fast checks
         run: ./scripts/check.sh --fast
+
+      - name: Docs check
+        run: python3 scripts/check-docs.py
+
+      - name: Complexity gate
+        run: |
+          if git rev-parse --verify --quiet origin/main; then
+            python3 scripts/complexity.py --changed origin/main
+          else
+            python3 scripts/complexity.py --changed HEAD^
+          fi

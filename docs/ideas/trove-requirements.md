@@ -74,7 +74,7 @@ Trove 是**个人长内容库**：把 Bilibili、YouTube、播客变成可听、
 
 | 概念 | 定义 | 备注 |
 |---|---|---|
-| Item（条目） | 一个可消费的内容单位：一个视频、一集播客、一本书 | MVP 一个入库 URL 最多产生一个 Item；播放列表/多 P 拒绝 |
+| Item（条目） | 一个可消费的内容单位：一个视频、一集播客、一本书 | MVP 一个入库 URL 最多产生一个 Item；合集 URL 例外（见 §10.5） |
 | Source（来源） | 原始 URL/平台/本地文件路径 | 必须保留原始 URL/路径 |
 | Library（库） | 用户全部 Item 的集合 | 在 MVP 中位于 Mac 主机 |
 | Content Package（内容包） | Item 在库中的文件集合：来源元数据、音频、transcript、书文件、AI 结果 | 导出单位 |
@@ -131,7 +131,7 @@ Host Console Core / Consumer Web Shell（浏览器）
 
 | ID | 需求 | 优先级 | 里程碑 | 验收 |
 |---|---|---|---|---|
-| FR-01 | 粘贴 Bilibili/YouTube **单条视频 URL**，创建 Item | P0 | MVP | B 站/YouTube 各 10 个链接 8 个成功；播放列表/多 P 明确拒绝并提示 |
+| FR-01 | 粘贴 Bilibili/YouTube **单条视频或合集 URL**，创建 Item / 合集 | P0 | MVP | B 站/YouTube 各 10 个链接 8 个成功；合集识别/展开见 §10.5 |
 | FR-02 | 添加本地音频/视频文件 | P0 | MVP | 文件进入处理流程；音频复制进库，视频只存路径 |
 | FR-03 | 添加 EPUB | P0 | MVP | 仅 DRM-free、可重排 EPUB 2/3；提取元数据、章节、文本 |
 | FR-04 | 添加播客 RSS **单集** | P0 | MVP | 粘贴 feed URL，列出最近单集，选一集入库；不订阅、不轮询 |
@@ -414,6 +414,16 @@ Host Console Core / Consumer Web Shell（浏览器）
 
 - 主机形态（Mac/NAS/云端）、Android native vs PWA、同步的具体实现、云端/大众市场/合规/单位经济，不在本文档范围；由后续技术选型/ADR 决定。
 - 本文档只固定产品行为、数据边界和验收标准；技术选型不得改变本文档的产品约束（个人验证优先、MVP 不做云端/离线 Web、V1 Android 离线等）。
+
+## 10.5 追加需求 · 2026-11-17：视频合集与电子书直链
+
+本追加需求反转 §5 FR-01 中「播放列表/多 P 明确拒绝」和「一个 URL 最多一个 Item」的旧约束：
+
+- 添加页单链接自动识别单集视频 / 视频合集 / EPUB 直链 / 播客 feed，预览确认后入库。
+- 视频合集支持 B 站多 P/合集/系列、YouTube playlist；按单集幂等展开，Library 聚合为合集卡片，新增合集详情；单集仍独立处理/播放/下载。
+- 电子书新增 EPUB 直链入库；仍只支持 DRM-free、可重排 EPUB，PDF 不在范围。
+- 合集上限 100 集/100 小时；全量处理、单集失败隔离；重复添加追加新集；删除支持删除全部或仅移除分组。
+- 详细规格见 [collections-ebooks spec](../../.scratch/collections-ebooks/spec.md)。
 
 ## 11. 总结
 

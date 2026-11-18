@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage
-from trove.db.models import AiResult, Artifact, Item, ItemTag, Run, RunStep, Tag
+from trove.db.models import AiResult, Artifact, Collection, Item, ItemTag, Run, RunStep, Tag
 from trove.domain.items import (
     ACTIVE_RUN_STATES,
     CONSUMPTION_LABELS,
@@ -62,6 +62,7 @@ class ItemBundle:
     artifacts: list[Artifact]
     ai_result: AiResult | None = None
     tag_sources: dict[int, str] = field(default_factory=dict)
+    collection: Collection | None = None
 
     @property
     def consumption_state(self) -> str:
@@ -157,6 +158,11 @@ def item_bundle(session: Session, item: Item) -> ItemBundle:
         artifacts=artifacts,
         ai_result=ai_result,
         tag_sources=tag_sources,
+        collection=(
+            session.get(Collection, item.collection_id)
+            if item.collection_id
+            else None
+        ),
     )
 
 
@@ -188,6 +194,8 @@ class LibraryService:
         source_url_raw: str | None = None,
         source_url_canonical: str | None = None,
         source_path: str | None = None,
+        collection_id: str | None = None,
+        collection_index: int | None = None,
         author: str | None = None,
         published_at: str | None = None,
         language: str | None = None,
@@ -203,14 +211,29 @@ class LibraryService:
                 return item_bundle(session, existing), True
             if existing is not None:
                 self.package.ensure(existing.id)
+                if title:
+                    existing.title = title
+                if author:
+                    existing.author = author
+                if source_url_raw:
+                    existing.source_url_raw = source_url_raw
+                if source_url_canonical:
+                    existing.source_url_canonical = source_url_canonical
+                if duration_sec is not None:
+                    existing.duration_sec = duration_sec
+                if collection_id is not None:
+                    existing.collection_id = collection_id
+                    existing.collection_index = collection_index
+                existing.deleted_at = None
+                existing.updated_at = now
                 self.package.write_source(
                     existing.id,
                     source_document(
-                        existing, base=self.package.read_source(existing.id)
+                        existing,
+                        base=self.package.read_source(existing.id),
+                        extra=extra_source,
                     ),
                 )
-                existing.deleted_at = None
-                existing.updated_at = now
                 session.commit()
                 return item_bundle(session, existing), False
         item = Item(
@@ -221,6 +244,8 @@ class LibraryService:
             source_url_raw=source_url_raw,
             source_url_canonical=source_url_canonical,
             source_path=source_path,
+            collection_id=collection_id,
+            collection_index=collection_index,
             title=title or "Untitled content",
             author=author,
             published_at=published_at,
@@ -262,6 +287,16 @@ class LibraryService:
             if item is None or item.deleted_at is not None:
                 raise NotFoundError("Content not found")
             return item_bundle(session, item)
+
+    def find_by_source_key(self, source_key: str) -> ItemBundle | None:
+        with self.sessions() as session:
+            item = session.execute(
+                select(Item).where(
+                    Item.source_key == source_key,
+                    Item.deleted_at.is_(None),
+                )
+            ).scalars().first()
+            return item_bundle(session, item) if item is not None else None
 
     def list_items(
         self,
@@ -491,6 +526,19 @@ class LibraryService:
             "platform_label": PLATFORM_LABELS.get(item.platform, item.platform),
             "source_url_raw": item.source_url_raw,
             "source_url_canonical": item.source_url_canonical,
+            "collection_id": item.collection_id,
+            "collection_index": item.collection_index,
+            "collection_title": (
+                bundle.collection.title if bundle.collection is not None else None
+            ),
+            "collection_platform": (
+                bundle.collection.platform if bundle.collection is not None else None
+            ),
+            "collection_source_url": (
+                bundle.collection.source_url_canonical
+                if bundle.collection is not None
+                else None
+            ),
             "title": item.title,
             "author": item.author,
             "published_at": item.published_at,
