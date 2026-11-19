@@ -196,6 +196,8 @@ class PlayerViewModelTest {
         val model = viewModel()
         model.open("item-1", autoPlay = true)
         waitFor { player.requests.isNotEmpty() }
+        waitFor { downloads.enqueued.isNotEmpty() }
+        downloads.enqueued.clear()
 
         model.setSpeed(1.5f)
         model.download()
@@ -209,6 +211,31 @@ class PlayerViewModelTest {
         assertEquals(listOf("item-1"), downloads.paused)
         assertEquals(listOf("item-1"), downloads.retried)
         assertEquals(listOf("item-1"), downloads.removed)
+    }
+
+    @Test
+    fun openingItemQueuesDownloadForAutomaticSync() = runBlocking {
+        controller.restore()
+        seedItem()
+        val model = viewModel()
+
+        model.open("item-1", autoPlay = false)
+        waitFor { downloads.enqueued.contains("item-1") }
+
+        assertEquals(listOf("item-1"), downloads.enqueued)
+    }
+
+    @Test
+    fun autoSyncDoesNotOverridePausedDownload() = runBlocking {
+        controller.restore()
+        seedItem()
+        database.artifactDao().setDownloadState("item-1", "audio", "paused", null)
+        val model = viewModel()
+
+        model.open("item-1", autoPlay = false)
+        Thread.sleep(100)
+
+        assertTrue(downloads.enqueued.isEmpty())
     }
 
     @Test

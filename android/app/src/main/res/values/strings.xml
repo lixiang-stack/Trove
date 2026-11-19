@@ -55,8 +55,8 @@
     <string name="player_error_decoding">音频解码失败，请重新下载或联系 Host。</string>
     <string name="player_item_missing">内容已不可用。</string>
     <string name="player_delete_failed">删除失败，请检查网络后重试。</string>
-    <string name="player_transcript_empty">Transcript 尚未下载</string>
-    <string name="player_transcript_download">下载 Item 后可离线阅读 transcript。</string>
+    <string name="player_transcript_empty">Transcript 暂不可用</string>
+    <string name="player_transcript_download">联网后自动加载；下载 Item 可离线阅读。</string>
     <string name="player_transcript_parse">解析 transcript</string>
     <string name="login_title">连接 Host</string>
     <string name="login_subtitle">输入 Host 地址和设备信息，获取本机专用 token。</string>

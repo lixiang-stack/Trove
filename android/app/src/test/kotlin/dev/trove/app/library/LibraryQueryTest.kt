@@ -1,5 +1,6 @@
 package dev.trove.app.library
 
+import dev.trove.app.collection.sortCollectionEpisodes
 import dev.trove.core.library.LibraryItem
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -29,6 +30,20 @@ class LibraryQueryTest {
         assertEquals(
             listOf("c", "a", "b"),
             applyLibraryQuery(items, LibraryFilters(), LibrarySort.RECENT_CONSUMED).map { it.id },
+        )
+    }
+
+    @Test
+    fun inProgressEntriesComeFirstWithMostRecentContinueFirst() {
+        val entries = listOf(
+            item("newest", fetchedAt = 30),
+            item("older-progress", fetchedAt = 10, lastConsumedAt = 5, consumptionState = "in_progress"),
+            item("last-continued", fetchedAt = 20, lastConsumedAt = 10, consumptionState = "in_progress"),
+        ).toLibraryEntries()
+
+        assertEquals(
+            listOf("last-continued", "older-progress", "newest"),
+            applyLibraryEntryQuery(entries, LibraryFilters(), LibrarySort.RECENT_ADDED).map { it.id },
         )
     }
 
@@ -114,6 +129,33 @@ class LibraryQueryTest {
         val elapsedMs = (System.nanoTime() - start) / 1_000_000
         assertTrue(result.isNotEmpty())
         assertTrue("query took ${elapsedMs}ms", elapsedMs < 2_000)
+    }
+
+    @Test
+    fun collectionEpisodesPutMostRecentlyConsumedFirstThenUpstreamOrder() {
+        val episodes = listOf(
+            item("episode-3", collectionId = "c1", collectionIndex = 3),
+            item(
+                "episode-2",
+                collectionId = "c1",
+                collectionIndex = 2,
+                lastConsumedAt = 20,
+                consumptionState = "in_progress",
+            ),
+            item(
+                "episode-1",
+                collectionId = "c1",
+                collectionIndex = 1,
+                lastConsumedAt = 10,
+                consumptionState = "finished",
+            ),
+            item("episode-4", collectionId = "c1", collectionIndex = 4),
+        )
+
+        assertEquals(
+            listOf("episode-2", "episode-1", "episode-3", "episode-4"),
+            sortCollectionEpisodes(episodes).map { it.id },
+        )
     }
 
     @Test

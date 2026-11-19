@@ -98,6 +98,44 @@ class TranscriptRepositoryTest {
     }
 
     @Test
+    fun loadsOnlineTranscriptWhenDownloadIsMissing() = runBlocking {
+        seedItem()
+        database.artifactDao().upsert(
+            ArtifactEntity(
+                itemId = "item-1",
+                kind = "transcript",
+                sha256 = "a".repeat(64),
+                size = 10,
+                mime = "application/json",
+                version = 1,
+                localPath = null,
+                downloadState = "none",
+            )
+        )
+        val online = TranscriptRepository(database, fileStore) {
+            listOf(
+                TranscriptSegment(seq = 0, startMs = 0, endMs = 4_200, text = "在线 transcript"),
+            )
+        }
+
+        val result = online.ensureParsed("item-1")
+
+        assertEquals(TranscriptLoadResult.Ready(1), result)
+        assertEquals("在线 transcript", online.observe("item-1").first().single().text)
+    }
+
+    @Test
+    fun remoteFailureKeepsTranscriptUnavailable() = runBlocking {
+        seedItem()
+        val offline = TranscriptRepository(database, fileStore) {
+            throw IllegalStateException("offline")
+        }
+
+        assertEquals(TranscriptLoadResult.NotDownloaded, offline.ensureParsed("item-1"))
+        assertEquals(0, database.transcriptSegmentDao().countForItem("item-1"))
+    }
+
+    @Test
     fun parsesThousandSegmentTranscriptQuickly() {
         val segments = (0 until 1_000).joinToString(",") { index ->
             """{"seq":$index,"start_ms":${index * 1000},"end_ms":${index * 1000 + 900},"text":"seg $index"}"""
@@ -109,6 +147,20 @@ class TranscriptRepositoryTest {
         assertEquals(1_000, parsed.size)
         assertEquals(999, parsed.last().seq)
         assertTrue("parse took ${elapsedMs}ms", elapsedMs < 2_000)
+    }
+
+    @Test
+    fun activeSegmentFollowsPlaybackPosition() {
+        val segments = listOf(
+            TranscriptSegment(seq = 0, startMs = 0, endMs = 4_000, text = "first"),
+            TranscriptSegment(seq = 1, startMs = 4_000, endMs = 8_000, text = "second"),
+        )
+
+        assertEquals(0, segments.activeAt(0)?.seq)
+        assertEquals(0, segments.activeAt(3_999)?.seq)
+        assertEquals(1, segments.activeAt(4_000)?.seq)
+        assertEquals(1, segments.activeAt(12_000)?.seq)
+        assertEquals(null, emptyList<TranscriptSegment>().activeAt(0)?.seq)
     }
 
     @Test

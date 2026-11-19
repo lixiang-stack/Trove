@@ -32,7 +32,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+
+private val AUTO_SYNC_STATES = setOf("none", "partial", "failed")
 
 data class PlayerUiState(
     val itemId: String? = null,
@@ -63,6 +67,7 @@ class PlayerViewModel(
     private val deleted = MutableStateFlow(false)
     private val tagError = MutableStateFlow<String?>(null)
     private var hasLoadedItem = false
+    private val autoSyncMutex = Mutex()
 
     val state: StateFlow<PlayerUiState> = combine(
         selectedId,
@@ -123,6 +128,7 @@ class PlayerViewModel(
         errorCode.value = null
         deleted.value = false
         hasLoadedItem = false
+        autoSync(itemId)
         if (!autoPlay) {
             val current = player.state.value
             if (current.itemId != null && current.itemId != itemId) {
@@ -259,6 +265,18 @@ class PlayerViewModel(
     fun refreshTranscript() {
         val itemId = selectedId.value ?: return
         viewModelScope.launch { transcriptRepository.ensureParsed(itemId) }
+    }
+
+    private fun autoSync(itemId: String) {
+        viewModelScope.launch {
+            autoSyncMutex.withLock {
+                val item = repository.find(itemId) ?: return@withLock
+                if (item.artifacts.isEmpty() || item.downloadState !in AUTO_SYNC_STATES) {
+                    return@withLock
+                }
+                downloadManager.enqueue(itemId)
+            }
+        }
     }
 
     private suspend fun playItem(item: LibraryItem) {

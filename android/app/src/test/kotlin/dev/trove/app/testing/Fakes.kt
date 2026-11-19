@@ -32,6 +32,7 @@ import dev.trove.core.network.SearchResponseDto
 import dev.trove.core.network.SyncItemDto
 import dev.trove.core.network.SyncStateDto
 import dev.trove.core.network.TagsRequestDto
+import dev.trove.core.network.TranscriptResponseDto
 import dev.trove.core.network.TroveApi
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveApiFactory
@@ -164,6 +165,9 @@ class FakeTroveApi : TroveApi {
     var collectionsResponse = CollectionListResponseDto()
     var itemResponse: ItemDto? = null
     var itemError: Throwable? = null
+    var transcriptResponse = TranscriptResponseDto(itemId = "", segments = emptyList())
+    var transcriptError: Throwable? = null
+    val transcriptRequests = CopyOnWriteArrayList<String>()
     var feedResponse: FeedPreviewResponseDto = FeedPreviewResponseDto(title = "Feed")
     var feedError: Throwable? = null
     var searchResponse: SearchResponseDto? = null
@@ -265,6 +269,12 @@ class FakeTroveApi : TroveApi {
     override suspend fun retryItem(itemId: String): ItemDto {
         itemError?.let { throw it }
         return itemResponse ?: ItemDto(id = itemId, title = "Item", processingState = "queued")
+    }
+
+    override suspend fun transcript(itemId: String): TranscriptResponseDto {
+        transcriptRequests += itemId
+        transcriptError?.let { throw it }
+        return transcriptResponse.copy(itemId = itemId)
     }
 
     override suspend fun inspectLink(body: LinkInspectRequestDto): LinkInspectResponseDto {

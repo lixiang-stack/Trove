@@ -85,15 +85,17 @@ fun applyLibraryEntryQuery(
             (filters.tag == null || entry.items.any { filters.tag in it.tags }) &&
             (filters.source == null || entry.items.any { it.platform == filters.source })
     }
-    return when (sort) {
-        LibrarySort.RECENT_ADDED -> filtered.sortedWith(
-            compareByDescending<LibraryEntry> { it.sortAddedAt }.thenByDescending { it.id }
-        )
+    val base = when (sort) {
+        LibrarySort.RECENT_ADDED -> compareByDescending<LibraryEntry> { it.sortAddedAt }
+            .thenByDescending { it.id }
 
-        LibrarySort.RECENT_CONSUMED -> filtered.sortedWith(
-            compareByDescending<LibraryEntry> { it.sortConsumedAt }
-                .thenByDescending { it.sortAddedAt }
-                .thenByDescending { it.id }
-        )
+        LibrarySort.RECENT_CONSUMED -> compareByDescending<LibraryEntry> { it.sortConsumedAt }
+            .thenByDescending { it.sortAddedAt }
+            .thenByDescending { it.id }
     }
+    return filtered.sortedWith(continueFirst<LibraryEntry> { it.inProgressAt() }.then(base))
 }
+
+private fun LibraryEntry.inProgressAt(): Long? =
+    items.filter { it.consumptionState == "in_progress" }
+        .maxOfOrNull { it.lastConsumedAt ?: Long.MIN_VALUE }

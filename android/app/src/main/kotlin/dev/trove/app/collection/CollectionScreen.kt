@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -53,8 +54,10 @@ import dev.trove.app.ui.components.TinyProgress
 import dev.trove.app.ui.components.TroveCover
 import dev.trove.app.ui.components.TroveIconButton
 import dev.trove.app.ui.components.TroveRoundButton
+import dev.trove.app.ui.components.coverText
 import dev.trove.app.ui.theme.TroveColors
 import dev.trove.core.library.LibraryItem
+import dev.trove.playback.PlaybackState
 import java.util.Locale
 
 @Composable
@@ -62,17 +65,18 @@ fun CollectionScreen(
     collectionId: String,
     items: List<LibraryItem>,
     actionError: String?,
+    playerState: PlaybackState,
     onClearError: () -> Unit,
     onBack: () -> Unit,
     onOpenItem: (String) -> Unit,
     onPlayItem: (String) -> Unit,
+    onTogglePlay: () -> Unit,
     onRetryItem: (String) -> Unit,
     onRetryFailed: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
     val episodes = remember(items, collectionId) {
-        items.filter { it.collectionId == collectionId }
-            .sortedBy { it.collectionIndex ?: Int.MAX_VALUE }
+        sortCollectionEpisodes(items.filter { it.collectionId == collectionId })
     }
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf(false) }
@@ -169,7 +173,12 @@ fun CollectionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),
                         ) {
-                            TroveCover(coverItem, size = 88.dp)
+                            TroveCover(
+                                item = coverItem,
+                                size = 88.dp,
+                                label = coverText(title, allowFullTitle = false),
+                                seed = collectionId,
+                            )
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
                                     title,
@@ -278,7 +287,7 @@ fun CollectionScreen(
                                 color = TroveColors.Ink,
                             )
                             Text(
-                                "按上游顺序",
+                                "最近消费优先",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TroveColors.Muted,
                             )
@@ -286,10 +295,14 @@ fun CollectionScreen(
                     }
                 }
                 items(episodes, key = { it.id }) { item ->
+                    val current = playerState.itemId == item.id
                     EpisodeRow(
                         item = item,
+                        playing = current && playerState.isPlaying,
                         onOpen = { onOpenItem(item.id) },
-                        onPlay = { onPlayItem(item.id) },
+                        onPlay = {
+                            if (current) onTogglePlay() else onPlayItem(item.id)
+                        },
                         onRetry = { onRetryItem(item.id) },
                     )
                 }
@@ -310,9 +323,17 @@ fun CollectionScreen(
     }
 }
 
+internal fun sortCollectionEpisodes(items: List<LibraryItem>): List<LibraryItem> =
+    items.sortedWith(
+        compareByDescending<LibraryItem> { it.lastConsumedAt ?: Long.MIN_VALUE }
+            .thenBy { it.collectionIndex ?: Int.MAX_VALUE }
+            .thenBy { it.id }
+    )
+
 @Composable
 private fun EpisodeRow(
     item: LibraryItem,
+    playing: Boolean,
     onOpen: () -> Unit,
     onPlay: () -> Unit,
     onRetry: () -> Unit,
@@ -393,13 +414,22 @@ private fun EpisodeRow(
             TextButton(onClick = onRetry) { Text("重试") }
         } else if (ready) {
             TroveRoundButton(
-                icon = if (item.isBookOnly) Icons.AutoMirrored.Filled.MenuBook else Icons.Filled.PlayArrow,
-                contentDescription = if (item.isBookOnly) "阅读" else "播放",
+                icon = when {
+                    item.isBookOnly -> Icons.AutoMirrored.Filled.MenuBook
+                    playing -> Icons.Filled.Pause
+                    else -> Icons.Filled.PlayArrow
+                },
+                contentDescription = when {
+                    item.isBookOnly -> "阅读"
+                    playing -> "暂停"
+                    else -> "播放"
+                },
                 onClick = onPlay,
                 size = 34.dp,
                 iconSize = 16.dp,
                 background = TroveColors.Paper2,
                 border = TroveColors.Line,
+                testTag = "collection-play-${item.id}",
             )
         } else {
             Box(

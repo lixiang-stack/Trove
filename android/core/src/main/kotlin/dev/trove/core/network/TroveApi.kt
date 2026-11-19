@@ -55,6 +55,9 @@ interface TroveApi {
     @GET("api/items/{itemId}")
     suspend fun item(@Path("itemId") itemId: String): ItemDto
 
+    @GET("api/items/{itemId}/transcript")
+    suspend fun transcript(@Path("itemId") itemId: String): TranscriptResponseDto
+
     @POST("api/items/{itemId}/retry")
     suspend fun retryItem(@Path("itemId") itemId: String): ItemDto
 

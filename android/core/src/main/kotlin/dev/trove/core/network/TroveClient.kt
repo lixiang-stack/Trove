@@ -72,6 +72,9 @@ class TroveClient(
 
     suspend fun item(itemId: String): ItemDto = call { api.item(itemId) }
 
+    suspend fun transcript(itemId: String): TranscriptResponseDto =
+        call { api.transcript(itemId) }
+
     suspend fun retryItem(itemId: String): ItemDto = call { api.retryItem(itemId) }
 
     suspend fun inspectLink(url: String): LinkInspectResponseDto =

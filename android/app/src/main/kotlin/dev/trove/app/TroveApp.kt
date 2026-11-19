@@ -1,5 +1,9 @@
 package dev.trove.app
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -58,6 +62,9 @@ import dev.trove.app.ui.theme.TroveTheme
 import dev.trove.core.network.DeviceDto
 import dev.trove.reader.ReaderArgs
 import kotlinx.serialization.Serializable
+
+private const val NAV_ANIMATION_MILLIS = 300
+private const val NAV_PARALLAX_DIVISOR = 3
 
 @Serializable
 data object LibraryRoute : NavKey
@@ -250,6 +257,24 @@ private fun MainShell(
     ) {
         NavDisplay(
             backStack = backStack,
+            transitionSpec = {
+                slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { width -> width } togetherWith
+                    slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { width ->
+                        -width / NAV_PARALLAX_DIVISOR
+                    }
+            },
+            popTransitionSpec = {
+                slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { width ->
+                    -width / NAV_PARALLAX_DIVISOR
+                } togetherWith
+                    slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { width -> width }
+            },
+            predictivePopTransitionSpec = {
+                slideInHorizontally(tween(NAV_ANIMATION_MILLIS)) { width ->
+                    -width / NAV_PARALLAX_DIVISOR
+                } togetherWith
+                    slideOutHorizontally(tween(NAV_ANIMATION_MILLIS)) { width -> width }
+            },
             onBack = {
                 when {
                     backStack.size > 1 -> backStack.removeAt(backStack.lastIndex)
@@ -360,10 +385,12 @@ private fun MainShell(
                         collectionId = route.collectionId,
                         items = libraryState.allItems,
                         actionError = libraryState.collectionActionError,
+                        playerState = playerState.playback,
                         onClearError = libraryViewModel::clearCollectionActionError,
                         onBack = { backStack.removeAt(backStack.lastIndex) },
                         onOpenItem = ::openItem,
                         onPlayItem = { playerViewModel.open(it, autoPlay = true) },
+                        onTogglePlay = playerViewModel::toggle,
                         onRetryItem = libraryViewModel::retryCollectionItem,
                         onRetryFailed = {
                             libraryViewModel.retryCollectionFailed(route.collectionId)
@@ -411,6 +438,7 @@ private fun MainShell(
                     }
                     TranscriptScreen(
                         state = transcriptState,
+                        playback = playerState.playback,
                         onBack = { backStack.removeAt(backStack.lastIndex) },
                         onQuery = transcriptViewModel::updateQuery,
                         onRetry = transcriptViewModel::retry,

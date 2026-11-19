@@ -118,6 +118,20 @@ data class SyncStateDto(
 )
 
 @Serializable
+data class TranscriptSegmentDto(
+    val seq: Int,
+    @SerialName("start_ms") val startMs: Long,
+    @SerialName("end_ms") val endMs: Long,
+    val text: String,
+)
+
+@Serializable
+data class TranscriptResponseDto(
+    @SerialName("item_id") val itemId: String,
+    val segments: List<TranscriptSegmentDto> = emptyList(),
+)
+
+@Serializable
 data class BookLocatorDto(
     val schema: Int = 2,
     @SerialName("chapter_index") val chapterIndex: Int,

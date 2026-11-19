@@ -84,7 +84,7 @@ class LibraryFlowTest {
 
 
     @Test
-    fun continueStripResumesInProgressItem() {
+    fun inProgressItemQuickPlayResumes() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = signedInHarness(context)
         harness.api.manifestResponse = ManifestDto(
@@ -121,8 +121,8 @@ class LibraryFlowTest {
         val viewModel = SessionViewModel(harness.container.sessionController)
         compose.setContent { TroveApp(viewModel, harness.container) }
 
-        waitForTag(compose, "continue-item-1")
-        compose.onNodeWithTag("continue-item-1").performClick()
+        waitForTag(compose, "library-item-item-1")
+        compose.onNodeWithTag("play-item-1").performScrollTo().performClick()
         compose.waitForIdle()
         waitForPlaybackRequest(harness)
         assertEquals(
