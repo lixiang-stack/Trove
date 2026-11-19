@@ -105,3 +105,39 @@ It restores the previous reverse mapping when it exits.
 Real-device acceptance still requires manual playback, download, reader, and sync
 checks. Emulator passes do not replace background playback/media notification
 verification.
+
+## USB: latest debug app against the real Host
+
+Use this when you want to try a worktree build against the real `~/Trove` data.
+It does not create a temporary Host, copy the database, or seed acceptance data.
+
+1. Start the real Host in one terminal:
+
+   ```bash
+   cd ~/src/Trove   # or the checkout that owns ~/Trove
+   uv run trove serve
+   ```
+
+2. Connect the phone over USB and run:
+
+   ```bash
+   scripts/android/use-real-host.sh
+   ```
+
+3. Log in with the real Host password at `http://127.0.0.1:8765`.
+
+The script starts no Host by itself; it expects `/api/health` on
+`127.0.0.1:8765`. It builds and installs the current worktree's `prodDebug` APK,
+sets `adb reverse`, and launches the app.
+
+Useful options:
+
+```bash
+scripts/android/use-real-host.sh --no-build    # install existing APK
+scripts/android/use-real-host.sh --clear-data  # remove old token and downloads
+scripts/android/use-real-host.sh --port 9876   # non-default Host port
+```
+
+If the app still shows a token from an acceptance Host, `--clear-data` gives a
+clean login but deletes local downloads. Do not use `acceptance-host.sh` when you
+want the real Library.

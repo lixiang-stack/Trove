@@ -41,7 +41,6 @@ data class LibraryUiState(
     val loading: Boolean = false,
     val downloads: List<LibraryItem> = emptyList(),
     val downloadPreferences: DownloadPreferences = DownloadPreferences(),
-    val continueItems: List<LibraryItem> = emptyList(),
     val conflictNotice: String? = null,
     val collectionActionError: String? = null,
 )
@@ -95,10 +94,6 @@ class LibraryViewModel(
                     (status is SyncStatus.Idle && status.lastSuccessAt == null)),
             downloads = downloads,
             downloadPreferences = preferences,
-            continueItems = items
-                .filter { it.consumptionState == "in_progress" }
-                .sortedByDescending { it.lastConsumedAt ?: 0L }
-                .take(3),
             conflictNotice = action.conflictNotice,
             collectionActionError = action.collectionActionError,
         )

@@ -51,15 +51,21 @@ fun applyLibraryQuery(
             (filters.tag == null || filters.tag in item.tags) &&
             (filters.source == null || item.platform == filters.source)
     }
-    return when (sort) {
-        LibrarySort.RECENT_ADDED -> filtered.sortedWith(
-            compareByDescending<LibraryItem> { it.fetchedAt }.thenByDescending { it.id }
-        )
+    val base = when (sort) {
+        LibrarySort.RECENT_ADDED -> compareByDescending<LibraryItem> { it.fetchedAt }
+            .thenByDescending { it.id }
 
-        LibrarySort.RECENT_CONSUMED -> filtered.sortedWith(
-            compareByDescending<LibraryItem> { it.lastConsumedAt ?: Long.MIN_VALUE }
-                .thenByDescending { it.fetchedAt }
-                .thenByDescending { it.id }
-        )
+        LibrarySort.RECENT_CONSUMED -> compareByDescending<LibraryItem> {
+            it.lastConsumedAt ?: Long.MIN_VALUE
+        }.thenByDescending { it.fetchedAt }
+            .thenByDescending { it.id }
     }
+    return filtered.sortedWith(continueFirst<LibraryItem> { it.inProgressAt() }.then(base))
 }
+
+private fun LibraryItem.inProgressAt(): Long? =
+    if (consumptionState == "in_progress") lastConsumedAt ?: Long.MIN_VALUE else null
+
+internal fun <T> continueFirst(inProgressAt: (T) -> Long?): Comparator<T> =
+    compareByDescending<T> { inProgressAt(it) != null }
+        .thenByDescending { inProgressAt(it) ?: Long.MIN_VALUE }

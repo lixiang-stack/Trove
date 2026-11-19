@@ -1,6 +1,7 @@
 package dev.trove.app
 
 import android.content.Context
+import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createComposeRule
@@ -16,6 +17,7 @@ import dev.trove.app.session.SessionViewModel
 import dev.trove.app.testing.COMPOSE_TIMEOUT_MS
 import dev.trove.app.testing.FakeSettingsStore
 import dev.trove.app.testing.FakeTokenStore
+import dev.trove.app.testing.TestHarness
 import dev.trove.app.testing.scrollAndClick
 import dev.trove.app.testing.scrollAndClickText
 import dev.trove.app.testing.testHarness
@@ -28,6 +30,7 @@ import dev.trove.core.network.LinkEpisodeDto
 import dev.trove.core.network.LinkInspectResponseDto
 import dev.trove.core.network.LinkWarningDto
 import dev.trove.core.network.ManifestDto
+import dev.trove.core.network.SyncFileDto
 import dev.trove.core.network.SyncItemDto
 import org.junit.Rule
 import org.junit.Test
@@ -170,6 +173,36 @@ class CollectionFlowTest {
     }
 
     @Test
+    fun collectionPlayButtonReflectsPlaybackAndStopsIt() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("one", "Episode One", 1, ready = true),
+                syncItem("two", "Episode Two", 2, ready = true),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "test-epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-collection-collection-1")
+        compose.onNodeWithTag("library-collection-collection-1").performClick()
+        waitForTag(compose, "collection-play-one")
+
+        compose.onNodeWithTag("collection-play-one").performClick()
+        waitForPlayerState(harness) { it.itemId == "one" && it.isPlaying }
+        compose.onNodeWithTag("collection-play-one").assertContentDescriptionEquals("暂停")
+
+        compose.onNodeWithTag("collection-play-one").performClick()
+        waitForPlayerState(harness) { it.itemId == "one" && !it.isPlaying }
+        compose.onNodeWithTag("collection-play-one").assertContentDescriptionEquals("播放")
+    }
+
+    @Test
     fun libraryShowsCollectionCardAndDeletesWithUngroup() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = harness(context)
@@ -198,7 +231,22 @@ class CollectionFlowTest {
         }
     }
 
-    private fun syncItem(id: String, title: String, index: Int) = SyncItemDto(
+    private fun waitForPlayerState(
+        harness: TestHarness,
+        predicate: (dev.trove.playback.PlaybackState) -> Boolean,
+    ) {
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
+            predicate(harness.player.state.value)
+        }
+    }
+
+    private fun syncItem(
+        id: String,
+        title: String,
+        index: Int,
+        ready: Boolean = false,
+    ) = SyncItemDto(
         id = id,
         version = 1,
         sourceType = "video_url",
@@ -210,8 +258,23 @@ class CollectionFlowTest {
         collectionSourceUrl = "https://www.youtube.com/playlist?list=PLtest",
         title = title,
         fetchedAt = 1_000L + index,
-        processingState = "queued",
-        hasAudio = false,
+        durationSec = 60.0,
+        processingState = if (ready) "completed" else "queued",
+        hasAudio = ready,
         hasBook = false,
+        files = if (ready) {
+            listOf(
+                SyncFileDto(
+                    kind = "audio",
+                    sha256 = "a".repeat(64),
+                    size = 100,
+                    mime = "audio/mp4",
+                    version = 1,
+                    url = "/api/items/$id/files/audio",
+                )
+            )
+        } else {
+            emptyList()
+        },
     )
 }

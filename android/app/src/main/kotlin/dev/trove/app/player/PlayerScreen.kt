@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -94,6 +95,7 @@ import dev.trove.app.ui.theme.TroveColors
 import dev.trove.core.library.LibraryItem
 import dev.trove.core.transcript.TranscriptParser
 import dev.trove.core.transcript.TranscriptSegment
+import dev.trove.core.transcript.activeAt
 import dev.trove.core.transcript.highlightRanges
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -149,8 +151,8 @@ fun PlayerScreen(
     LaunchedEffect(state.deleted) {
         if (state.deleted) onBack()
     }
-    LaunchedEffect(state.transcriptDownloaded, state.transcript.size) {
-        if (state.transcriptDownloaded && state.transcript.isEmpty()) {
+    LaunchedEffect(state.item?.id, state.transcript.size) {
+        if (state.item?.transcriptArtifact != null && state.transcript.isEmpty()) {
             onRefreshTranscript()
         }
     }
@@ -694,10 +696,17 @@ private fun PlayerContent(
             modifier = Modifier.padding(top = 8.dp),
         )
         if (!isBook) {
+            val followPlayback = isCurrent && playback.isPlaying
             TranscriptSection(
                 item = item,
                 state = state,
                 open = transcriptOpen,
+                activeSeq = if (isCurrent) {
+                    state.transcript.activeAt(playback.positionMs)?.seq
+                } else {
+                    null
+                },
+                followPlayback = followPlayback,
                 onToggle = {
                     transcriptOpen = !transcriptOpen
                     if (transcriptOpen) {
@@ -803,10 +812,18 @@ private fun TranscriptSection(
     item: LibraryItem,
     state: PlayerUiState,
     open: Boolean,
+    activeSeq: Int?,
+    followPlayback: Boolean,
     onToggle: () -> Unit,
     onFull: () -> Unit,
     onRefresh: () -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    LaunchedEffect(open, followPlayback, activeSeq) {
+        if (!open || !followPlayback || activeSeq == null) return@LaunchedEffect
+        val index = state.transcript.indexOfFirst { it.seq == activeSeq }
+        if (index >= 0) listState.animateScrollToItem(index)
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -881,12 +898,17 @@ private fun TranscriptSection(
 
             open -> {
                 LazyColumn(
+                    state = listState,
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(max = 380.dp),
                 ) {
                     items(state.transcript, key = { it.seq }) { segment ->
-                        SegmentRow(segment = segment, query = "")
+                        SegmentRow(
+                            segment = segment,
+                            query = "",
+                            active = segment.seq == activeSeq,
+                        )
                     }
                 }
                 TextButton(
@@ -898,8 +920,10 @@ private fun TranscriptSection(
             }
 
             else -> {
+                val preview = state.transcript.firstOrNull { it.seq == activeSeq }
+                    ?: state.transcript.first()
                 Text(
-                    state.transcript.first().text,
+                    preview.text,
                     style = MaterialTheme.typography.bodySmall,
                     color = TroveColors.Paper.copy(alpha = 0.55f),
                     maxLines = 2,
@@ -912,22 +936,31 @@ private fun TranscriptSection(
 }
 
 @Composable
-private fun SegmentRow(segment: TranscriptSegment, query: String) {
+private fun SegmentRow(segment: TranscriptSegment, query: String, active: Boolean) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .background(
+                if (active) TroveColors.Accent.copy(alpha = 0.14f) else Color.Transparent,
+                RoundedCornerShape(8.dp),
+            )
+            .padding(horizontal = 4.dp, vertical = 8.dp)
+            .testTag("player-transcript-segment-${segment.seq}"),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Text(
             TranscriptParser.timestamp(segment.startMs),
             style = MaterialTheme.typography.labelSmall,
-            color = TroveColors.AccentSoft,
+            color = if (active) TroveColors.AccentSoft else TroveColors.AccentSoft.copy(alpha = 0.8f),
         )
         Text(
             text = highlighted(segment.text, query, TroveColors.Accent.copy(alpha = 0.45f)),
             style = MaterialTheme.typography.bodySmall,
-            color = TroveColors.Paper.copy(alpha = 0.82f),
+            color = if (active) {
+                TroveColors.Paper
+            } else {
+                TroveColors.Paper.copy(alpha = 0.82f)
+            },
         )
     }
 }

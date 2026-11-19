@@ -33,6 +33,7 @@ import dev.trove.core.storage.LocalDataRepository
 import dev.trove.core.sync.DownloadQueue
 import dev.trove.core.sync.SyncEngine
 import dev.trove.core.transcript.TranscriptRepository
+import dev.trove.core.transcript.TranscriptSegment
 import dev.trove.playback.MediaSessionPlayer
 import dev.trove.playback.PlaybackEnvironment
 import dev.trove.playback.PlayerGateway
@@ -78,7 +79,23 @@ open class AppContainer(
 
     val libraryRepository = LibraryRepository(database, fileStore)
 
-    val transcriptRepository = TranscriptRepository(database, fileStore)
+    val transcriptRepository = TranscriptRepository(
+        database = database,
+        fileStore = fileStore,
+        remoteSegments = { itemId ->
+            sessionController.currentClient()
+                ?.transcript(itemId)
+                ?.segments
+                ?.map {
+                    TranscriptSegment(
+                        seq = it.seq,
+                        startMs = it.startMs,
+                        endMs = it.endMs,
+                        text = it.text,
+                    )
+                }
+        },
+    )
 
     val bookRepository = BookRepository(database, fileStore)
 

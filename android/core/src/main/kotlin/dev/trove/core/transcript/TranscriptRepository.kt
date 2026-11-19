@@ -5,6 +5,7 @@ import dev.trove.core.db.TroveDatabase
 import dev.trove.core.db.writeTransaction
 import dev.trove.core.storage.ArtifactFileStore
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -21,6 +22,7 @@ sealed interface TranscriptLoadResult {
 class TranscriptRepository(
     private val database: TroveDatabase,
     private val fileStore: ArtifactFileStore,
+    private val remoteSegments: suspend (String) -> List<TranscriptSegment>? = { null },
 ) {
     fun observe(itemId: String): Flow<List<TranscriptSegment>> =
         database.transcriptSegmentDao().observeForItem(itemId).map { rows ->
@@ -35,17 +37,45 @@ class TranscriptRepository(
         }
 
     suspend fun ensureParsed(itemId: String): TranscriptLoadResult {
+        val cached = database.transcriptSegmentDao().countForItem(itemId)
+        if (cached > 0) return TranscriptLoadResult.Ready(cached)
         val artifact = database.artifactDao().find(itemId, "transcript")
-            ?: return TranscriptLoadResult.NotDownloaded
-        if (artifact.downloadState != "completed") {
-            return TranscriptLoadResult.NotDownloaded
+        if (artifact != null && artifact.downloadState == "completed") {
+            val file = fileStore.existingFile(itemId, "transcript", artifact.localPath)
+            if (file != null) return parseFile(itemId, file)
         }
-        val file = fileStore.existingFile(itemId, "transcript", artifact.localPath)
-            ?: return TranscriptLoadResult.NotDownloaded
-        if (database.transcriptSegmentDao().countForItem(itemId) > 0) {
-            return TranscriptLoadResult.Ready(database.transcriptSegmentDao().countForItem(itemId))
+        return loadRemote(itemId)
+    }
+
+    private suspend fun loadRemote(itemId: String): TranscriptLoadResult {
+        val segments = try {
+            remoteSegments(itemId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        } ?: return TranscriptLoadResult.NotDownloaded
+        database.writeTransaction {
+            database.transcriptSegmentDao().deleteForItem(itemId)
+            if (segments.isNotEmpty()) {
+                database.transcriptSegmentDao().insertAll(
+                    segments.map {
+                        TranscriptSegmentEntity(
+                            itemId = itemId,
+                            seq = it.seq,
+                            startMs = it.startMs,
+                            endMs = it.endMs,
+                            text = it.text,
+                        )
+                    }
+                )
+            }
         }
-        return parseFile(itemId, file)
+        return if (segments.isEmpty()) {
+            TranscriptLoadResult.Empty
+        } else {
+            TranscriptLoadResult.Ready(segments.size)
+        }
     }
 
     suspend fun parseFile(itemId: String, file: File): TranscriptLoadResult {

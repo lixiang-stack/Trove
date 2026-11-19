@@ -69,6 +69,7 @@ import dev.trove.app.ui.components.TroveCover
 import dev.trove.app.ui.components.TroveEmpty
 import dev.trove.app.ui.components.TroveIconButton
 import dev.trove.app.ui.components.TroveRoundButton
+import dev.trove.app.ui.components.coverText
 import dev.trove.app.ui.theme.TroveColors
 import dev.trove.core.library.LibraryItem
 import dev.trove.core.transcript.TranscriptParser
@@ -233,18 +234,6 @@ fun LibraryScreen(
                 ConflictStrip(
                     message = state.collectionActionError,
                     onDismiss = onClearCollectionActionError,
-                )
-            }
-            if (state.continueItems.isNotEmpty()) {
-                ContinueStrip(
-                    items = state.continueItems,
-                    onContinue = { item ->
-                        if (item.isBookOnly) {
-                            onOpenItem(item.id)
-                        } else {
-                            onQuickPlay(item.id)
-                        }
-                    },
                 )
             }
             Row(
@@ -450,62 +439,6 @@ private fun ConflictStrip(message: String, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun ContinueStrip(items: List<LibraryItem>, onContinue: (LibraryItem) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        Text(
-            "继续",
-            style = MaterialTheme.typography.labelMedium,
-            color = TroveColors.Muted,
-        )
-        items.forEach { item ->
-            val isBook = item.isBookOnly
-            Surface(
-                onClick = { onContinue(item) },
-                shape = RoundedCornerShape(14.dp),
-                color = TroveColors.Paper2,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("continue-${item.id}"),
-            ) {
-                Row(
-                    modifier = Modifier.padding(9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    TroveCover(item, size = 40.dp)
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            item.title,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = TroveColors.Ink,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "${(progressFraction(item) * 100).roundToInt()}% · " +
-                                if (isBook) "继续读" else "继续听",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TroveColors.Accent,
-                        )
-                    }
-                    androidx.compose.material3.Icon(
-                        if (isBook) Icons.AutoMirrored.Filled.MenuBook else Icons.Filled.PlayArrow,
-                        contentDescription = if (isBook) "继续阅读" else "继续播放",
-                        tint = TroveColors.Ink,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 private fun SyncStrip(state: LibraryUiState, onRefresh: () -> Unit) {
     if (!state.syncing && !state.offline && state.errorCode == null && state.lastSuccessAt == null) {
         return
@@ -580,7 +513,12 @@ private fun CollectionRow(entry: LibraryEntry.CollectionCard, onOpen: () -> Unit
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        TroveCover(entry.coverItem, size = 52.dp)
+        TroveCover(
+            item = entry.coverItem,
+            size = 52.dp,
+            label = coverText(entry.title, allowFullTitle = false),
+            seed = entry.collectionId,
+        )
         Column(modifier = Modifier.weight(1f)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

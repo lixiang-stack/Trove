@@ -37,6 +37,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,14 +48,8 @@ import java.io.File
 
 data class CoverPaint(val start: Color, val end: Color)
 
-fun coverPaint(item: LibraryItem): CoverPaint {
-    val key = when {
-        item.platform == "youtube" -> 2
-        item.platform == "podcast" -> 1
-        item.sourceType == "epub" -> 4
-        item.sourceType == "podcast_episode" -> 1
-        else -> ((item.id.hashCode() * 31 + item.title.hashCode()) and 0x7fffffff) % 6
-    }
+fun coverPaint(seed: String): CoverPaint {
+    val key = (seed.hashCode() and 0x7fffffff) % 6
     val palette = listOf(
         CoverPaint(Color(0xFFB5462F), Color(0xFF762B20)),
         CoverPaint(Color(0xFF356657), Color(0xFF1D3D34)),
@@ -72,6 +67,8 @@ fun TroveCover(
     size: Dp,
     modifier: Modifier = Modifier,
     corner: Dp = size * 0.19f,
+    label: String? = null,
+    seed: String? = null,
 ) {
     val localCover = item.coverArtifact?.localPath?.let(::File)?.takeIf { it.isFile }
     val shape = RoundedCornerShape(corner)
@@ -86,8 +83,9 @@ fun TroveCover(
         )
         return
     }
-    val paint = coverPaint(item)
-    val initial = item.title.firstOrNull()?.toString() ?: "拾"
+    val paint = coverPaint(seed ?: coverSeed(item))
+    val text = label ?: coverLabel(item)
+    val initial = text.ifBlank { "拾" }
     Box(
         modifier = modifier
             .size(size)
@@ -114,7 +112,15 @@ fun TroveCover(
             color = TroveColors.White,
             fontFamily = FontFamily.Serif,
             fontWeight = FontWeight.SemiBold,
-            fontSize = (size.value * 0.42f).sp,
+            fontSize = when {
+                initial.length <= 2 -> (size.value * 0.42f).sp
+                initial.length <= 4 -> (size.value * 0.22f).sp
+                initial.length <= 8 -> (size.value * 0.17f).sp
+                else -> (size.value * 0.12f).sp
+            },
+            textAlign = TextAlign.Center,
+            maxLines = 4,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

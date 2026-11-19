@@ -18,9 +18,12 @@ import dev.trove.app.testing.FakeTokenStore
 import dev.trove.app.testing.TestHarness
 import dev.trove.app.testing.testHarness
 import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.db.ArtifactEntity
 import dev.trove.core.db.ItemEntity
+import dev.trove.core.network.TranscriptResponseDto
+import dev.trove.core.network.TranscriptSegmentDto
 import dev.trove.core.network.TroveNetworkException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -78,6 +81,37 @@ class TranscriptFlowTest {
     }
 
     @Test
+    fun transcriptLoadsOnlineWithoutDownloadingItem() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = testHarness(
+            context,
+            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
+            settingsStore = FakeSettingsStore("https://host.example"),
+        )
+        harness.api.manifestError = TroveNetworkException("offline")
+        harness.api.transcriptResponse = TranscriptResponseDto(
+            itemId = "item-1",
+            segments = listOf(
+                TranscriptSegmentDto(0, 0, 4_200, "在线 transcript"),
+                TranscriptSegmentDto(1, 4_200, 8_000, "第二段"),
+            ),
+        )
+        runBlocking { seedTranscriptItem(harness, downloaded = false) }
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-item-item-1")
+        compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
+        waitForTag(compose, "player-screen")
+
+        waitForText(compose, "在线 transcript")
+        assertTrue(harness.api.transcriptRequests.contains("item-1"))
+        compose.onNodeWithTag("player-transcript-open").performScrollTo().performClick()
+        waitForTag(compose, "player-transcript-full")
+        assertTrue(compose.onAllNodesWithText("第二段").fetchSemanticsNodes().isNotEmpty())
+    }
+
+    @Test
     fun transcriptNotDownloadedShowsPrompt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = testHarness(
@@ -94,10 +128,10 @@ class TranscriptFlowTest {
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
         waitForTag(compose, "player-screen")
 
-        compose.onNodeWithText("Transcript 尚未下载")
+        compose.onNodeWithText("Transcript 暂不可用")
             .performScrollTo()
             .assertIsDisplayed()
-        compose.onNodeWithText("下载 Item 后可离线阅读 transcript。")
+        compose.onNodeWithText("联网后自动加载；下载 Item 可离线阅读。")
             .performScrollTo()
             .assertIsDisplayed()
     }

@@ -32,6 +32,7 @@ import dev.trove.core.network.SyncStateDto
 import dev.trove.core.network.SyncStateItemDto
 import dev.trove.core.network.TagsRequestDto
 import dev.trove.core.network.TombstoneDto
+import dev.trove.core.network.TranscriptResponseDto
 import dev.trove.core.network.TroveApi
 import dev.trove.core.network.TroveApiException
 import dev.trove.core.network.TroveClient
@@ -1019,6 +1020,9 @@ class SyncEngineTest {
             error("not used")
 
         override suspend fun item(itemId: String): ItemDto = error("not used")
+
+        override suspend fun transcript(itemId: String): TranscriptResponseDto =
+            error("not used")
 
         override suspend fun retryItem(itemId: String): ItemDto = error("not used")
 

@@ -47,11 +47,14 @@ import dev.trove.app.ui.theme.TroveColors
 import dev.trove.core.transcript.TranscriptLoadResult
 import dev.trove.core.transcript.TranscriptParser
 import dev.trove.core.transcript.TranscriptSegment
+import dev.trove.core.transcript.activeAt
 import dev.trove.core.transcript.highlightRanges
+import dev.trove.playback.PlaybackState
 
 @Composable
 fun TranscriptScreen(
     state: TranscriptUiState,
+    playback: PlaybackState,
     onBack: () -> Unit,
     onQuery: (String) -> Unit,
     onRetry: () -> Unit,
@@ -122,7 +125,7 @@ fun TranscriptScreen(
                 modifier = Modifier.padding(horizontal = 18.dp),
             )
         }
-        TranscriptBody(state = state, onRetry = onRetry)
+        TranscriptBody(state = state, playback = playback, onRetry = onRetry)
     }
 }
 
@@ -142,13 +145,33 @@ private fun DarkSystemBars() {
 }
 
 @Composable
-private fun TranscriptBody(state: TranscriptUiState, onRetry: () -> Unit) {
+private fun TranscriptBody(
+    state: TranscriptUiState,
+    playback: PlaybackState,
+    onRetry: () -> Unit,
+) {
     val listState = rememberLazyListState()
+    val item = state.item
+    val isCurrent = item != null && playback.itemId == item.id
+    val activeSeq = if (isCurrent && state.query.isBlank()) {
+        state.segments.activeAt(playback.positionMs)?.seq
+    } else {
+        null
+    }
+    val followPlayback = isCurrent &&
+        playback.isPlaying &&
+        state.query.isBlank() &&
+        state.focusSeq == null
     LaunchedEffect(state.focusSeq, state.segments) {
         val index = state.segments.indexOfFirst { it.seq == state.focusSeq }
         if (index >= 0) listState.scrollToItem(index)
     }
-    val item = state.item
+    LaunchedEffect(activeSeq, followPlayback) {
+        if (followPlayback && activeSeq != null) {
+            val index = state.segments.indexOfFirst { it.seq == activeSeq }
+            if (index >= 0) listState.animateScrollToItem(index)
+        }
+    }
     val transcriptArtifact = item?.transcriptArtifact
     val downloaded = transcriptArtifact?.downloadState == "completed"
     val message = when {
@@ -157,10 +180,10 @@ private fun TranscriptBody(state: TranscriptUiState, onRetry: () -> Unit) {
         transcriptArtifact == null -> "这个 Item 没有 transcript。"
         state.loadResult == TranscriptLoadResult.Failed -> "transcript 解析失败，请重试或重新下载。"
         state.loadResult == TranscriptLoadResult.NotDownloaded && state.totalSegments == 0 ->
-            "需要下载 transcript 才能离线阅读。"
+            "需要联网，或下载 Item 后离线阅读 transcript。"
 
         state.loadResult == TranscriptLoadResult.Empty -> "transcript 为空。"
-        state.totalSegments == 0 && !downloaded -> "需要下载 transcript 才能离线阅读。"
+        state.totalSegments == 0 && !downloaded -> "需要联网，或下载 Item 后离线阅读 transcript。"
         else -> null
     }
     if (state.loading) {
@@ -215,21 +238,27 @@ private fun TranscriptBody(state: TranscriptUiState, onRetry: () -> Unit) {
                 segment = segment,
                 query = state.query,
                 focused = state.focusSeq == segment.seq,
+                active = state.focusSeq == null && activeSeq == segment.seq,
             )
         }
     }
 }
 
 @Composable
-private fun SegmentRow(segment: TranscriptSegment, query: String, focused: Boolean) {
+private fun SegmentRow(
+    segment: TranscriptSegment,
+    query: String,
+    focused: Boolean,
+    active: Boolean,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .background(
-                if (focused) {
-                    TroveColors.Accent.copy(alpha = 0.12f)
-                } else {
-                    Color.Transparent
+                when {
+                    focused -> TroveColors.Accent.copy(alpha = 0.18f)
+                    active -> TroveColors.Accent.copy(alpha = 0.1f)
+                    else -> Color.Transparent
                 }
             )
             .padding(horizontal = 18.dp, vertical = 10.dp)
@@ -245,7 +274,11 @@ private fun SegmentRow(segment: TranscriptSegment, query: String, focused: Boole
         Text(
             text = highlighted(segment.text, query, TroveColors.Accent.copy(alpha = 0.45f)),
             style = MaterialTheme.typography.bodyMedium,
-            color = TroveColors.Paper.copy(alpha = 0.85f),
+            color = if (active) {
+                TroveColors.Paper
+            } else {
+                TroveColors.Paper.copy(alpha = 0.85f)
+            },
             maxLines = 8,
             overflow = TextOverflow.Ellipsis,
         )

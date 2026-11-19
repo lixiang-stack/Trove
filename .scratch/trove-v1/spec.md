@@ -204,7 +204,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 - 删除 Item 改为 soft delete：设置 `deleted_at`、递增 `version`/`content_seq`、删除派生文件和搜索索引、保留 tombstone 行；普通 Library/Search 不返回已删除 Item，manifest 返回 tombstone。V1 不清理 tombstone，单用户库规模可接受。
 - 重新添加已 tombstone 的同一 `source_key` 时复活同一 Item ID：清空 `deleted_at`、递增 `version`/`content_seq`、创建新的 Processing Run；旧客户端会先收到 tombstone 再收到复活后的 Item。
 - 客户端游标无效/过期，或游标序号大于 Host 当前最大序号（例如 Host 从较旧备份恢复）时，Host 返回 `sync.cursor_invalid`；客户端清空本地游标并做一次全量 manifest 重同步。
-- 首次同步只同步元数据，不自动下载所有文件；文件下载由用户按 Item/Tag/大小选择。manifest 分页大小由 Host 控制，客户端按 `has_more` 继续。
+- 首次同步只同步元数据，不自动下载所有文件；文件下载由用户按 Item/Tag/大小选择。打开或播放一个 Item 时自动把该 Item 的 Content Package 加入下载队列；整库仍不自动下载。manifest 分页大小由 Host 控制，客户端按 `has_more` 继续。
 - 同步触发：App 启动/回前台、手动下拉刷新、添加成功后、网络恢复、WorkManager 周期任务（系统允许的最小周期，默认 15 分钟，可关闭）。不使用 FCM/服务端 push。
 - 所有同步错误必须可见；客户端保留上次成功时间和错误码，不静默吞掉。
 
@@ -276,7 +276,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 - WorkManager 管理下载队列；同一时间 1 个前台下载，其余排队；下载使用临时 `.part` 文件，完成后校验 sha256 再原子 rename。
 - 只有已经存在对应 Artifact 的 Item 才能下载/播放；Processing State 可以是 completed 或 failed（失败但音频/书已保留），但处理中且没有 artifact 时只显示状态。
 - 支持 Range 续传；服务端返回 ETag/sha256；客户端保存已下载字节和 ETag；续传使用 `Range` + `If-Range: <ETag>`，ETag 变化时丢弃半成品并全量重下。
-- 下载约束：默认 Wi-Fi；可选“仅充电时下载”；用户可临时允许移动网络。
+- 下载约束：默认 Wi-Fi；可选“仅充电时下载”；用户可临时允许移动网络。打开 Item 触发的自动同步沿用同一组约束，并跳过已下载、排队中、下载中和用户暂停的 Item；失败项在下次打开时重试。
 - 下载前检查用户设置的存储配额（默认 5 GB，可配置）和系统剩余空间；不足时阻止并提示清理，不静默删除已有下载。
 - 下载使用前台服务通知（Android 14+ 声明 `dataSync` 类型）；失败/重试/暂停在下载中心可见。
 - 移除下载只删除本地文件、索引和下载记录，不调用 Host DELETE；删除 Item 才走 Host soft delete。
@@ -288,7 +288,8 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 - Readium 只加载本地 EPUB 资源，禁用脚本、远程图片/字体/请求和外部导航；Host 已拒绝 DRM/固定版式，Android 仍按不可信内容处理。
 - `book.json` 用于搜索文本、章节索引和与 Web 的阅读位置映射；`book.epub` 用于 native 渲染。
 - `book_locator` 升级为 `schema: 2` 的 JSON：保留 `chapter_index`/`paragraph_index`/`scroll_ratio`，并增加 Readium 可用的 `epub_href`/`epub_progression`。Host 原样存储并校验，Web 使用 legacy 字段，Android 优先使用 EPUB 字段并可回退。
-- Transcript 使用 Compose 列表显示 `seq`/`start_ms`/`end_ms`/`text`；支持文内搜索/高亮；不实现点击 transcript 跳音频或同步滚动。
+- Transcript 使用 Compose 列表显示 `seq`/`start_ms`/`end_ms`/`text`；支持文内搜索/高亮、播放时高亮当前段并自动滚动；不实现点击 transcript 跳音频。
+- 在线打开 Item 时通过 `/api/items/{id}/transcript` 自动加载分段并缓存到本地；离线时优先使用已下载的 transcript 文件。
 - 阅读进度滚动节流写回；离线进入 PendingMutation；继续阅读从本地位置恢复。
 - 阅读器提供字号、行高、浅色/深色/护眼主题；不要求分页模式。
 - 书内搜索、脚注、图片加载失败要有明确占位/错误，不白屏。
@@ -298,7 +299,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 - 在线搜索调用 Host `/api/search`；离线搜索查询 Android 本地索引，只覆盖已下载 Item。
 - 本地索引与 Host 使用同一套中文 bigram 归一化和查询构造规则；单字回退 `LIKE`，英文使用词干/小写归一化；共享契约 fixture 验证“人工智能 → 人工 工智 智能”等用例。
 - 搜索结果按 Item 聚合；每条结果保留最多 3 条 evidence；`ref` 对 transcript 是 `seq/start_ms`，对书是 `chapter/paragraph`。
-- 点击结果：transcript 打开播放页并高亮对应段落；书打开 Reader 并定位章节/段落；不做音频跳转/同步滚动。
+- 点击结果：transcript 打开播放页并高亮对应段落；书打开 Reader 并定位章节/段落；不做音频跳转。
 - 本地索引在下载完成、Item 更新、删除、App 升级后增量或重建；索引重建不阻塞 UI。
 - 目标：已下载 1,000 Item 的本地搜索 p95 <1 秒；在线搜索沿用 Host 目标。
 
@@ -314,7 +315,7 @@ Host 增加设备认证、内容 manifest + 状态同步、tombstone、通用 Co
 
 ### UI 与平台行为
 
-- 主导航：Library、Search、Add；Continue 是 Library 的入口/分组；Item 详情进入 Now Playing 或 Reader。
+- 主导航：Library、Search、Add；Continue 是 Library 的入口/分组：进行中 Item 排在列表最前，最近消费的排第一，不单独占用顶部区块；Item 详情进入 Now Playing 或 Reader。
 - Library 默认队列式列表；行内播放按钮；下载/在线状态图标；Processing State 徽标；Inbox 过滤。
 - Now Playing：封面/标题/作者、进度、倍速、播放控制、下载状态、transcript 折叠区；媒体通知与锁屏元数据一致。
 - Reader：章节导航、正文、文内搜索、字号/主题设置、阅读进度。
@@ -430,7 +431,7 @@ V1 采用两个 seam：
 - iOS、PWA/移动 Web 作为主要消费端；Consumer Web Shell 保留但不在 V1 移动验收。
 - 云端处理、云存储、云同步、公网暴露、多用户、账号体系。
 - Android 标注（FR-74，P2）、PDF、TTS、语义/向量检索、Topic、实体抽取、全局 Tag 重命名/合并。
-- 视频播放、时间戳跳转、同步滚动、点击 transcript 跳音频、Up Next、播放队列页、睡眠定时。
+- 视频播放、时间戳跳转、点击 transcript 跳音频、Up Next、播放队列页、睡眠定时。
 - 手机上传本地音频/EPUB 文件；本地文件入库继续走 Host Console 浏览器上传。
 - Android 端编辑标题/作者；Host Console 仍是元数据修正入口，Android 只编辑 Tag。
 - 批量导入、RSS 自动轮询/订阅、开放下载代理、DRM 绕过。
