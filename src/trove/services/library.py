@@ -492,11 +492,16 @@ class LibraryService:
         self.search_index.index_item(item_id)
         return bundle
 
-    def delete(self, item_id: str) -> None:
+    def delete(self, item_id: str, *, reset_consumption: bool = False) -> None:
         with self.sessions() as session:
             item = _require_visible(session, item_id)
             source_path = Path(item.source_path) if item.source_path else None
             now = utc_ms()
+            if reset_consumption:
+                item.consumption_state = ConsumptionState.UNSTARTED
+                item.audio_position_sec = 0.0
+                item.book_locator = None
+                item.last_consumed_at = None
             item.deleted_at = now
             item.updated_at = now
             session.execute(delete(Artifact).where(Artifact.item_id == item_id))

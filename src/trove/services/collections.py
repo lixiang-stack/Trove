@@ -321,7 +321,7 @@ class CollectionService:
         if delete_items:
             for item_id in item_ids:
                 try:
-                    self.library.delete(item_id)
+                    self.library.delete(item_id, reset_consumption=True)
                 except NotFoundError:
                     continue
         else:

@@ -63,7 +63,7 @@ Sources: [原型](prototype/index.html)、[GLOSSARY](../../GLOSSARY.md)、[V1 sp
 - 全量处理：每集 `downloading → extracting_audio → transcribing → organizing → indexing`，worker 串行；单集失败不影响其他集。
 - 去重：按单集 canonical URL / `source_key`；已存在且无合集归属的 Item 并入并保留 artifacts/进度；已属于其他合集的跳过并提示。
 - 重加：刷新合集元数据、追加新集；上游已移除的集本地保留，预览提示数量。
-- 删除：`delete_items` 软删除合集和全部子 Item；`ungroup` 软删除合集、子 Item 保留为独立内容。
+- 删除：`delete_items` 软删除合集和全部子 Item，并清空子 Item 的 Consumption State、播放/阅读位置和 last_consumed_at；`ungroup` 软删除合集、子 Item 保留为独立内容，进度不变。
 - 不自动追更、不做合集级摘要/Tag、不做播放全部/Up Next、不自动下载到手机。
 
 ### 电子书
@@ -176,8 +176,8 @@ Sources: [原型](prototype/index.html)、[GLOSSARY](../../GLOSSARY.md)、[V1 sp
 
 ### `DELETE /api/collections/{id}?mode=delete_items|ungroup`
 
-- `delete_items`：软删除合集 + 子 Item。
-- `ungroup`：软删除合集；子 Item 保留，`collection_id/index=null`。
+- `delete_items`：软删除合集 + 子 Item，并重置子 Item 的 Consumption State、播放/阅读位置和 last_consumed_at；重新添加时不恢复旧进度。
+- `ungroup`：软删除合集；子 Item 保留，`collection_id/index=null`，进度不变。
 
 ### `POST /api/collections/{id}/retry-failed`
 
