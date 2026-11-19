@@ -32,33 +32,39 @@ in [docs/android.md](docs/android.md). The security regression checklist is in
 
 ## Configuration
 
-Application secrets live in `~/Trove/.env`; Trove creates the file with `0600` permissions on first run. The DeepSeek API key is stored separately in `~/.config/trove`.
+Application secrets live in `~/Trove/.env`; Trove creates the file with `0600` permissions on first run. LLM settings live separately in `~/.config/trove/llm.toml`.
 
-### DeepSeek API key
+### LLM configuration
 
-Trove reads the key only from `~/.config/trove/llm_api_key`. The file contains only the raw key, with no `NAME=` prefix:
+Trove reads LLM settings only from `~/.config/trove/llm.toml`. `model` and `base_url` are required; `api_key` is required for OpenAI-compatible providers.
 
 ```bash
 install -d -m 700 ~/.config/trove
-${EDITOR:-vi} ~/.config/trove/llm_api_key
-chmod 600 ~/.config/trove/llm_api_key
+${EDITOR:-vi} ~/.config/trove/llm.toml
+chmod 600 ~/.config/trove/llm.toml
 ```
 
-File contents:
-
-```text
-sk-your-key
+```toml
+model = "deepseek-flash"
+base_url = "https://api.deepseek.com/v1"
+api_key = "sk-your-key"
 ```
 
-The key file is read on each organizing run, so editing it does not require a restart. With the built-in worker, restarting `uv run trove serve` is enough after deploying a new version of Trove.
+Any OpenAI-compatible endpoint works. For a local Ollama server:
 
-Without a key, processing still produces and keeps the audio and transcript, but the `organizing` stage fails with `llm.not_configured`. Set the key and retry the Processing Run from the Item page to finish organization. Transcript and book text are sent to DeepSeek in chunks while organizing; audio and source files stay on the Mac.
-
-To disable organization entirely, set the environment variable for the process instead of adding a key:
-
-```bash
-TROVE_LLM_ENABLED=false uv run trove serve
+```toml
+model = "qwen3.5:4b"
+base_url = "http://localhost:11434/v1"
+api_key = "ollama"
 ```
+
+Organization always requests `response_format = {"type": "json_object"}` and `reasoning_effort = "none"`, so thinking models return the final JSON directly.
+
+Other fields have code defaults and may be omitted: `enabled`, `chunk_chars`, `max_calls_per_item`, `max_output_tokens_per_call`, `max_input_tokens_per_item`, `input_cost_per_million`, `output_cost_per_million`, and `timeout_seconds`. Values in the file override the defaults. An existing `~/.config/trove/llm_api_key` file is no longer read; move its contents into `api_key`.
+
+The file is read at startup, so restart `uv run trove serve` after editing it. Without a complete configuration, processing still produces and keeps the audio and transcript, but the `organizing` stage fails with `llm.not_configured`. Set the settings and retry the Processing Run from the Item page to finish organization. Transcript and book text are sent to the configured LLM in chunks while organizing; audio and source files stay on the Mac.
+
+To disable organization entirely, set `enabled = false` in `~/.config/trove/llm.toml`.
 
 ## Test
 
@@ -67,7 +73,7 @@ TROVE_LLM_ENABLED=false uv run trove serve
 ./scripts/check.sh          # 提交/推送前：完整 pytest + 文档检查
 ```
 
-`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host and Playwright's bundled Chromium headless shell (`uv run playwright install chromium` once). Tests run with 4 xdist workers by default; set `PYTEST_WORKERS=0` to run serially. Network tests are excluded by default: `uv run pytest -m network`.
+`--fast` skips browser tests, real FFmpeg integration tests, and docs; GitHub Actions uses this mode. The full mode requires `ffmpeg`/`ffprobe` on the host and Playwright's bundled Chromium headless shell (`uv run playwright install chromium` once). Tests run with 4 xdist workers by default; set `PYTEST_WORKERS=0` to run serially. Both modes skip network tests; run them explicitly with `uv run pytest -m network`.
 
 Diagnose search and index coverage from the terminal:
 

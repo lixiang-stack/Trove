@@ -22,7 +22,7 @@ case "$mode" in
     uv run mypy
     # Browser audio playback is sensitive to parallel Chromium instances;
     # keep the browser suite serial and run the rest with the normal workers.
-    uv run pytest -q -n "$workers" -m "not browser"
+    uv run pytest -q -n "$workers" -m "not browser and not network"
     uv run pytest -q -n 0 -m "browser"
     python3 scripts/check-docs.py
     ;;

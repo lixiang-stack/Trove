@@ -5,7 +5,7 @@ from typing import Any
 
 import httpx
 
-from trove.config import Config, ConfigError, resolve_llm_api_key
+from trove.config import LLMConfig, default_llm_config_path
 from trove.domain.organization import (
     MAX_EXISTING_TAGS,
     chunk_text,
@@ -19,6 +19,7 @@ from trove.ports import OrganizationResult, StageContext
 PROMPT_VERSION = "organize-1"
 PROMPT_OVERHEAD_TOKENS = 200
 JSON_ATTEMPTS = 2
+TEMPERATURE = 0.2
 
 SYSTEM_PROMPT = (
     "You organize a personal library. Return only a JSON object with "
@@ -44,9 +45,9 @@ REDUCE_INSTRUCTIONS = (
 )
 
 
-class DeepSeekOrganizer:
-    def __init__(self, config: Config, client: httpx.Client | None = None) -> None:
-        self.config = config
+class LLMOrganizer:
+    def __init__(self, llm: LLMConfig, client: httpx.Client | None = None) -> None:
+        self.llm = llm
         self.client = client
 
     def organize(
@@ -57,57 +58,54 @@ class DeepSeekOrganizer:
         existing_tags: list[str],
         context: StageContext,
     ) -> OrganizationResult:
-        if not self.config.llm_enabled:
+        llm = self.llm
+        if not llm.enabled:
             return OrganizationResult(
                 summary="", tags=[], model="disabled", prompt_version="disabled"
             )
-        try:
-            api_key = resolve_llm_api_key(self.config)
-        except ConfigError as exc:
-            raise ProcessingError("llm.not_configured", str(exc)) from exc
-        if not api_key:
+        if not (llm.model and llm.base_url and llm.api_key):
             raise ProcessingError(
                 "llm.not_configured",
-                f"DeepSeek API key is not configured; write it to "
-                f"{self.config.llm_api_key_path}",
+                "LLM is not configured; set model, base_url, and api_key in "
+                f"{default_llm_config_path()}",
             )
         body = (text or "").strip()
         if not body:
             raise ProcessingError("llm.invalid_output", "No text to organize")
-        chunks = chunk_text(body, self.config.llm_chunk_chars)
+        chunks = chunk_text(body, llm.chunk_chars)
         calls = len(chunks) if len(chunks) == 1 else len(chunks) + 1
-        if calls > self.config.llm_max_calls_per_item:
+        if calls > llm.max_calls_per_item:
             raise ProcessingError(
                 "llm.limit_exceeded",
                 f"Organization needs {calls} calls; limit is "
-                f"{self.config.llm_max_calls_per_item}",
+                f"{llm.max_calls_per_item}",
             )
         estimated_input = (
             sum(estimate_tokens(chunk) for chunk in chunks)
             + PROMPT_OVERHEAD_TOKENS * calls
         )
-        if estimated_input > self.config.llm_max_input_tokens_per_item:
+        if estimated_input > llm.max_input_tokens_per_item:
             raise ProcessingError(
                 "llm.limit_exceeded",
                 f"Organization needs about {estimated_input} input tokens; limit is "
-                f"{self.config.llm_max_input_tokens_per_item}",
+                f"{llm.max_input_tokens_per_item}",
             )
         vocabulary = normalize_tags(existing_tags, limit=MAX_EXISTING_TAGS)
 
-        client = self.client or httpx.Client(timeout=self.config.llm_timeout_seconds)
+        client = self.client or httpx.Client(timeout=llm.timeout_seconds)
         calls_used = 0
         try:
             if len(chunks) == 1:
                 context.check_cancelled()
                 payload, input_tokens, output_tokens, calls_used = self._call_json(
                     client,
-                    api_key,
+                    llm.api_key,
                     title=title,
                     instructions=SINGLE_INSTRUCTIONS,
                     content=chunks[0],
                     existing_tags=vocabulary,
                     tag_limit="3-5 tags",
-                    remaining_calls=self.config.llm_max_calls_per_item,
+                    remaining_calls=llm.max_calls_per_item,
                 )
                 summary = _summary(payload)
                 tags = _tags(payload)
@@ -120,14 +118,14 @@ class DeepSeekOrganizer:
                     context.check_cancelled()
                     payload, used_input, used_output, used_calls = self._call_json(
                         client,
-                        api_key,
+                        llm.api_key,
                         title=title,
                         instructions=MAP_INSTRUCTIONS,
                         content=chunk,
                         existing_tags=vocabulary,
                         tag_limit="up to 3 tags",
                         prefix=f"Chunk {index}/{len(chunks)}.",
-                        remaining_calls=self.config.llm_max_calls_per_item - calls_used,
+                        remaining_calls=llm.max_calls_per_item - calls_used,
                     )
                     input_tokens += used_input
                     output_tokens += used_output
@@ -140,13 +138,13 @@ class DeepSeekOrganizer:
                 )
                 payload, used_input, used_output, used_calls = self._call_json(
                     client,
-                    api_key,
+                    llm.api_key,
                     title=title,
                     instructions=REDUCE_INSTRUCTIONS,
                     content=reduce_content,
                     existing_tags=normalize_tags(vocabulary + map_tags, limit=MAX_EXISTING_TAGS),
                     tag_limit="3-5 tags",
-                    remaining_calls=self.config.llm_max_calls_per_item - calls_used,
+                    remaining_calls=llm.max_calls_per_item - calls_used,
                 )
                 input_tokens += used_input
                 output_tokens += used_output
@@ -157,25 +155,25 @@ class DeepSeekOrganizer:
             if self.client is None:
                 client.close()
 
-        if input_tokens > self.config.llm_max_input_tokens_per_item:
+        if input_tokens > llm.max_input_tokens_per_item:
             raise ProcessingError(
                 "llm.limit_exceeded",
                 f"Organization used {input_tokens} input tokens; limit is "
-                f"{self.config.llm_max_input_tokens_per_item}",
+                f"{llm.max_input_tokens_per_item}",
             )
 
         return OrganizationResult(
             summary=summary,
             tags=tags,
-            model=self.config.llm_model,
+            model=llm.model,
             prompt_version=PROMPT_VERSION,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             cost_usd=estimate_cost(
                 input_tokens,
                 output_tokens,
-                self.config.llm_input_cost_per_million,
-                self.config.llm_output_cost_per_million,
+                llm.input_cost_per_million,
+                llm.output_cost_per_million,
             ),
         )
 
@@ -195,25 +193,22 @@ class DeepSeekOrganizer:
         if remaining_calls <= 0:
             raise ProcessingError(
                 "llm.limit_exceeded",
-                f"Organization exceeded {self.config.llm_max_calls_per_item} calls",
+                f"Organization exceeded {self.llm.max_calls_per_item} calls",
             )
-        prompt = _prompt(
-            title=title,
-            instructions=instructions,
-            content=content,
-            existing_tags=existing_tags,
-            tag_limit=tag_limit,
-            prefix=prefix,
-        )
         request_body = {
-            "model": self.config.llm_model,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+            "model": self.llm.model,
+            "messages": _messages(
+                title=title,
+                instructions=instructions,
+                content=content,
+                existing_tags=existing_tags,
+                tag_limit=tag_limit,
+                prefix=prefix,
+            ),
             "response_format": {"type": "json_object"},
-            "max_tokens": self.config.llm_max_output_tokens_per_call,
-            "temperature": 0.2,
+            "reasoning_effort": "none",
+            "max_tokens": self.llm.max_output_tokens_per_call,
+            "temperature": TEMPERATURE,
         }
         input_tokens = 0
         output_tokens = 0
@@ -223,19 +218,27 @@ class DeepSeekOrganizer:
             response = self._post(client, api_key, request_body)
             payload = response.get("choices") or []
             content_value = ""
+            finish_reason = None
             if payload:
                 message = payload[0].get("message") or {}
                 content_value = str(message.get("content") or "")
+                finish_reason = payload[0].get("finish_reason")
+            if finish_reason == "length":
+                raise ProcessingError(
+                    "llm.limit_exceeded",
+                    f"Model reached max_tokens={self.llm.max_output_tokens_per_call} "
+                    "before returning a complete answer",
+                )
             usage = response.get("usage") or {}
             attempt_input = int(usage.get("prompt_tokens") or 0)
             attempt_output = int(usage.get("completion_tokens") or 0)
             input_tokens += attempt_input
             output_tokens += attempt_output
-            if attempt_output > self.config.llm_max_output_tokens_per_call:
+            if attempt_output > self.llm.max_output_tokens_per_call:
                 raise ProcessingError(
                     "llm.limit_exceeded",
                     f"Model returned {attempt_output} output tokens in one call; limit is "
-                    f"{self.config.llm_max_output_tokens_per_call}",
+                    f"{self.llm.max_output_tokens_per_call}",
                 )
             if not content_value.strip():
                 last_error = ValueError("empty response")
@@ -257,7 +260,7 @@ class DeepSeekOrganizer:
         if max_attempts < JSON_ATTEMPTS:
             raise ProcessingError(
                 "llm.limit_exceeded",
-                f"Organization exceeded {self.config.llm_max_calls_per_item} calls",
+                f"Organization exceeded {self.llm.max_calls_per_item} calls",
             )
         raise ProcessingError(
             "llm.invalid_output",
@@ -269,29 +272,52 @@ class DeepSeekOrganizer:
     ) -> dict[str, Any]:
         try:
             response = client.post(
-                f"{self.config.llm_base_url.rstrip('/')}/chat/completions",
+                f"{self.llm.base_url.rstrip('/')}/chat/completions",
                 headers={"Authorization": f"Bearer {api_key}"},
                 json=body,
             )
         except httpx.HTTPError as exc:
-            raise ProcessingError("llm.failed", f"Organization request failed: {exc}") from exc
+            raise ProcessingError("llm.failed", f"LLM request failed: {exc}") from exc
         if response.status_code in {401, 403}:
             raise ProcessingError(
-                "llm.not_configured", "DeepSeek rejected the configured API key"
+                "llm.not_configured", "LLM rejected the configured API key"
             )
         if response.status_code >= 400:
             raise ProcessingError(
-                "llm.failed", f"Organization request failed with HTTP {response.status_code}"
+                "llm.failed", f"LLM request failed with HTTP {response.status_code}"
             )
         try:
             data = response.json()
         except ValueError as exc:
-            raise ProcessingError(
-                "llm.invalid_output", "Organization response was not JSON"
-            ) from exc
+            raise ProcessingError("llm.invalid_output", "LLM response was not JSON") from exc
         if not isinstance(data, dict):
-            raise ProcessingError("llm.invalid_output", "Organization response was not JSON")
+            raise ProcessingError("llm.invalid_output", "LLM response was not JSON")
         return data
+
+
+def _messages(
+    *,
+    title: str,
+    instructions: str,
+    content: str,
+    existing_tags: list[str],
+    tag_limit: str,
+    prefix: str,
+) -> list[dict[str, str]]:
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": _prompt(
+                title=title,
+                instructions=instructions,
+                content=content,
+                existing_tags=existing_tags,
+                tag_limit=tag_limit,
+                prefix=prefix,
+            ),
+        },
+    ]
 
 
 def _prompt(
