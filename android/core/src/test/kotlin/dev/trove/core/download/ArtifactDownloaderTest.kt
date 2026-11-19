@@ -343,6 +343,23 @@ class ArtifactDownloaderTest {
         assertTrue(queue.enqueued.isEmpty())
     }
 
+    @Test
+    fun managerQueuesWholeCollectionWithOneRequest() = runBlocking {
+        seedItem(fixtureBytes(), kind = "transcript")
+        val queue = FakeQueue()
+        val manager = DefaultDownloadManager(database, downloader(), queue)
+
+        manager.enqueueAll(listOf("item-1", "missing-item"))
+
+        assertEquals(listOf("item-1"), queue.enqueued)
+        assertEquals("queued", database.artifactDao().find("item-1", "transcript")?.downloadState)
+
+        database.artifactDao().setDownloadState("item-1", "transcript", "completed", null)
+        queue.enqueued.clear()
+        manager.enqueueAll(listOf("item-1"))
+        assertTrue(queue.enqueued.isEmpty())
+    }
+
     private suspend fun seedItem(
         bytes: ByteArray,
         kind: String,

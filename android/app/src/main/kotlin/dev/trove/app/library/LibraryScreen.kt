@@ -498,13 +498,20 @@ private fun CollectionRow(entry: LibraryEntry.CollectionCard, onOpen: () -> Unit
                 entry.processingCount.takeIf { it > 0 }?.let { "$it 处理中" },
                 entry.queuedCount.takeIf { it > 0 }?.let { "$it 排队" },
             ).joinToString(" · ")
-        entry.completedCount == entry.episodeCount -> "全部完成"
-        else -> "${entry.completedCount}/${entry.episodeCount} 完成"
+        entry.completedCount < entry.episodeCount ->
+            "处理 ${entry.completedCount}/${entry.episodeCount}"
+        entry.allDownloaded -> "已全部下载"
+        entry.downloadingCount > 0 ->
+            "下载中 ${entry.downloadedCount}/${entry.episodeCount}"
+        entry.pendingDownloadCount > 0 ->
+            "等待下载 ${entry.downloadedCount}/${entry.episodeCount}"
+        else -> "已下载 ${entry.downloadedCount}/${entry.episodeCount}"
     }
     val statusColor = when {
         entry.failedCount > 0 -> TroveColors.Danger
         entry.processingCount > 0 || entry.queuedCount > 0 -> TroveColors.Cooking
-        entry.completedCount == entry.episodeCount -> TroveColors.Green
+        entry.pendingDownloadCount > 0 -> TroveColors.Cooking
+        entry.allDownloaded -> TroveColors.Green
         else -> TroveColors.Muted
     }
     Row(
@@ -568,7 +575,12 @@ private fun CollectionRow(entry: LibraryEntry.CollectionCard, onOpen: () -> Unit
                 modifier = Modifier.padding(top = 2.dp),
             )
             TinyProgress(
-                fraction = entry.consumptionProgress,
+                fraction = entry.downloadProgress,
+                fill = when {
+                    entry.allDownloaded -> TroveColors.Green
+                    entry.pendingDownloadCount > 0 -> TroveColors.Cooking
+                    else -> TroveColors.Accent
+                },
                 modifier = Modifier.padding(top = 4.dp),
             )
             Row(
@@ -583,7 +595,7 @@ private fun CollectionRow(entry: LibraryEntry.CollectionCard, onOpen: () -> Unit
                     color = TroveColors.Muted,
                 )
                 Text(
-                    "${entry.completedCount}/${entry.episodeCount} 完成",
+                    "处理 ${entry.completedCount}/${entry.episodeCount}",
                     style = MaterialTheme.typography.labelSmall,
                     color = TroveColors.Muted,
                 )

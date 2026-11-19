@@ -2,7 +2,9 @@ package dev.trove.app.library
 
 import dev.trove.app.collection.sortCollectionEpisodes
 import dev.trove.core.library.LibraryItem
+import dev.trove.core.library.LocalArtifact
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -200,6 +202,50 @@ class LibraryQueryTest {
         assertEquals(listOf("c1"), inProgress.map { it.id })
     }
 
+    @Test
+    fun collectionCardTracksDownloadCompleteness() {
+        val items = listOf(
+            item(
+                "episode-1",
+                collectionId = "c1",
+                collectionIndex = 1,
+                artifacts = listOf(artifact("completed")),
+            ),
+            item(
+                "episode-2",
+                collectionId = "c1",
+                collectionIndex = 2,
+                artifacts = listOf(artifact("queued")),
+            ),
+            item(
+                "episode-3",
+                collectionId = "c1",
+                collectionIndex = 3,
+                artifacts = listOf(artifact("none")),
+            ),
+        )
+        val card = items.toLibraryEntries()
+            .filterIsInstance<LibraryEntry.CollectionCard>()
+            .single()
+
+        assertEquals(1, card.downloadedCount)
+        assertEquals(1, card.pendingDownloadCount)
+        assertEquals(1f / 3f, card.downloadProgress, 0.001f)
+        assertFalse(card.allDownloaded)
+    }
+
+    private fun artifact(state: String) = LocalArtifact(
+        kind = "audio",
+        sha256 = "a".repeat(64),
+        size = 100,
+        mime = "audio/mp4",
+        version = 1,
+        localPath = null,
+        downloadState = state,
+        downloadedBytes = 0,
+        errorCode = null,
+    )
+
     private fun item(
         id: String,
         fetchedAt: Long = 1,
@@ -212,6 +258,7 @@ class LibraryQueryTest {
         collectionId: String? = null,
         collectionIndex: Int? = null,
         collectionTitle: String? = null,
+        artifacts: List<LocalArtifact> = emptyList(),
     ) = LibraryItem(
         id = id,
         version = 1,
@@ -238,6 +285,6 @@ class LibraryQueryTest {
         lastConsumedAt = lastConsumedAt,
         hasAudio = true,
         hasBook = false,
-        artifacts = emptyList(),
+        artifacts = artifacts,
     )
 }

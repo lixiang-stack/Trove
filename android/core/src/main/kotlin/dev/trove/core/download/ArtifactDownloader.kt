@@ -390,6 +390,8 @@ class ArtifactDownloader(
 interface DownloadManager {
     suspend fun enqueue(itemId: String)
 
+    suspend fun enqueueAll(itemIds: List<String>)
+
     suspend fun pause(itemId: String)
 
     suspend fun retry(itemId: String)
@@ -413,6 +415,16 @@ class DefaultDownloadManager(
         queue.enqueue(itemId)
     }
 
+    override suspend fun enqueueAll(itemIds: List<String>) {
+        var triggerId: String? = null
+        for (itemId in itemIds) {
+            if (markQueued(itemId) && triggerId == null) {
+                triggerId = itemId
+            }
+        }
+        triggerId?.let { queue.enqueue(it) }
+    }
+
     override suspend fun pause(itemId: String) {
         downloader.markPaused(itemId)
     }
@@ -432,11 +444,12 @@ class DefaultDownloadManager(
         if (pending.isNotEmpty()) queue.enqueue(pending.first())
     }
 
-    private suspend fun markQueued(itemId: String) {
-        database.artifactDao().forItem(itemId)
+    private suspend fun markQueued(itemId: String): Boolean {
+        val pending = database.artifactDao().forItem(itemId)
             .filter { it.downloadState != "completed" }
-            .forEach {
-                database.artifactDao().setDownloadState(itemId, it.kind, "queued", null)
-            }
+        pending.forEach {
+            database.artifactDao().setDownloadState(itemId, it.kind, "queued", null)
+        }
+        return pending.isNotEmpty()
     }
 }

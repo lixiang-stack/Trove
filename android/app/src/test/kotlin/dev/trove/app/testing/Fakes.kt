@@ -419,6 +419,7 @@ class FakeDownloadQueue : DownloadQueue {
 
 class FakeDownloadManager : DownloadManager {
     val enqueued = CopyOnWriteArrayList<String>()
+    val enqueuedAll = CopyOnWriteArrayList<List<String>>()
     val paused = CopyOnWriteArrayList<String>()
     val retried = CopyOnWriteArrayList<String>()
     val removed = CopyOnWriteArrayList<String>()
@@ -426,6 +427,10 @@ class FakeDownloadManager : DownloadManager {
 
     override suspend fun enqueue(itemId: String) {
         enqueued += itemId
+    }
+
+    override suspend fun enqueueAll(itemIds: List<String>) {
+        enqueuedAll += itemIds
     }
 
     override suspend fun pause(itemId: String) {

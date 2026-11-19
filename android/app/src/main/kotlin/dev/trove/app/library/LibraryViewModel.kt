@@ -131,6 +131,15 @@ class LibraryViewModel(
         }
     }
 
+    fun downloadCollection(collectionId: String) {
+        viewModelScope.launch {
+            val itemIds = state.value.allItems
+                .filter { it.collectionId == collectionId && it.artifacts.isNotEmpty() }
+                .map { it.id }
+            if (itemIds.isNotEmpty()) downloadManager.enqueueAll(itemIds)
+        }
+    }
+
     fun retryCollectionItem(itemId: String) {
         val client = sessionController.currentClient() ?: return
         viewModelScope.launch {

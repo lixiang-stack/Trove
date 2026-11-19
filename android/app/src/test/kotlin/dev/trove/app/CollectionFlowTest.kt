@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.compose.ui.test.assertContentDescriptionEquals
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -11,6 +12,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.app.session.SessionViewModel
@@ -32,6 +34,8 @@ import dev.trove.core.network.LinkWarningDto
 import dev.trove.core.network.ManifestDto
 import dev.trove.core.network.SyncFileDto
 import dev.trove.core.network.SyncItemDto
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -200,6 +204,54 @@ class CollectionFlowTest {
         compose.onNodeWithTag("collection-play-one").performClick()
         waitForPlayerState(harness) { it.itemId == "one" && !it.isPlaying }
         compose.onNodeWithTag("collection-play-one").assertContentDescriptionEquals("播放")
+    }
+
+    @Test
+    fun collectionDownloadAllQueuesEveryEpisodeAndShowsDownloadStates() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("one", "Episode One", 1, ready = true),
+                syncItem("two", "Episode Two", 2, ready = true),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "test-epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-collection-collection-1")
+        compose.onNodeWithTag("library-collection-collection-1").performClick()
+        waitForTag(compose, "collection-screen")
+        compose.onNodeWithText("已下载 0/2").assertIsDisplayed()
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
+        compose.onNodeWithTag("collection-episode-one").assertTextContains("未下载")
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(2)
+        compose.onNodeWithTag("collection-episode-two").assertTextContains("未下载")
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
+        compose.onNodeWithTag("collection-download-all").performClick()
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
+            harness.downloadQueue.enqueued.isNotEmpty()
+        }
+
+        val states = runBlocking {
+            harness.container.database.artifactDao().forItem("one")
+                .plus(harness.container.database.artifactDao().forItem("two"))
+                .map { it.downloadState }
+        }
+        assertTrue(states.isNotEmpty())
+        assertTrue(states.all { it == "queued" })
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
+        compose.onNodeWithTag("collection-download-all").assertTextContains("等待下载 0/2")
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
+        compose.onNodeWithTag("collection-episode-one").assertTextContains("等待下载")
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(2)
+        compose.onNodeWithTag("collection-episode-two").assertTextContains("等待下载")
     }
 
     @Test
