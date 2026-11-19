@@ -395,6 +395,12 @@ interface DownloadManager {
     suspend fun retry(itemId: String)
 
     suspend fun remove(itemId: String)
+
+    /**
+     * Re-schedules downloads that are still queued but may have lost their
+     * WorkManager job to an OEM app freezer. No-op while a download is active.
+     */
+    suspend fun resumePending()
 }
 
 class DefaultDownloadManager(
@@ -418,6 +424,12 @@ class DefaultDownloadManager(
 
     override suspend fun remove(itemId: String) {
         downloader.removeDownload(itemId)
+    }
+
+    override suspend fun resumePending() {
+        if (database.artifactDao().hasDownloading()) return
+        val pending = database.artifactDao().itemsWithPendingDownloads()
+        if (pending.isNotEmpty()) queue.enqueue(pending.first())
     }
 
     private suspend fun markQueued(itemId: String) {

@@ -201,7 +201,38 @@ class LibraryFlowTest {
         compose.onNodeWithText("已同步的 Item").assertIsDisplayed()
     }
 
-    private suspend fun seedLocalItem(harness: dev.trove.app.testing.TestHarness) {
+    @Test
+    fun queuedDownloadsAreReportedAndResumed() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = signedInHarness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(syncItem("offline-1", "已同步的 Item", "completed")),
+            tombstones = emptyList(),
+            nextCursor = "1",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        harness.api.stateResponse = dev.trove.core.network.SyncStateDto(
+            items = emptyList(),
+            nextCursor = "1",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        runBlocking { seedLocalItem(harness, downloadState = "queued") }
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
+            harness.downloadQueue.enqueued.contains("offline-1")
+        }
+        waitForText(compose, "已同步 · 1 项等待下载")
+    }
+
+    private suspend fun seedLocalItem(
+        harness: dev.trove.app.testing.TestHarness,
+        downloadState: String = "none",
+    ) {
         val database = harness.container.database
         database.itemDao().upsert(
             ItemEntity(
@@ -239,7 +270,7 @@ class LibraryFlowTest {
                 mime = "audio/mp4",
                 version = 1,
                 localPath = null,
-                downloadState = "none",
+                downloadState = downloadState,
             )
         )
     }

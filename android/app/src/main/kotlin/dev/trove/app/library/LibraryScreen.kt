@@ -447,11 +447,14 @@ private fun SyncStrip(state: LibraryUiState, onRefresh: () -> Unit) {
         state.syncing -> stringResource(R.string.library_syncing)
         state.offline -> stringResource(R.string.library_offline)
         state.errorCode != null -> stringResource(R.string.library_sync_failed, state.errorCode)
+        state.queuedDownloads > 0 ->
+            stringResource(R.string.library_sync_queued_downloads, state.queuedDownloads)
         else -> "已同步"
     }
     val color = when {
         state.errorCode != null -> TroveColors.Danger
         state.offline -> TroveColors.Cooking
+        state.queuedDownloads > 0 -> TroveColors.Cooking
         else -> TroveColors.Muted
     }
     Row(

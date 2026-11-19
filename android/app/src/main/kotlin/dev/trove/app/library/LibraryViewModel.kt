@@ -41,6 +41,7 @@ data class LibraryUiState(
     val loading: Boolean = false,
     val downloads: List<LibraryItem> = emptyList(),
     val downloadPreferences: DownloadPreferences = DownloadPreferences(),
+    val queuedDownloads: Int = 0,
     val conflictNotice: String? = null,
     val collectionActionError: String? = null,
 )
@@ -94,6 +95,7 @@ class LibraryViewModel(
                     (status is SyncStatus.Idle && status.lastSuccessAt == null)),
             downloads = downloads,
             downloadPreferences = preferences,
+            queuedDownloads = downloads.count { it.downloadState == "queued" },
             conflictNotice = action.conflictNotice,
             collectionActionError = action.collectionActionError,
         )
@@ -154,7 +156,10 @@ class LibraryViewModel(
     }
 
     fun refresh() {
-        viewModelScope.launch { syncEngine.sync() }
+        viewModelScope.launch {
+            syncEngine.sync()
+            downloadManager.resumePending()
+        }
     }
 
     fun setSort(value: LibrarySort) {

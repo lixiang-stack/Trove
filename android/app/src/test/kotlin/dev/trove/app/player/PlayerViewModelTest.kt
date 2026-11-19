@@ -239,6 +239,19 @@ class PlayerViewModelTest {
     }
 
     @Test
+    fun openingQueuedItemResumesStuckDownload() = runBlocking {
+        controller.restore()
+        seedItem()
+        database.artifactDao().setDownloadState("item-1", "audio", "queued", null)
+        val model = viewModel()
+
+        model.open("item-1", autoPlay = false)
+        waitFor { downloads.resumeCalls.get() > 0 }
+
+        assertTrue(downloads.enqueued.isEmpty())
+    }
+
+    @Test
     fun deletingItemCallsHostAndRemovesLocalCopy() = runBlocking {
         controller.restore()
         seedItem()
