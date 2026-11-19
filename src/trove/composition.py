@@ -6,11 +6,11 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.adapters.asr import MlxWhisperTranscriber
-from trove.adapters.deepseek import DeepSeekOrganizer
 from trove.adapters.downloader import DefaultDownloader
 from trove.adapters.epub import EpubExtractor
 from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
+from trove.adapters.llm import LLMOrganizer
 from trove.adapters.safe_http import SafeHttpClient
 from trove.adapters.search import FtsSearchIndex
 from trove.adapters.video_inspect import YtDlpVideoInspector
@@ -85,7 +85,7 @@ def default_ports(config: Config) -> Ports:
         feed_client=PodcastFeedClient(http, max_bytes=config.max_feed_bytes),
         audio_extractor=FfmpegAudioExtractor(),
         transcriber=MlxWhisperTranscriber(config.asr_model),
-        organizer=DeepSeekOrganizer(config),
+        organizer=LLMOrganizer(config.llm),
         book_extractor=EpubExtractor(),
         video_inspector=YtDlpVideoInspector(config),
         link_probe=http,

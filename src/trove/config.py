@@ -27,8 +27,6 @@ DEFAULT_MAX_PODCAST_MEDIA_BYTES = GB
 DEFAULT_MAX_COLLECTION_ITEMS = 100
 DEFAULT_MAX_COLLECTION_DURATION_SEC = 100 * 60 * 60
 DEFAULT_ASR_MODEL = "mlx-community/whisper-large-v3-turbo"
-DEFAULT_LLM_MODEL = "deepseek-flash"
-DEFAULT_LLM_BASE_URL = "https://api.deepseek.com/v1"
 DEFAULT_LLM_CHUNK_CHARS = 20_000
 DEFAULT_LLM_MAX_CALLS_PER_ITEM = 16
 DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL = 1024
@@ -36,11 +34,11 @@ DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM = 200_000
 DEFAULT_LLM_INPUT_COST_PER_MILLION = 0.28
 DEFAULT_LLM_OUTPUT_COST_PER_MILLION = 0.42
 DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
-LLM_API_KEY_FILENAME = "llm_api_key"
+LLM_CONFIG_FILENAME = "llm.toml"
 
 
-def default_llm_api_key_path() -> Path:
-    return Path.home() / ".config" / "trove" / LLM_API_KEY_FILENAME
+def default_llm_config_path() -> Path:
+    return Path.home() / ".config" / "trove" / LLM_CONFIG_FILENAME
 
 
 class ConfigError(RuntimeError):
@@ -49,6 +47,63 @@ class ConfigError(RuntimeError):
 
 def _default_home() -> Path:
     return Path(os.environ.get("TROVE_HOME", DEFAULT_HOME))
+
+
+@dataclass(slots=True)
+class LLMConfig:
+    model: str
+    base_url: str
+    api_key: str = field(repr=False)
+    enabled: bool = True
+    chunk_chars: int = DEFAULT_LLM_CHUNK_CHARS
+    max_calls_per_item: int = DEFAULT_LLM_MAX_CALLS_PER_ITEM
+    max_output_tokens_per_call: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL
+    max_input_tokens_per_item: int = DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM
+    input_cost_per_million: float = DEFAULT_LLM_INPUT_COST_PER_MILLION
+    output_cost_per_million: float = DEFAULT_LLM_OUTPUT_COST_PER_MILLION
+    timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
+
+
+def load_llm_config(path: Path | None = None) -> LLMConfig:
+    config_path = path or default_llm_config_path()
+    try:
+        with config_path.open("rb") as handle:
+            values = tomllib.load(handle)
+    except FileNotFoundError:
+        values = {}
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise ConfigError(f"Could not read LLM config {config_path}: {exc}") from exc
+    try:
+        return LLMConfig(
+            model=str(values.get("model", "")).strip(),
+            base_url=str(values.get("base_url", "")).strip(),
+            api_key=str(values.get("api_key", "")).strip(),
+            enabled=bool(values.get("enabled", True)),
+            chunk_chars=int(values.get("chunk_chars", DEFAULT_LLM_CHUNK_CHARS)),
+            max_calls_per_item=int(
+                values.get("max_calls_per_item", DEFAULT_LLM_MAX_CALLS_PER_ITEM)
+            ),
+            max_output_tokens_per_call=int(
+                values.get(
+                    "max_output_tokens_per_call",
+                    DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL,
+                )
+            ),
+            max_input_tokens_per_item=int(
+                values.get("max_input_tokens_per_item", DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM)
+            ),
+            input_cost_per_million=float(
+                values.get("input_cost_per_million", DEFAULT_LLM_INPUT_COST_PER_MILLION)
+            ),
+            output_cost_per_million=float(
+                values.get("output_cost_per_million", DEFAULT_LLM_OUTPUT_COST_PER_MILLION)
+            ),
+            timeout_seconds=float(
+                values.get("timeout_seconds", DEFAULT_LLM_TIMEOUT_SECONDS)
+            ),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ConfigError(f"Invalid LLM config {config_path}: {exc}") from exc
 
 
 @dataclass(slots=True)
@@ -63,24 +118,13 @@ class Config:
     max_podcast_media_bytes: int = DEFAULT_MAX_PODCAST_MEDIA_BYTES
     max_collection_items: int = DEFAULT_MAX_COLLECTION_ITEMS
     max_collection_duration_sec: int = DEFAULT_MAX_COLLECTION_DURATION_SEC
-    llm_enabled: bool = True
-    llm_model: str = DEFAULT_LLM_MODEL
-    llm_base_url: str = DEFAULT_LLM_BASE_URL
-    llm_chunk_chars: int = DEFAULT_LLM_CHUNK_CHARS
-    llm_max_calls_per_item: int = DEFAULT_LLM_MAX_CALLS_PER_ITEM
-    llm_max_output_tokens_per_call: int = DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL
-    llm_max_input_tokens_per_item: int = DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM
-    llm_input_cost_per_million: float = DEFAULT_LLM_INPUT_COST_PER_MILLION
-    llm_output_cost_per_million: float = DEFAULT_LLM_OUTPUT_COST_PER_MILLION
-    llm_timeout_seconds: float = DEFAULT_LLM_TIMEOUT_SECONDS
-    llm_api_key_path: Path = field(default_factory=default_llm_api_key_path)
+    llm: LLMConfig = field(default_factory=load_llm_config)
     asr_model: str = DEFAULT_ASR_MODEL
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
     def __post_init__(self) -> None:
         self.home = self.home.expanduser().resolve()
-        self.llm_api_key_path = self.llm_api_key_path.expanduser()
 
     # ------------------------------------------------------------------
     # Layout
@@ -261,18 +305,6 @@ class Config:
             return
 
 
-def resolve_llm_api_key(config: Config) -> str | None:
-    try:
-        file_key = config.llm_api_key_path.read_text(encoding="utf-8").strip()
-    except FileNotFoundError:
-        return None
-    except OSError as exc:
-        raise ConfigError(
-            f"Could not read DeepSeek API key {config.llm_api_key_path}: {exc}"
-        ) from exc
-    return file_key or None
-
-
 def load_config(home: Path | str | None = None) -> Config:
     if home is not None:
         os.environ["TROVE_HOME"] = str(Path(home).expanduser().resolve())
@@ -303,7 +335,6 @@ def load_config(home: Path | str | None = None) -> Config:
                 str(DEFAULT_MAX_COLLECTION_DURATION_SEC),
             )
         ),
-        llm_enabled=os.environ.get("TROVE_LLM_ENABLED", "true").lower() not in {"0", "false", "no"},
         asr_model=os.environ.get("TROVE_ASR_MODEL", DEFAULT_ASR_MODEL),
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},

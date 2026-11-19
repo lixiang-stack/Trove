@@ -5,8 +5,8 @@ import json
 import httpx
 import pytest
 
-from trove.adapters.deepseek import DeepSeekOrganizer
-from trove.config import Config, resolve_llm_api_key
+from trove.adapters.llm import LLMOrganizer
+from trove.config import Config, LLMConfig
 from trove.domain.organization import (
     chunk_text,
     estimate_cost,
@@ -58,27 +58,44 @@ def _json_response(summary: str, tags: list[str], *, input_tokens=50, output_tok
     return httpx.Response(
         200,
         json={
-            "choices": [{"message": {"content": json.dumps({"summary": summary, "tags": tags})}}],
+            "choices": [
+                {
+                    "message": {"content": json.dumps({"summary": summary, "tags": tags})},
+                    "finish_reason": "stop",
+                }
+            ],
             "usage": {"prompt_tokens": input_tokens, "completion_tokens": output_tokens},
         },
     )
 
 
 def _config(tmp_path) -> Config:
-    key_path = tmp_path / "llm_api_key"
-    if not key_path.exists():
-        key_path.write_text("test-key", encoding="utf-8")
-    config = Config(home=tmp_path)
-    config.llm_api_key_path = key_path
-    return config
+    return Config(
+        home=tmp_path,
+        llm=LLMConfig(
+            model="deepseek-flash",
+            base_url="https://api.deepseek.com/v1",
+            api_key="test-key",
+        ),
+    )
+
+
+def _organizer(config: Config, handler) -> LLMOrganizer:
+    return LLMOrganizer(config.llm, client=_client(handler))
 
 
 def test_environment_key_is_ignored(monkeypatch, tmp_path):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-env-key")
-    config = Config(home=tmp_path)
-    config.llm_api_key_path = tmp_path / "missing-llm-api-key"
-    organizer = DeepSeekOrganizer(
-        config, client=_client(lambda request: _json_response("unexpected", ["tag"]))
+    config = Config(
+        home=tmp_path,
+        llm=LLMConfig(
+            model="deepseek-flash",
+            base_url="https://api.deepseek.com/v1",
+            api_key="",
+        ),
+    )
+    organizer = _organizer(
+        config, lambda request: _json_response("unexpected", ["tag"])
     )
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
@@ -97,12 +114,13 @@ def test_short_text_uses_one_json_mode_call_and_records_usage(tmp_path):
         body = json.loads(request.content)
         requests.append(body)
         assert body["response_format"] == {"type": "json_object"}
+        assert body["reasoning_effort"] == "none"
         assert body["model"] == "deepseek-flash"
         assert request.headers["authorization"] == "Bearer test-key"
         return _json_response("关于记忆的讨论。", ["#记忆", "Memory"])
 
     config = _config(tmp_path)
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    organizer = _organizer(config, handler)
     result = organizer.organize(
         text="短文本内容",
         title="短内容",
@@ -133,8 +151,8 @@ def test_long_text_is_mapped_and_reduced_without_dropping_chunks(tmp_path):
         return _json_response(f"map summary {len(requests)}", ["Beta"])
 
     config = _config(tmp_path)
-    config.llm_chunk_chars = 120
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    config.llm.chunk_chars = 120
+    organizer = _organizer(config, handler)
     result = organizer.organize(
         text=text,
         title="长内容",
@@ -158,9 +176,9 @@ def test_call_limit_fails_before_sending_requests(tmp_path):
         return _json_response("ok", ["tag"])
 
     config = _config(tmp_path)
-    config.llm_chunk_chars = 10
-    config.llm_max_calls_per_item = 2
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    config.llm.chunk_chars = 10
+    config.llm.max_calls_per_item = 2
+    organizer = _organizer(config, handler)
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
             text="长文本" * 20,
@@ -174,10 +192,8 @@ def test_call_limit_fails_before_sending_requests(tmp_path):
 
 def test_input_token_limit_fails_explicitly(tmp_path):
     config = _config(tmp_path)
-    config.llm_max_input_tokens_per_item = 5
-    organizer = DeepSeekOrganizer(
-        config, client=_client(lambda request: _json_response("ok", ["tag"]))
-    )
+    config.llm.max_input_tokens_per_item = 5
+    organizer = _organizer(config, lambda request: _json_response("ok", ["tag"]))
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
             text="记忆" * 100,
@@ -190,10 +206,9 @@ def test_input_token_limit_fails_explicitly(tmp_path):
 
 def test_output_token_limit_fails_explicitly(tmp_path):
     config = _config(tmp_path)
-    config.llm_max_output_tokens_per_call = 10
-    organizer = DeepSeekOrganizer(
-        config,
-        client=_client(lambda request: _json_response("ok", ["tag"], output_tokens=11)),
+    config.llm.max_output_tokens_per_call = 10
+    organizer = _organizer(
+        config, lambda request: _json_response("ok", ["tag"], output_tokens=11)
     )
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
@@ -203,6 +218,34 @@ def test_output_token_limit_fails_explicitly(tmp_path):
             context=_context(tmp_path),
         )
     assert excinfo.value.code == "llm.limit_exceeded"
+
+
+def test_length_finish_reason_fails_as_limit_exceeded(tmp_path):
+    calls = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": ""}, "finish_reason": "length"}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 10},
+            },
+        )
+
+    config = _config(tmp_path)
+    config.llm.max_output_tokens_per_call = 10
+    organizer = _organizer(config, handler)
+    with pytest.raises(ProcessingError) as excinfo:
+        organizer.organize(
+            text="短文本",
+            title="length",
+            existing_tags=[],
+            context=_context(tmp_path),
+        )
+    assert excinfo.value.code == "llm.limit_exceeded"
+    assert calls == 1
 
 
 def test_blank_json_is_retried_once(tmp_path):
@@ -215,7 +258,7 @@ def test_blank_json_is_retried_once(tmp_path):
         return responses.pop(0)
 
     config = _config(tmp_path)
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    organizer = _organizer(config, handler)
     result = organizer.organize(
         text="短文本",
         title="retry",
@@ -235,8 +278,8 @@ def test_blank_json_retry_counts_toward_the_call_limit(tmp_path):
         return httpx.Response(200, json={"choices": [{"message": {"content": ""}}], "usage": {}})
 
     config = _config(tmp_path)
-    config.llm_max_calls_per_item = 1
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    config.llm.max_calls_per_item = 1
+    organizer = _organizer(config, handler)
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
             text="短文本",
@@ -256,7 +299,7 @@ def test_persistent_invalid_json_fails(tmp_path):
         )
 
     config = _config(tmp_path)
-    organizer = DeepSeekOrganizer(config, client=_client(handler))
+    organizer = _organizer(config, handler)
     with pytest.raises(ProcessingError) as excinfo:
         organizer.organize(
             text="短文本",
@@ -268,8 +311,9 @@ def test_persistent_invalid_json_fails(tmp_path):
 
 
 def test_disabled_llm_returns_an_empty_result(tmp_path):
-    config = Config(home=tmp_path, llm_enabled=False)
-    organizer = DeepSeekOrganizer(config)
+    config = _config(tmp_path)
+    config.llm.enabled = False
+    organizer = LLMOrganizer(config.llm)
     result = organizer.organize(
         text="短文本",
         title="disabled",
@@ -390,21 +434,3 @@ def test_seeded_item_without_organizing_has_no_ai_payload(host):
     bundle = seed_item(host, title="No AI")
     host.login()
     assert host.item(bundle.item.id)["ai"] is None
-
-
-@pytest.mark.network
-def test_real_deepseek_smoke(tmp_path):
-    config = Config(home=tmp_path)
-    if not resolve_llm_api_key(config):
-        pytest.skip(f"DeepSeek key file is missing: {config.llm_api_key_path}")
-    organizer = DeepSeekOrganizer(config)
-    result = organizer.organize(
-        text="记忆是智能体的瓶颈。上下文窗口是临时的，记忆需要被选择、压缩和遗忘。",
-        title="记忆与智能体",
-        existing_tags=["智能体"],
-        context=_context(tmp_path),
-    )
-    assert result.summary
-    assert 1 <= len(result.tags) <= 5
-    assert result.input_tokens > 0
-    assert result.output_tokens > 0
