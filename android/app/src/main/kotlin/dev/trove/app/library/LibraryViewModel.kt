@@ -44,6 +44,7 @@ data class LibraryUiState(
     val queuedDownloads: Int = 0,
     val conflictNotice: String? = null,
     val collectionActionError: String? = null,
+    val autoDownloadCollections: Set<String> = emptySet(),
 )
 
 private data class LibraryActionState(
@@ -51,6 +52,7 @@ private data class LibraryActionState(
     val sort: LibrarySort,
     val conflictNotice: String?,
     val collectionActionError: String?,
+    val autoDownloadCollections: Set<String>,
 )
 
 class LibraryViewModel(
@@ -70,9 +72,14 @@ class LibraryViewModel(
         syncEngine.status,
         downloadSettings.preferences,
         repository.observeDownloads(),
-        combine(filters, sort, conflict, collectionActionError) {
-                activeFilters, activeSort, notice, actionError ->
-            LibraryActionState(activeFilters, activeSort, notice, actionError)
+        combine(
+            filters,
+            sort,
+            conflict,
+            collectionActionError,
+            repository.observeCollectionDownloadIntents(),
+        ) { activeFilters, activeSort, notice, actionError, autoDownload ->
+            LibraryActionState(activeFilters, activeSort, notice, actionError, autoDownload)
         },
     ) { items, status, preferences, downloads, action ->
         LibraryUiState(
@@ -98,6 +105,7 @@ class LibraryViewModel(
             queuedDownloads = downloads.count { it.downloadState == "queued" },
             conflictNotice = action.conflictNotice,
             collectionActionError = action.collectionActionError,
+            autoDownloadCollections = action.autoDownloadCollections,
         )
     }.stateIn(
         scope = viewModelScope,
@@ -124,6 +132,7 @@ class LibraryViewModel(
         viewModelScope.launch {
             try {
                 client.deleteCollection(collectionId, mode)
+                repository.disableCollectionDownloadIntent(collectionId)
                 syncEngine.sync()
             } catch (error: Exception) {
                 collectionActionError.value = error.message ?: "删除合集失败"
@@ -133,10 +142,17 @@ class LibraryViewModel(
 
     fun downloadCollection(collectionId: String) {
         viewModelScope.launch {
+            repository.enableCollectionDownloadIntent(collectionId)
             val itemIds = state.value.allItems
                 .filter { it.collectionId == collectionId && it.artifacts.isNotEmpty() }
                 .map { it.id }
             if (itemIds.isNotEmpty()) downloadManager.enqueueAll(itemIds)
+        }
+    }
+
+    fun disableCollectionAutoDownload(collectionId: String) {
+        viewModelScope.launch {
+            repository.disableCollectionDownloadIntent(collectionId)
         }
     }
 

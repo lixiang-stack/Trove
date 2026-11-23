@@ -22,8 +22,9 @@ import androidx.sqlite.execSQL
         SyncCursorEntity::class,
         PendingMutationEntity::class,
         PendingDeletionEntity::class,
+        CollectionDownloadIntentEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class TroveDatabase : RoomDatabase() {
@@ -42,6 +43,8 @@ abstract class TroveDatabase : RoomDatabase() {
     abstract fun pendingMutationDao(): PendingMutationDao
 
     abstract fun pendingDeletionDao(): PendingDeletionDao
+
+    abstract fun collectionDownloadIntentDao(): CollectionDownloadIntentDao
 
     companion object {
         const val NAME = "trove.db"
@@ -95,10 +98,26 @@ abstract class TroveDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) = migrate { db.execSQL(it) }
+
+            override fun migrate(connection: SQLiteConnection) = migrate { connection.execSQL(it) }
+
+            private fun migrate(execSQL: (String) -> Unit) {
+                execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS collection_download_intents (
+                        collection_id TEXT NOT NULL PRIMARY KEY
+                    )
+                    """.trimIndent()
+                )
+            }
+        }
+
         fun create(context: Context): TroveDatabase =
             Room.databaseBuilder(context, TroveDatabase::class.java, NAME)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
 
         fun inMemory(context: Context): TroveDatabase =

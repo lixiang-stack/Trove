@@ -332,6 +332,7 @@ class SyncEngine(
             saveCursor(contentCursor = contentCursor, epoch = epoch)
             reconcileDeletedItems(seen)
         }
+        database.collectionDownloadIntentDao().deleteOrphans()
         if (newItemSeen) {
             clearStateCursor()
         }
@@ -371,6 +372,9 @@ class SyncEngine(
         val filesToDelete = mutableListOf<Pair<String, String?>>()
         var needsDownload = false
         var isNew = false
+        val autoDownload = dto.collectionId?.let {
+            database.collectionDownloadIntentDao().isEnabled(it)
+        } ?: false
         database.writeTransaction {
             val existing = database.itemDao().find(dto.id)
             isNew = existing == null
@@ -412,7 +416,7 @@ class SyncEngine(
             }
             val existingArtifacts = database.artifactDao().forItem(dto.id).associateBy { it.kind }
             val kinds = dto.files.map { it.kind }.toSet()
-            val outcome = applyArtifacts(dto, existingArtifacts, kinds)
+            val outcome = applyArtifacts(dto, existingArtifacts, kinds, autoDownload)
             filesToDelete += outcome.filesToDelete
             needsDownload = outcome.needsDownload
         }
@@ -432,6 +436,7 @@ class SyncEngine(
         dto: SyncItemDto,
         existing: Map<String, ArtifactEntity>,
         currentKinds: Set<String>,
+        autoDownload: Boolean,
     ): ArtifactOutcome {
         val filesToDelete = mutableListOf<Pair<String, String?>>()
         var needsDownload = false
@@ -459,8 +464,10 @@ class SyncEngine(
                 database.bookDao().deleteParagraphsForItem(dto.id)
             }
             // Keep an explicit selection across sha changes and newly added
-            // artifacts for an Item the user already chose to download.
-            val selected = previous?.downloadState?.let { it != "none" } ?: itemSelected
+            // artifacts for an Item the user already chose to download, or for
+            // an Item in a collection with a persisted download intent.
+            val selected = autoDownload ||
+                (previous?.downloadState?.let { it != "none" } ?: itemSelected)
             if (selected) needsDownload = true
             database.artifactDao().upsert(
                 ArtifactEntity(

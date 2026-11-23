@@ -203,6 +203,33 @@ interface ArtifactDao {
 }
 
 @Dao
+interface CollectionDownloadIntentDao {
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM collection_download_intents WHERE collection_id = :collectionId)"
+    )
+    suspend fun isEnabled(collectionId: String): Boolean
+
+    @Query("SELECT collection_id FROM collection_download_intents")
+    fun observeEnabledIds(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun enable(intent: CollectionDownloadIntentEntity)
+
+    @Query("DELETE FROM collection_download_intents WHERE collection_id = :collectionId")
+    suspend fun disable(collectionId: String)
+
+    @Query(
+        """
+        DELETE FROM collection_download_intents
+        WHERE collection_id NOT IN (
+            SELECT DISTINCT collection_id FROM items WHERE collection_id IS NOT NULL
+        )
+        """
+    )
+    suspend fun deleteOrphans()
+}
+
+@Dao
 interface TagDao {
     @Upsert
     suspend fun upsertAll(tags: List<TagEntity>)

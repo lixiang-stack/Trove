@@ -6,6 +6,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -233,7 +234,7 @@ class CollectionFlowTest {
         compose.onNodeWithTag("collection-episode-two").assertTextContains("未下载")
 
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
-        compose.onNodeWithTag("collection-download-all").performClick()
+        compose.onNodeWithTag("collection-download-all").performScrollTo().performClick()
         compose.waitUntil(COMPOSE_TIMEOUT_MS) {
             compose.waitForIdle()
             harness.downloadQueue.enqueued.isNotEmpty()
@@ -246,12 +247,59 @@ class CollectionFlowTest {
         }
         assertTrue(states.isNotEmpty())
         assertTrue(states.all { it == "queued" })
+        assertTrue(
+            runBlocking {
+                harness.container.database.collectionDownloadIntentDao()
+                    .isEnabled("collection-1")
+            }
+        )
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
-        compose.onNodeWithTag("collection-download-all").assertTextContains("等待下载 0/2")
+        compose.onNodeWithTag("collection-auto-download-hint").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithTag("collection-download-all").performScrollTo()
+            .assertTextContains("等待下载 0/2")
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
         compose.onNodeWithTag("collection-episode-one").assertTextContains("等待下载")
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(2)
         compose.onNodeWithTag("collection-episode-two").assertTextContains("等待下载")
+    }
+
+    @Test
+    fun collectionAutoDownloadCanBeStoppedFromMenu() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("one", "Episode One", 1, ready = true),
+                syncItem("two", "Episode Two", 2, ready = true),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "test-epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-collection-collection-1")
+        compose.onNodeWithTag("library-collection-collection-1").performClick()
+        waitForTag(compose, "collection-screen")
+        compose.onNodeWithTag("collection-download-all").performScrollTo().performClick()
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
+            harness.downloadQueue.enqueued.isNotEmpty()
+        }
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
+        compose.onNodeWithContentDescription("更多").performClick()
+        compose.onNodeWithTag("collection-stop-auto-download").performClick()
+        compose.waitUntil(COMPOSE_TIMEOUT_MS) {
+            compose.waitForIdle()
+            runBlocking {
+                !harness.container.database.collectionDownloadIntentDao()
+                    .isEnabled("collection-1")
+            }
+        }
+        compose.onAllNodesWithTag("collection-auto-download-hint").assertCountEquals(0)
     }
 
     @Test

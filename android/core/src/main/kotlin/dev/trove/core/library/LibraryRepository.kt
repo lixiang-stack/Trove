@@ -1,5 +1,6 @@
 package dev.trove.core.library
 
+import dev.trove.core.db.CollectionDownloadIntentEntity
 import dev.trove.core.db.TroveDatabase
 import dev.trove.core.db.writeTransaction
 import dev.trove.core.storage.ArtifactFileStore
@@ -18,6 +19,19 @@ class LibraryRepository(
 
     fun observeDownloads(): Flow<List<LibraryItem>> =
         database.itemDao().observeWithDownloads().map { rows -> rows.map { it.toLibraryItem() } }
+
+    fun observeCollectionDownloadIntents(): Flow<Set<String>> =
+        database.collectionDownloadIntentDao().observeEnabledIds().map { it.toSet() }
+
+    suspend fun enableCollectionDownloadIntent(collectionId: String) {
+        database.collectionDownloadIntentDao().enable(
+            CollectionDownloadIntentEntity(collectionId)
+        )
+    }
+
+    suspend fun disableCollectionDownloadIntent(collectionId: String) {
+        database.collectionDownloadIntentDao().disable(collectionId)
+    }
 
     suspend fun find(itemId: String): LibraryItem? =
         database.itemDao().findDetails(itemId)?.toLibraryItem()

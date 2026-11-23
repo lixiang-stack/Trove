@@ -190,6 +190,11 @@ data class PendingDeletionEntity(
     @ColumnInfo(name = "item_id") val itemId: String,
 )
 
+@Entity(tableName = "collection_download_intents")
+data class CollectionDownloadIntentEntity(
+    @PrimaryKey @ColumnInfo(name = "collection_id") val collectionId: String,
+)
+
 data class ItemWithDetails(
     @Embedded val item: ItemEntity,
     @Relation(parentColumn = "id", entityColumn = "item_id")

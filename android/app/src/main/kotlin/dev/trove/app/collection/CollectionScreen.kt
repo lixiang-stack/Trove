@@ -75,6 +75,8 @@ fun CollectionScreen(
     onRetryItem: (String) -> Unit,
     onRetryFailed: () -> Unit,
     onDownloadAll: () -> Unit,
+    autoDownload: Boolean,
+    onStopAutoDownload: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
     val episodes = remember(items, collectionId) {
@@ -124,6 +126,16 @@ fun CollectionScreen(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
                     ) {
+                        if (autoDownload) {
+                            DropdownMenuItem(
+                                text = { Text("停止自动下载") },
+                                onClick = {
+                                    menuOpen = false
+                                    onStopAutoDownload()
+                                },
+                                modifier = Modifier.testTag("collection-stop-auto-download"),
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("删除合集", color = TroveColors.Danger) },
                             onClick = {
@@ -271,6 +283,16 @@ fun CollectionScreen(
                                 "未下载 ${episodes.size - downloaded}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = TroveColors.Muted,
+                            )
+                        }
+                        if (autoDownload) {
+                            Text(
+                                "已开启自动下载，新处理完成的单集会加入下载队列",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TroveColors.Muted,
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .testTag("collection-auto-download-hint"),
                             )
                         }
                         if (downloadable > 0 || failed > 0) {
