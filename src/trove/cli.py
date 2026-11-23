@@ -90,6 +90,21 @@ def _build_parser() -> argparse.ArgumentParser:
     status = index_sub.add_parser("status", help="show search index coverage")
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    collection = subparsers.add_parser("collection", help="collection maintenance")
+    collection_sub = collection.add_subparsers(
+        dest="collection_command", required=True
+    )
+    collection_reprocess = collection_sub.add_parser(
+        "reprocess", help="reprocess every episode in a collection"
+    )
+    collection_reprocess.add_argument("collection_id")
+    collection_reprocess.add_argument("--from-stage", default="organizing")
+    collection_reprocess.add_argument(
+        "--reset-ai-tags",
+        action="store_true",
+        help="delete AI tags before queueing the runs",
+    )
+
     subparsers.add_parser("doctor", help="check Host dependencies and layout")
     subparsers.add_parser("setup", help="download the ASR model and check dependencies")
 
@@ -153,6 +168,8 @@ def main(argv: list[str] | None = None) -> int:
         return _search(config, args)
     if args.command == "index":
         return _index(config, args)
+    if args.command == "collection":
+        return _collection(config, args)
     if args.command == "bench":
         return _bench(config, args)
     if args.command == "doctor":
@@ -396,6 +413,26 @@ def _index_status(config, args) -> int:
             if item.counts.get(kind)
         )
         print(f"✓ {item.title} · {counts or 'no indexed rows'}")
+    return 0
+
+
+def _collection(config, args) -> int:
+    from trove.services.processing import REPROCESSABLE_STAGES
+
+    if args.from_stage not in REPROCESSABLE_STAGES:
+        print(
+            f"Invalid stage: {args.from_stage}; choose organizing or indexing",
+            file=sys.stderr,
+        )
+        return 2
+    runtime = build_runtime(config)
+    ensure_migrated(runtime)
+    reset = runtime.collections.reset_ai_tags(args.collection_id) if args.reset_ai_tags else 0
+    count = runtime.collections.reprocess(args.collection_id, args.from_stage)
+    if args.reset_ai_tags:
+        print(f"Deleted {reset} AI tag links; queued {count} {args.from_stage} runs")
+    else:
+        print(f"Queued {count} {args.from_stage} runs")
     return 0
 
 

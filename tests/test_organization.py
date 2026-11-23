@@ -8,10 +8,12 @@ import pytest
 from trove.adapters.llm import LLMOrganizer
 from trove.config import Config, LLMConfig
 from trove.domain.organization import (
+    MAX_TAGS_PER_ITEM,
     chunk_text,
     estimate_cost,
     estimate_tokens,
     normalize_tags,
+    select_tags,
 )
 from trove.errors import ProcessingError
 from trove.ports import StageContext
@@ -43,6 +45,34 @@ def test_tag_normalization_deduplicates_case_and_plural_forms():
         "Agents",
         "记忆",
     ]
+
+
+def test_select_tags_prefers_vocabulary_and_caps_new_tags():
+    assert select_tags(
+        ["道德经", "单集主题", "道家哲学", "另一个新主题"],
+        existing_tags=["道德经", "道家哲学"],
+    ) == ["道德经", "单集主题", "道家哲学"]
+
+
+def test_select_tags_allows_a_bootstrap_vocabulary_and_reuse_only_mode():
+    assert select_tags(
+        ["道德经", "道家哲学", "修身", "多余"],
+        existing_tags=[],
+    ) == ["道德经", "道家哲学", "修身"]
+    assert select_tags(
+        ["单集主题"],
+        existing_tags=["道德经", "道家哲学"],
+        allow_new=False,
+    ) == []
+
+
+def test_select_tags_never_exceeds_the_item_limit():
+    tags = select_tags(
+        ["道德经", "道家哲学", "修身", "自然"],
+        existing_tags=["道德经", "道家哲学"],
+    )
+    assert tags == ["道德经", "道家哲学", "修身"]
+    assert len(tags) == MAX_TAGS_PER_ITEM
 
 
 def test_cost_is_derived_from_token_usage():
@@ -128,7 +158,7 @@ def test_short_text_uses_one_json_mode_call_and_records_usage(tmp_path):
         context=_context(tmp_path),
     )
     assert result.summary == "关于记忆的讨论。"
-    assert result.tags == ["记忆", "Memory"]
+    assert result.tags == ["记忆"]
     assert result.model == "deepseek-flash"
     assert result.prompt_version
     assert result.input_tokens == 50
@@ -136,6 +166,52 @@ def test_short_text_uses_one_json_mode_call_and_records_usage(tmp_path):
     assert result.cost_usd > 0
     assert len(requests) == 1
     assert "智能体" in requests[0]["messages"][1]["content"]
+
+
+def test_collection_organizer_passes_series_context_and_reuses_tags(tmp_path):
+    requests: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        requests.append(body)
+        return _json_response("关于无为的讨论。", ["单集主题"])
+
+    config = _config(tmp_path)
+    organizer = _organizer(config, handler)
+    result = organizer.organize(
+        text="短文本内容",
+        title="第3集 无为而治",
+        existing_tags=["道德经", "道家哲学"],
+        context=_context(tmp_path),
+        collection_title="道德经全讲",
+        collection_index=3,
+        reuse_existing_tags=True,
+    )
+
+    assert result.tags == ["道德经", "道家哲学"]
+    prompt = requests[0]["messages"][1]["content"]
+    assert "Collection: 道德经全讲 (episode 3)" in prompt
+    assert "Tags describe the collection or series" in prompt
+    assert "Use existing tags only." in prompt
+
+
+def test_collection_reuse_fills_the_shared_tag_set(tmp_path):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return _json_response("关于道家哲学的讨论。", ["道家哲学"])
+
+    config = _config(tmp_path)
+    organizer = _organizer(config, handler)
+    result = organizer.organize(
+        text="短文本内容",
+        title="第2集",
+        existing_tags=["道德经", "道家哲学", "修身"],
+        context=_context(tmp_path),
+        collection_title="道德经全讲",
+        collection_index=2,
+        reuse_existing_tags=True,
+    )
+
+    assert result.tags == ["道家哲学", "道德经", "修身"]
 
 
 def test_long_text_is_mapped_and_reduced_without_dropping_chunks(tmp_path):

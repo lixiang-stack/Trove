@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
 from trove.content_package import ContentPackage
-from trove.db.models import Collection, Item
+from trove.db.models import Collection, Item, ItemTag
 from trove.db.sequences import next_sequence
 from trove.domain.items import (
     PLATFORM_LABELS,
@@ -340,6 +340,31 @@ class CollectionService:
                 self.processing.retry(entry.item.id)
                 retried += 1
         return retried
+
+    def reprocess(self, collection_id: str, from_stage: str) -> int:
+        bundle = self.get(collection_id)
+        for entry in bundle.items:
+            self.processing.reprocess(entry.item.id, from_stage)
+        return len(bundle.items)
+
+    def reset_ai_tags(self, collection_id: str) -> int:
+        bundle = self.get(collection_id)
+        item_ids = [entry.item.id for entry in bundle.items]
+        if not item_ids:
+            return 0
+        with self.sessions() as session:
+            rows = list(
+                session.execute(
+                    select(ItemTag).where(
+                        ItemTag.item_id.in_(item_ids),
+                        ItemTag.source == "ai",
+                    )
+                ).scalars()
+            )
+            for row in rows:
+                session.delete(row)
+            session.commit()
+        return len(rows)
 
     # ------------------------------------------------------------------
     # Views

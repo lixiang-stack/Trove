@@ -8,40 +8,45 @@ import httpx
 from trove.config import LLMConfig, default_llm_config_path
 from trove.domain.organization import (
     MAX_EXISTING_TAGS,
+    MAX_TAGS_PER_ITEM,
     chunk_text,
     estimate_cost,
     estimate_tokens,
+    fill_tags,
     normalize_tags,
+    select_tags,
 )
 from trove.errors import ProcessingError
 from trove.ports import OrganizationResult, StageContext
 
-PROMPT_VERSION = "organize-1"
+PROMPT_VERSION = "organize-2"
 PROMPT_OVERHEAD_TOKENS = 200
 JSON_ATTEMPTS = 2
 TEMPERATURE = 0.2
 
 SYSTEM_PROMPT = (
     "You organize a personal library. Return only a JSON object with "
-    '"summary" (1-2 sentences) and "tags" (3-5 short, reusable tags). '
-    "Prefer reusing the provided existing tags when they fit. "
+    '"summary" (1-2 sentences) and "tags" (2-3 short, reusable tags). '
+    "Prefer tags from the provided existing tags. Only propose a new tag when "
+    "no existing tag fits, at most one per item, and never use episode titles, "
+    "chapter names, or one-off phrases as tags. "
     "Do not include markdown or commentary."
 )
 
 MAP_INSTRUCTIONS = (
     "Summarize this chunk of a longer work in one sentence and propose up to "
-    "three reusable tags. Return only JSON with keys summary and tags."
+    "two reusable tags. Return only JSON with keys summary and tags."
 )
 
 SINGLE_INSTRUCTIONS = (
-    "Summarize the full content in 1-2 sentences and propose 3-5 reusable tags. "
+    "Summarize the full content in 1-2 sentences and propose 2-3 reusable tags. "
     "Return only JSON with keys summary and tags."
 )
 
 REDUCE_INSTRUCTIONS = (
     "Combine the chunk summaries into one 1-2 sentence summary that covers the "
-    "whole work. Propose 3-5 reusable tags, preferring the existing tag "
-    "vocabulary. Return only JSON with keys summary and tags."
+    "whole work. Propose 2-3 reusable tags, preferring the existing tags. "
+    "Return only JSON with keys summary and tags."
 )
 
 
@@ -57,6 +62,9 @@ class LLMOrganizer:
         title: str,
         existing_tags: list[str],
         context: StageContext,
+        collection_title: str | None = None,
+        collection_index: int | None = None,
+        reuse_existing_tags: bool = False,
     ) -> OrganizationResult:
         llm = self.llm
         if not llm.enabled:
@@ -91,6 +99,8 @@ class LLMOrganizer:
                 f"{llm.max_input_tokens_per_item}",
             )
         vocabulary = normalize_tags(existing_tags, limit=MAX_EXISTING_TAGS)
+        single_tag_limit = "2-3 existing tags" if reuse_existing_tags else "2-3 tags"
+        map_tag_limit = "up to 2 existing tags" if reuse_existing_tags else "up to 2 tags"
 
         client = self.client or httpx.Client(timeout=llm.timeout_seconds)
         calls_used = 0
@@ -104,11 +114,18 @@ class LLMOrganizer:
                     instructions=SINGLE_INSTRUCTIONS,
                     content=chunks[0],
                     existing_tags=vocabulary,
-                    tag_limit="3-5 tags",
+                    tag_limit=single_tag_limit,
+                    collection_title=collection_title,
+                    collection_index=collection_index,
+                    reuse_existing_tags=reuse_existing_tags,
                     remaining_calls=llm.max_calls_per_item,
                 )
                 summary = _summary(payload)
-                tags = _tags(payload)
+                tags = select_tags(
+                    _tags(payload),
+                    existing_tags=vocabulary,
+                    allow_new=not reuse_existing_tags,
+                )
             else:
                 map_summaries: list[str] = []
                 map_tags: list[str] = []
@@ -123,7 +140,10 @@ class LLMOrganizer:
                         instructions=MAP_INSTRUCTIONS,
                         content=chunk,
                         existing_tags=vocabulary,
-                        tag_limit="up to 3 tags",
+                        tag_limit=map_tag_limit,
+                        collection_title=collection_title,
+                        collection_index=collection_index,
+                        reuse_existing_tags=reuse_existing_tags,
                         prefix=f"Chunk {index}/{len(chunks)}.",
                         remaining_calls=llm.max_calls_per_item - calls_used,
                     )
@@ -143,14 +163,27 @@ class LLMOrganizer:
                     instructions=REDUCE_INSTRUCTIONS,
                     content=reduce_content,
                     existing_tags=normalize_tags(vocabulary + map_tags, limit=MAX_EXISTING_TAGS),
-                    tag_limit="3-5 tags",
+                    tag_limit=single_tag_limit,
+                    collection_title=collection_title,
+                    collection_index=collection_index,
+                    reuse_existing_tags=reuse_existing_tags,
                     remaining_calls=llm.max_calls_per_item - calls_used,
                 )
                 input_tokens += used_input
                 output_tokens += used_output
                 calls_used += used_calls
                 summary = _summary(payload)
-                tags = normalize_tags(_tags(payload) + map_tags)
+                tags = select_tags(
+                    _tags(payload) + map_tags,
+                    existing_tags=vocabulary,
+                    allow_new=not reuse_existing_tags,
+                )
+            if reuse_existing_tags:
+                tags = fill_tags(
+                    tags,
+                    vocabulary=vocabulary,
+                    limit=MAX_TAGS_PER_ITEM,
+                )
         finally:
             if self.client is None:
                 client.close()
@@ -187,6 +220,9 @@ class LLMOrganizer:
         content: str,
         existing_tags: list[str],
         tag_limit: str,
+        collection_title: str | None = None,
+        collection_index: int | None = None,
+        reuse_existing_tags: bool = False,
         prefix: str = "",
         remaining_calls: int,
     ) -> tuple[dict[str, Any], int, int, int]:
@@ -203,6 +239,9 @@ class LLMOrganizer:
                 content=content,
                 existing_tags=existing_tags,
                 tag_limit=tag_limit,
+                collection_title=collection_title,
+                collection_index=collection_index,
+                reuse_existing_tags=reuse_existing_tags,
                 prefix=prefix,
             ),
             "response_format": {"type": "json_object"},
@@ -302,6 +341,9 @@ def _messages(
     content: str,
     existing_tags: list[str],
     tag_limit: str,
+    collection_title: str | None = None,
+    collection_index: int | None = None,
+    reuse_existing_tags: bool = False,
     prefix: str,
 ) -> list[dict[str, str]]:
     return [
@@ -314,6 +356,9 @@ def _messages(
                 content=content,
                 existing_tags=existing_tags,
                 tag_limit=tag_limit,
+                collection_title=collection_title,
+                collection_index=collection_index,
+                reuse_existing_tags=reuse_existing_tags,
                 prefix=prefix,
             ),
         },
@@ -327,13 +372,29 @@ def _prompt(
     content: str,
     existing_tags: list[str],
     tag_limit: str,
+    collection_title: str | None = None,
+    collection_index: int | None = None,
+    reuse_existing_tags: bool = False,
     prefix: str,
 ) -> str:
     vocabulary = ", ".join(existing_tags) if existing_tags else "(none yet)"
     lead = f"{prefix} " if prefix else ""
+    collection = ""
+    if collection_title:
+        position = (
+            f" (episode {collection_index})"
+            if collection_index is not None
+            else ""
+        )
+        collection = (
+            f"Collection: {collection_title}{position}\n"
+            "Tags describe the collection or series, not the episode.\n"
+        )
+    reuse = "Use existing tags only.\n" if reuse_existing_tags else ""
     return (
         f"{lead}{instructions}\n\n"
         f"Title: {title}\n"
+        f"{collection}{reuse}"
         f"Existing tags: {vocabulary}\n"
         f"Requested tags: {tag_limit}\n\n"
         f"Content:\n{content}"

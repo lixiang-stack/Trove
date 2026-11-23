@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import shutil
 
-from trove.ports import LinkProbeResult, VideoInfo
+from trove.ports import AudioResult, LinkProbeResult, VideoInfo
 
-from .fakes import video_collection
+from .fakes import FIXTURES, video_collection
 
 PLAYLIST = "https://www.youtube.com/playlist?list=PLtestcollection"
 EPISODE_1 = "https://www.youtube.com/watch?v=episode0001"
@@ -21,6 +22,21 @@ def _seed_collection(host, *, title: str = "Fixture Collection") -> None:
             ("Episode Three", EPISODE_3, 60.0),
         ],
     )
+
+
+def _stub_audio_extraction(monkeypatch, host) -> None:
+    def extract(source, output_dir, *, force_transcode, context):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / "audio.m4a"
+        shutil.copyfile(FIXTURES / "short.m4a", path)
+        return AudioResult(
+            path=path,
+            duration_sec=2.0,
+            mime="audio/mp4",
+            extension=".m4a",
+        )
+
+    monkeypatch.setattr(host.stack.audio_extractor.real, "extract", extract)
 
 
 def test_youtube_playlist_inspect_create_and_readd(api_host):
@@ -96,6 +112,79 @@ def test_youtube_playlist_inspect_create_and_readd(api_host):
     retained = api_host.client.post("/api/collections", json={"url": PLAYLIST})
     assert retained.status_code == 201, retained.text
     assert retained.json()["collection"]["episode_count"] == 4
+
+
+def test_collection_episodes_share_tags_and_context(host, monkeypatch):
+    _stub_audio_extraction(monkeypatch, host)
+    _seed_collection(host)
+    host.login()
+    created = host.client.post("/api/collections", json={"url": PLAYLIST})
+    assert created.status_code == 201, created.text
+    item_ids = [item["id"] for item in created.json()["collection"]["items"]]
+    for item_id in item_ids:
+        host.wait_for_item(item_id)
+
+    calls = host.stack.organizer.collection_calls
+    assert len(calls) == 3
+    assert {call[0] for call in calls} == {"Fixture Collection"}
+    assert {call[1] for call in calls} == {1, 2, 3}
+    bootstrap = [call for call in calls if not call[2]]
+    reuse = [call for call in calls if call[2]]
+    assert len(bootstrap) == 1
+    assert len(reuse) == 2
+    for call, existing in zip(
+        calls, host.stack.organizer.existing_tags_calls, strict=True
+    ):
+        if call[2]:
+            assert set(host.stack.organizer.tags) <= set(existing)
+
+
+def test_collection_reprocess_cli_resets_ai_tags(host, monkeypatch, capsys):
+    _stub_audio_extraction(monkeypatch, host)
+    _seed_collection(host)
+    host.login()
+    created = host.client.post("/api/collections", json={"url": PLAYLIST})
+    assert created.status_code == 201, created.text
+    collection_id = created.json()["collection"]["id"]
+    item_ids = [item["id"] for item in created.json()["collection"]["items"]]
+    for item_id in item_ids:
+        host.wait_for_item(item_id)
+    assert host.item(item_ids[0])["tags"]
+
+    added = host.client.post(
+        f"/api/items/{item_ids[0]}/tags", json={"tag": "我自己的标签"}
+    )
+    assert added.status_code == 200, added.text
+    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
+    from trove.cli import main
+
+    assert (
+        main(
+            [
+                "collection",
+                "reprocess",
+                collection_id,
+                "--from-stage",
+                "downloading",
+                "--reset-ai-tags",
+            ]
+        )
+        == 2
+    )
+    assert len(host.item(item_ids[0])["tags"]) > 1
+
+    host.worker.stop()
+    assert (
+        main(["collection", "reprocess", collection_id, "--reset-ai-tags"]) == 0
+    )
+    output = capsys.readouterr().out
+    assert "Deleted" in output and "queued 3 organizing runs" in output
+
+    assert host.item(item_ids[0])["tags"] == ["我自己的标签"]
+    for item_id in item_ids[1:]:
+        assert host.item(item_id)["tags"] == []
+    for item_id in item_ids:
+        assert host.item(item_id)["run"]["state"] == "queued"
 
 
 def test_existing_episode_is_attached_and_other_collection_conflicts(api_host):

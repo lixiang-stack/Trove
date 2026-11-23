@@ -1,6 +1,6 @@
 # DeepSeek 整理按 token/调用数限额，不按金额止损
 
-MVP 用 DeepSeek `deepseek-flash` 生成 1–2 句摘要和 3–5 个 Tag；长文本按 20k 字符分块 map-reduce，JSON 模式输出。预算不按美元金额阻断，而是限制单次输出 tokens、单条调用数和单条输入 token 总量；实际 token 和估算成本只记录，避免价格波动/估算误差误伤正常内容。
+MVP 用 DeepSeek `deepseek-flash` 生成 1–2 句摘要和最多 3 个 Tag；长文本按 20k 字符分块 map-reduce，JSON 模式输出。预算不按美元金额阻断，而是限制单次输出 tokens、单条调用数和单条输入 token 总量；实际 token 和估算成本只记录，避免价格波动/估算误差误伤正常内容。Tag 数量上限与合集复用策略见 [ADR-0012](0012-collection-aware-tag-vocabulary.md)（每个 Item 最多 3 个）。
 
 **Status**: Accepted · 2026-11-08
 
