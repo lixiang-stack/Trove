@@ -208,6 +208,36 @@ class CollectionFlowTest {
     }
 
     @Test
+    fun collectionEpisodeCoverShowsTitleInitialsInsteadOfIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("one", "Episode One", 1, ready = true),
+                syncItem("two", "Episode Two", 2, ready = true),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "test-epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-collection-collection-1")
+        compose.onNodeWithTag("library-collection-collection-1").performClick()
+        waitForTag(compose, "collection-screen")
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
+        compose.onAllNodesWithText("01").assertCountEquals(1)
+        compose.onNodeWithText("EO").assertIsDisplayed()
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(2)
+        compose.onAllNodesWithText("02").assertCountEquals(1)
+        compose.onNodeWithText("ET").assertIsDisplayed()
+    }
+
+    @Test
     fun collectionDownloadAllQueuesEveryEpisodeAndShowsDownloadStates() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = harness(context)
@@ -237,7 +267,12 @@ class CollectionFlowTest {
         compose.onNodeWithTag("collection-download-all").performScrollTo().performClick()
         compose.waitUntil(COMPOSE_TIMEOUT_MS) {
             compose.waitForIdle()
-            harness.downloadQueue.enqueued.isNotEmpty()
+            runBlocking {
+                val states = harness.container.database.artifactDao().forItem("one")
+                    .plus(harness.container.database.artifactDao().forItem("two"))
+                    .map { it.downloadState }
+                states.size == 2 && states.all { it == "queued" }
+            }
         }
 
         val states = runBlocking {
@@ -246,7 +281,7 @@ class CollectionFlowTest {
                 .map { it.downloadState }
         }
         assertTrue(states.isNotEmpty())
-        assertTrue(states.all { it == "queued" })
+        assertTrue("states=$states", states.all { it == "queued" })
         assertTrue(
             runBlocking {
                 harness.container.database.collectionDownloadIntentDao()
