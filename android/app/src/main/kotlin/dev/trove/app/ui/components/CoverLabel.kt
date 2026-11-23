@@ -26,13 +26,8 @@ private val STOP_WORDS = setOf(
     "a", "an", "the", "of", "for", "to", "in", "on", "with", "and", "or",
 )
 
-internal fun coverLabel(item: LibraryItem): String {
-    val index = item.collectionIndex
-    if (!item.collectionId.isNullOrBlank() && index != null) {
-        return index.toString().padStart(2, '0')
-    }
-    return coverText(item.title, item.collectionTitle)
-}
+internal fun coverLabel(item: LibraryItem): String =
+    coverText(item.title, item.collectionTitle)
 
 internal fun coverSeed(item: LibraryItem): String =
     item.collectionId?.takeIf { it.isNotBlank() } ?: item.id

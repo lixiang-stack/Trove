@@ -423,7 +423,11 @@ private fun EpisodeRow(
             color = TroveColors.Muted,
             modifier = Modifier.size(width = 22.dp, height = 16.dp),
         )
-        TroveCover(item, size = 44.dp)
+        TroveCover(
+            item = item,
+            size = 44.dp,
+            label = coverText(item.title, item.collectionTitle, allowFullTitle = false),
+        )
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 item.title,
