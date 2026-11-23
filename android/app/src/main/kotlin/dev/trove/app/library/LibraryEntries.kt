@@ -37,8 +37,15 @@ sealed interface LibraryEntry {
         val queuedCount: Int get() = items.count { it.processingState == "queued" }
         val failedCount: Int get() = items.count { it.processingState == "failed" }
         val finishedCount: Int get() = items.count { it.consumptionState == "finished" }
-        val consumptionProgress: Float
-            get() = if (episodeCount == 0) 0f else finishedCount.toFloat() / episodeCount
+        val downloadedCount: Int get() = items.count { it.downloadState == "completed" }
+        val pendingDownloadCount: Int get() = items.count {
+            it.downloadState == "queued" || it.downloadState == "downloading"
+        }
+        val downloadingCount: Int get() = items.count { it.downloadState == "downloading" }
+        val allDownloaded: Boolean
+            get() = episodeCount > 0 && downloadedCount == episodeCount
+        val downloadProgress: Float
+            get() = if (episodeCount == 0) 0f else downloadedCount.toFloat() / episodeCount
     }
 }
 

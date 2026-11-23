@@ -190,6 +190,9 @@ interface ArtifactDao {
     )
     suspend fun itemsWithPendingDownloads(): List<String>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM artifacts WHERE download_state = 'downloading')")
+    suspend fun hasDownloading(): Boolean
+
     @Query(
         """
         UPDATE artifacts SET download_state = 'failed', error_code = :code

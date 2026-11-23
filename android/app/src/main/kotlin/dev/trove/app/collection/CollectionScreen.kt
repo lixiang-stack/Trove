@@ -47,6 +47,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import dev.trove.app.library.collectionDownloadLabel
 import dev.trove.app.library.consumptionLabel
 import dev.trove.app.library.platformLabel
 import dev.trove.app.library.processingLabel
@@ -73,6 +74,7 @@ fun CollectionScreen(
     onTogglePlay: () -> Unit,
     onRetryItem: (String) -> Unit,
     onRetryFailed: () -> Unit,
+    onDownloadAll: () -> Unit,
     onDelete: (String) -> Unit,
 ) {
     val episodes = remember(items, collectionId) {
@@ -162,9 +164,25 @@ fun CollectionScreen(
             val queued = episodes.count { it.processingState == "queued" }
             val failed = episodes.count { it.processingState == "failed" }
             val finished = episodes.count { it.consumptionState == "finished" }
+            val downloaded = episodes.count { it.downloadState == "completed" }
+            val downloadable = episodes.count { it.artifacts.isNotEmpty() }
+            val pendingDownloads = episodes.count {
+                it.downloadState == "queued" || it.downloadState == "downloading"
+            }
+            val downloading = episodes.count { it.downloadState == "downloading" }
+            val downloadFraction =
+                if (episodes.isEmpty()) 0f else downloaded.toFloat() / episodes.size
+            val allDownloaded = episodes.isNotEmpty() && downloaded == episodes.size
+            val downloadColor = when {
+                allDownloaded -> TroveColors.Green
+                pendingDownloads > 0 -> TroveColors.Cooking
+                else -> TroveColors.Muted
+            }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .testTag("collection-episodes"),
                 contentPadding = PaddingValues(bottom = 24.dp),
             ) {
                 item(key = "header") {
@@ -206,7 +224,7 @@ fun CollectionScreen(
                             if (processing > 0) StatusPill("$processing 处理中", TroveColors.Cooking, TroveColors.Gold.copy(alpha = 0.18f))
                             if (queued > 0) StatusPill("$queued 排队", TroveColors.Muted, TroveColors.Paper2)
                             if (failed > 0) StatusPill("$failed 失败", TroveColors.Danger, TroveColors.AccentSoft.copy(alpha = 0.35f))
-                            if (completed > 0) StatusPill("$completed 完成", TroveColors.Green, TroveColors.Green.copy(alpha = 0.1f))
+                            if (completed > 0) StatusPill("$completed 处理完成", TroveColors.Green, TroveColors.Green.copy(alpha = 0.1f))
                         }
                         TinyProgress(
                             fraction = if (episodes.isEmpty()) 0f else completed.toFloat() / episodes.size,
@@ -229,12 +247,61 @@ fun CollectionScreen(
                                 color = TroveColors.Muted,
                             )
                         }
-                        if (failed > 0) {
-                            TextButton(
-                                onClick = onRetryFailed,
-                                modifier = Modifier.testTag("collection-retry-failed"),
-                            ) {
-                                Text("重试失败项")
+                        TinyProgress(
+                            fraction = downloadFraction,
+                            fill = when {
+                                allDownloaded -> TroveColors.Green
+                                pendingDownloads > 0 -> TroveColors.Cooking
+                                else -> TroveColors.Accent
+                            },
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            Text(
+                                "已下载 $downloaded/${episodes.size}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = downloadColor,
+                            )
+                            Text(
+                                "未下载 ${episodes.size - downloaded}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TroveColors.Muted,
+                            )
+                        }
+                        if (downloadable > 0 || failed > 0) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                if (downloadable > 0) {
+                                    val canStartDownload = downloadable > downloaded &&
+                                        pendingDownloads == 0
+                                    val downloadButtonLabel = when {
+                                        allDownloaded -> "已全部下载"
+                                        downloading > 0 -> "下载中 $downloaded/$downloadable"
+                                        pendingDownloads > 0 -> "等待下载 $downloaded/$downloadable"
+                                        downloadable > downloaded -> "下载全部"
+                                        processing > 0 -> "等待处理完成"
+                                        else -> "暂无可下载"
+                                    }
+                                    TextButton(
+                                        onClick = onDownloadAll,
+                                        enabled = canStartDownload,
+                                        modifier = Modifier.testTag("collection-download-all"),
+                                    ) {
+                                        Text(downloadButtonLabel)
+                                    }
+                                }
+                                if (failed > 0) {
+                                    TextButton(
+                                        onClick = onRetryFailed,
+                                        modifier = Modifier.testTag("collection-retry-failed"),
+                                    ) {
+                                        Text("重试失败项")
+                                    }
+                                }
                             }
                         }
                         if (actionError != null) {
@@ -392,11 +459,16 @@ private fun EpisodeRow(
                     style = MaterialTheme.typography.labelSmall,
                     color = TroveColors.Muted,
                 )
-                if (item.downloadState == "completed") {
+                if (item.artifacts.isNotEmpty()) {
                     Text(
-                        "已下载",
+                        collectionDownloadLabel(item.downloadState),
                         style = MaterialTheme.typography.labelSmall,
-                        color = TroveColors.Green,
+                        color = when (item.downloadState) {
+                            "completed" -> TroveColors.Green
+                            "queued", "downloading" -> TroveColors.Cooking
+                            "failed" -> TroveColors.Danger
+                            else -> TroveColors.Muted
+                        },
                     )
                 }
             }

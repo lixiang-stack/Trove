@@ -40,6 +40,17 @@ fun downloadLabel(state: String): String? = when (state) {
 }
 
 @Composable
+fun collectionDownloadLabel(state: String): String = when (state) {
+    "completed" -> stringResource(R.string.library_download_downloaded)
+    "downloading" -> stringResource(R.string.library_download_downloading)
+    "queued" -> stringResource(R.string.library_download_queued)
+    "failed" -> stringResource(R.string.library_download_failed)
+    "paused" -> stringResource(R.string.library_download_paused)
+    "partial" -> stringResource(R.string.library_download_partial)
+    else -> stringResource(R.string.library_download_not_downloaded)
+}
+
+@Composable
 fun sourceTypeLabel(value: String): String = when (value) {
     "video_url" -> stringResource(R.string.type_video)
     "podcast_episode" -> stringResource(R.string.type_podcast)

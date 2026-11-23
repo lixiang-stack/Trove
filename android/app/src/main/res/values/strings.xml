@@ -5,6 +5,7 @@
     <string name="library_syncing">正在同步…</string>
     <string name="library_offline">离线 · 显示已同步内容</string>
     <string name="library_sync_failed">同步失败（%1$s）</string>
+    <string name="library_sync_queued_downloads">已同步 · %1$d 项等待下载</string>
     <string name="library_retry">重试</string>
     <string name="library_download_downloaded">已下载</string>
     <string name="library_download_downloading">下载中</string>
@@ -12,6 +13,7 @@
     <string name="library_download_failed">下载失败</string>
     <string name="library_download_paused">已暂停</string>
     <string name="library_download_partial">部分下载</string>
+    <string name="library_download_not_downloaded">未下载</string>
     <string name="filter_type">类型</string>
     <string name="filter_consumption">消费状态</string>
     <string name="filter_tag">Tag</string>

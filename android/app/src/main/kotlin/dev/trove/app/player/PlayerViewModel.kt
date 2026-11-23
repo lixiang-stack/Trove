@@ -271,7 +271,12 @@ class PlayerViewModel(
         viewModelScope.launch {
             autoSyncMutex.withLock {
                 val item = repository.find(itemId) ?: return@withLock
-                if (item.artifacts.isEmpty() || item.downloadState !in AUTO_SYNC_STATES) {
+                if (item.artifacts.isEmpty()) return@withLock
+                if (item.downloadState == "queued") {
+                    downloadManager.resumePending()
+                    return@withLock
+                }
+                if (item.downloadState !in AUTO_SYNC_STATES) {
                     return@withLock
                 }
                 downloadManager.enqueue(itemId)

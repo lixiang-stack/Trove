@@ -43,6 +43,7 @@ import dev.trove.playback.PlaybackRequest
 import dev.trove.playback.PlaybackState
 import dev.trove.playback.PlayerGateway
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import retrofit2.Response
@@ -418,12 +419,18 @@ class FakeDownloadQueue : DownloadQueue {
 
 class FakeDownloadManager : DownloadManager {
     val enqueued = CopyOnWriteArrayList<String>()
+    val enqueuedAll = CopyOnWriteArrayList<List<String>>()
     val paused = CopyOnWriteArrayList<String>()
     val retried = CopyOnWriteArrayList<String>()
     val removed = CopyOnWriteArrayList<String>()
+    val resumeCalls = AtomicInteger()
 
     override suspend fun enqueue(itemId: String) {
         enqueued += itemId
+    }
+
+    override suspend fun enqueueAll(itemIds: List<String>) {
+        enqueuedAll += itemIds
     }
 
     override suspend fun pause(itemId: String) {
@@ -436,6 +443,10 @@ class FakeDownloadManager : DownloadManager {
 
     override suspend fun remove(itemId: String) {
         removed += itemId
+    }
+
+    override suspend fun resumePending() {
+        resumeCalls.incrementAndGet()
     }
 }
 

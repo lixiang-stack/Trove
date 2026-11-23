@@ -395,6 +395,9 @@ private fun MainShell(
                         onRetryFailed = {
                             libraryViewModel.retryCollectionFailed(route.collectionId)
                         },
+                        onDownloadAll = {
+                            libraryViewModel.downloadCollection(route.collectionId)
+                        },
                         onDelete = { mode ->
                             libraryViewModel.deleteCollection(route.collectionId, mode)
                             if (backStack.lastOrNull() is CollectionRoute) {
