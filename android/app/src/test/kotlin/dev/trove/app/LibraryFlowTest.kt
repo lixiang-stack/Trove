@@ -189,6 +189,46 @@ class LibraryFlowTest {
     }
 
     @Test
+    fun filterDialogScrollsToSourceOptions() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = signedInHarness(context)
+        // Enough tags to push the Source section past the dialog's height cap.
+        val tags = listOf(
+            "道德经", "无为而治", "道家哲学", "修身", "老子",
+            "不争", "功成不居", "自然规律", "帝王学", "顺其自然",
+            "中国古典", "以柔克刚", "自然", "反本归真", "大道无分",
+            "柔弱胜刚强", "玄通", "不争之德", "以百姓心为心", "反战主义",
+            "无我无身", "玄德", "自知自强", "见素抱朴", "上善若水",
+            "上德不德", "不争之争", "不出父知天下", "不贵其事", "事无事",
+            "以不变应万变", "以小制大", "以正治国", "出生入死", "利而不害",
+            "哀兵必胜", "善人之宝", "善行无迹", "因果", "国际关系",
+            "圣人无常心", "圣凡同", "大国者下流", "大成若缺", "天人合一",
+            "天人感应", "天道无亲", "宠辱若惊", "寡欲", "尊道贵德",
+        )
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem(
+                    "item-1",
+                    "标签很多的内容",
+                    "completed",
+                    platform = "bilibili",
+                    tags = tags,
+                ),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "1",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-item-item-1")
+        compose.onNodeWithTag("filter-button").performClick()
+        compose.onNodeWithTag("filter-option-bilibili").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
     fun offlineStatusKeepsSyncedLibraryVisible() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = signedInHarness(context)
@@ -275,11 +315,17 @@ class LibraryFlowTest {
         )
     }
 
-    private fun syncItem(id: String, title: String, processingState: String) = SyncItemDto(
+    private fun syncItem(
+        id: String,
+        title: String,
+        processingState: String,
+        platform: String = "youtube",
+        tags: List<String> = listOf("AI"),
+    ) = SyncItemDto(
         id = id,
         version = 1,
         sourceType = "video_url",
-        platform = "youtube",
+        platform = platform,
         title = title,
         author = "作者",
         publishedAt = "2026-10-01",
@@ -287,7 +333,7 @@ class LibraryFlowTest {
         language = "zh",
         durationSec = 100.0,
         summary = "Summary",
-        tags = listOf("AI"),
+        tags = tags,
         processingState = processingState,
         hasAudio = true,
         hasBook = false,
