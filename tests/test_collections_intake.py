@@ -167,6 +167,38 @@ def test_collection_delete_modes(api_host):
         assert api_host.client.get(f"/api/items/{item_id}").status_code == 404
 
 
+def test_collection_delete_items_resets_consumption(api_host):
+    from trove.clock import utc_ms
+
+    _seed_collection(api_host)
+    api_host.login()
+    created = api_host.client.post("/api/collections", json={"url": PLAYLIST})
+    collection_id = created.json()["collection"]["id"]
+    item_ids = [item["id"] for item in created.json()["collection"]["items"]]
+    now = utc_ms()
+    for index, item_id in enumerate(item_ids):
+        api_host.runtime.sync.apply_progress(
+            item_id,
+            position_sec=30.0 + index,
+            book_locator=None,
+            consumption_state="in_progress",
+            client_updated_at=now,
+            device_id="test-device",
+        )
+
+    deleted = api_host.client.delete(
+        f"/api/collections/{collection_id}?mode=delete_items"
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    readded = api_host.client.post("/api/collections", json={"url": PLAYLIST})
+    assert readded.status_code == 201, readded.text
+    for item_id in item_ids:
+        item = api_host.client.get(f"/api/items/{item_id}").json()
+        assert item["consumption_state"] == "unstarted"
+        assert item["audio_position_sec"] == 0.0
+
+
 def test_collection_limit_is_enforced(api_host):
     _seed_collection(api_host)
     api_host.config.max_collection_items = 2
