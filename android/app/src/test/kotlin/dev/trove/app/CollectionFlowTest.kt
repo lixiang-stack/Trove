@@ -207,6 +207,36 @@ class CollectionFlowTest {
     }
 
     @Test
+    fun collectionEpisodeCoverShowsTitleInitialsInsteadOfIndex() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = harness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(
+                syncItem("one", "Episode One", 1, ready = true),
+                syncItem("two", "Episode Two", 2, ready = true),
+            ),
+            tombstones = emptyList(),
+            nextCursor = "2",
+            hasMore = false,
+            epoch = "test-epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-collection-collection-1")
+        compose.onNodeWithTag("library-collection-collection-1").performClick()
+        waitForTag(compose, "collection-screen")
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
+        compose.onAllNodesWithText("01").assertCountEquals(1)
+        compose.onNodeWithText("EO").assertIsDisplayed()
+
+        compose.onNodeWithTag("collection-episodes").performScrollToIndex(2)
+        compose.onAllNodesWithText("02").assertCountEquals(1)
+        compose.onNodeWithText("ET").assertIsDisplayed()
+    }
+
+    @Test
     fun collectionDownloadAllQueuesEveryEpisodeAndShowsDownloadStates() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val harness = harness(context)
