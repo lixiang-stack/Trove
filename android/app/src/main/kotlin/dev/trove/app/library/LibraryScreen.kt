@@ -888,8 +888,8 @@ private fun FilterDialog(
         text = {
             Column(
                 modifier = Modifier
-                    .verticalScroll(rememberScrollState())
                     .heightIn(max = 440.dp)
+                    .verticalScroll(rememberScrollState())
                     .fillMaxWidth(),
             ) {
                 Text("排序", style = MaterialTheme.typography.titleSmall)
