@@ -266,7 +266,12 @@ class CollectionFlowTest {
         compose.onNodeWithTag("collection-download-all").performClick()
         compose.waitUntil(COMPOSE_TIMEOUT_MS) {
             compose.waitForIdle()
-            harness.downloadQueue.enqueued.isNotEmpty()
+            runBlocking {
+                val states = harness.container.database.artifactDao().forItem("one")
+                    .plus(harness.container.database.artifactDao().forItem("two"))
+                    .map { it.downloadState }
+                states.size == 2 && states.all { it == "queued" }
+            }
         }
 
         val states = runBlocking {
@@ -274,8 +279,7 @@ class CollectionFlowTest {
                 .plus(harness.container.database.artifactDao().forItem("two"))
                 .map { it.downloadState }
         }
-        assertTrue(states.isNotEmpty())
-        assertTrue(states.all { it == "queued" })
+        assertTrue("states=$states", states.all { it == "queued" })
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(0)
         compose.onNodeWithTag("collection-download-all").assertTextContains("等待下载 0/2")
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
