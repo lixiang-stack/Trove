@@ -19,6 +19,7 @@ from trove.content_package import (
 )
 from trove.db.models import (
     Artifact,
+    Collection,
     Item,
     ItemTag,
     Run,
@@ -591,12 +592,20 @@ class ProcessingService:
         self, session: Session, item: Item, run_id: str, context: StageContext
     ) -> None:
         source_text = self._item_text(item)
-        existing_tags = self._tag_vocabulary(session)
+        collection = session.get(Collection, item.collection_id) if item.collection_id else None
+        collection_tags = (
+            self._collection_tag_vocabulary(session, item.collection_id)
+            if item.collection_id
+            else []
+        )
         result = self.organizer.organize(
             text=source_text,
             title=item.title,
-            existing_tags=existing_tags,
+            existing_tags=collection_tags or self._tag_vocabulary(session),
             context=context,
+            collection_title=collection.title if collection is not None else None,
+            collection_index=item.collection_index,
+            reuse_existing_tags=bool(collection_tags),
         )
         generated_at = utc_ms()
         path = self.package.write_ai(item.id, ai_document(result, generated_at))
@@ -665,6 +674,26 @@ class ProcessingService:
             for name in session.execute(
                 select(Tag.name)
                 .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .group_by(Tag.id)
+                .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
+                .limit(MAX_EXISTING_TAGS)
+            ).scalars()
+        ]
+
+    def _collection_tag_vocabulary(
+        self, session: Session, collection_id: str
+    ) -> list[str]:
+        return [
+            str(name)
+            for name in session.execute(
+                select(Tag.name)
+                .join(ItemTag, ItemTag.tag_id == Tag.id)
+                .join(Item, Item.id == ItemTag.item_id)
+                .where(
+                    Item.collection_id == collection_id,
+                    Item.deleted_at.is_(None),
+                    ItemTag.source == "ai",
+                )
                 .group_by(Tag.id)
                 .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
                 .limit(MAX_EXISTING_TAGS)

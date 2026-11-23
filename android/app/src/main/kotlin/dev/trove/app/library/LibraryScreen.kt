@@ -922,11 +922,9 @@ private fun FilterDialog(
                     labelFor = { consumptionLabel(it) },
                     onSelect = onConsumption,
                 )
-                FilterSection(
-                    title = stringResource(R.string.filter_tag),
+                TagFilterSection(
                     options = state.options.tags,
                     selected = state.filters.tag,
-                    labelFor = { it },
                     onSelect = onTag,
                 )
                 FilterSection(

@@ -29,7 +29,7 @@ The set of files that make up an Item in the Library: source metadata, audio, tr
 _Avoid_: Folder, bundle
 
 **Tag**:
-A free-form, fine-grained classification generated at ingest and editable by the user.
+A free-form classification generated at ingest and editable by the user. Generated tags favor a small, shared vocabulary; episode-specific themes belong in the summary and transcript rather than in one-off tags.
 _Avoid_: Topic (for the MVP), label, keyword
 
 **Export**:

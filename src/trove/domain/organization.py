@@ -4,7 +4,9 @@ from trove.domain.search import is_cjk
 from trove.domain.tags import normalize_tag
 from trove.errors import ValidationError
 
-MAX_EXISTING_TAGS = 100
+MAX_EXISTING_TAGS = 30
+MAX_TAGS_PER_ITEM = 3
+MAX_NEW_TAGS_PER_ITEM = 1
 
 
 def chunk_text(text: str, chunk_chars: int) -> list[str]:
@@ -59,3 +61,69 @@ def normalize_tags(raw_tags: list[str], *, limit: int = 5) -> list[str]:
         if len(tags) == limit:
             break
     return tags
+
+
+def select_tags(
+    raw_tags: list[str],
+    *,
+    existing_tags: list[str],
+    limit: int = MAX_TAGS_PER_ITEM,
+    allow_new: bool = True,
+) -> list[str]:
+    """Keep reusable model tags, capped per item and by new-tag allowance."""
+    known: set[str] = set()
+    for value in existing_tags:
+        try:
+            _, normalized = normalize_tag(value)
+        except ValidationError:
+            continue
+        known.add(normalized)
+    new_limit = 0 if not allow_new else (MAX_NEW_TAGS_PER_ITEM if known else limit)
+    tags: list[str] = []
+    seen: set[str] = set()
+    new_count = 0
+    for raw in raw_tags:
+        try:
+            display, normalized = normalize_tag(str(raw))
+        except ValidationError:
+            continue
+        if normalized in seen:
+            continue
+        if normalized not in known:
+            if new_count >= new_limit:
+                continue
+            new_count += 1
+        seen.add(normalized)
+        tags.append(display)
+        if len(tags) == limit:
+            break
+    return tags
+
+
+def fill_tags(
+    tags: list[str],
+    *,
+    vocabulary: list[str],
+    limit: int = MAX_TAGS_PER_ITEM,
+) -> list[str]:
+    """Fill a reused collection tag set from the shared vocabulary."""
+    filled = list(tags)[:limit]
+    seen: set[str] = set()
+    for value in filled:
+        try:
+            _, normalized = normalize_tag(value)
+        except ValidationError:
+            continue
+        seen.add(normalized)
+    for value in vocabulary:
+        if len(filled) >= limit:
+            break
+        try:
+            display, normalized = normalize_tag(value)
+        except ValidationError:
+            continue
+        if normalized in seen:
+            continue
+        filled.append(display)
+        seen.add(normalized)
+    return filled

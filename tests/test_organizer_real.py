@@ -36,6 +36,6 @@ def test_real_organizer(tmp_path):
         context=_context(tmp_path),
     )
     assert result.summary
-    assert 1 <= len(result.tags) <= 5
+    assert 1 <= len(result.tags) <= 3
     assert result.input_tokens > 0
     assert result.output_tokens > 0

@@ -200,6 +200,8 @@ class FakeTranscriber:
 class FakeOrganizer:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.collection_calls: list[tuple[str | None, int | None, bool]] = []
+        self.existing_tags_calls: list[list[str]] = []
         self.fail_code: str | None = None
         self.summary = "这是一段关于记忆与智能体的讨论。"
         self.tags = ["智能体", "记忆", "LLM"]
@@ -216,8 +218,13 @@ class FakeOrganizer:
         title: str,
         existing_tags: list[str],
         context: StageContext,
+        collection_title: str | None = None,
+        collection_index: int | None = None,
+        reuse_existing_tags: bool = False,
     ) -> OrganizationResult:
         self.calls.append(text)
+        self.existing_tags_calls.append(list(existing_tags))
+        self.collection_calls.append((collection_title, collection_index, reuse_existing_tags))
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake organization failure")
         return OrganizationResult(

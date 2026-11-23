@@ -257,6 +257,9 @@ class Organizer(Protocol):
         title: str,
         existing_tags: list[str],
         context: StageContext,
+        collection_title: str | None = None,
+        collection_index: int | None = None,
+        reuse_existing_tags: bool = False,
     ) -> OrganizationResult: ...
 
 

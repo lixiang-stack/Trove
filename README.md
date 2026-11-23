@@ -85,3 +85,11 @@ uv run trove index status --json
 ```
 
 Rebuild the FTS search index from stored content with `uv run trove index rebuild`.
+
+After changing tag generation, or to collapse a long-lived collection tag list, re-run organization for every episode in a collection:
+
+```bash
+uv run trove collection reprocess <collection_id> --reset-ai-tags
+```
+
+`--reset-ai-tags` deletes the collection's AI tags before queueing the `organizing` runs; user-added tags are kept. The worker must be running to process the queued runs.

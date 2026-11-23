@@ -17,6 +17,8 @@
     <string name="filter_type">类型</string>
     <string name="filter_consumption">消费状态</string>
     <string name="filter_tag">Tag</string>
+    <string name="filter_tag_more">更多 (%1$d)</string>
+    <string name="filter_tag_less">收起</string>
     <string name="filter_source">Source</string>
     <string name="filter_clear">清除筛选</string>
     <string name="processing_completed">已完成</string>

@@ -225,6 +225,8 @@ class LibraryFlowTest {
 
         waitForTag(compose, "library-item-item-1")
         compose.onNodeWithTag("filter-button").performClick()
+        compose.onNodeWithTag("filter-tags-toggle").performScrollTo().performClick()
+        compose.onNodeWithText("收起").performScrollTo().assertIsDisplayed()
         compose.onNodeWithTag("filter-option-bilibili").performScrollTo().assertIsDisplayed()
     }
 

@@ -48,9 +48,11 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import dev.trove.app.library.TagFilterSection
 import dev.trove.app.library.consumptionLabel
 import dev.trove.app.library.platformLabel
 import dev.trove.app.library.sourceTypeLabel
+import dev.trove.app.library.tagOptions
 import dev.trove.app.ui.components.RootTab
 import dev.trove.app.ui.components.TroveBottomNav
 import dev.trove.app.ui.components.TroveChip
@@ -358,7 +360,7 @@ private fun SearchFilterDialog(    items: List<LibraryItem>,
     val types = items.map { it.sourceType }.distinct().sorted()
     val consumptions = items.map { it.consumptionState }.distinct().sorted()
     val sources = items.map { it.platform }.filter { it.isNotBlank() }.distinct().sorted()
-    val tags = items.flatMap { it.tags }.distinct().sortedBy { it.lowercase() }
+    val tags = tagOptions(items)
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TroveColors.Paper,
@@ -383,11 +385,9 @@ private fun SearchFilterDialog(    items: List<LibraryItem>,
                     labelFor = { consumptionLabel(it) },
                     onSelect = { draft = draft.copy(consumption = it) },
                 )
-                SearchFilterSection(
-                    title = "Tag",
+                TagFilterSection(
                     options = tags,
                     selected = draft.tag,
-                    labelFor = { it },
                     onSelect = { draft = draft.copy(tag = it) },
                 )
                 SearchFilterSection(

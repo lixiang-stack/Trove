@@ -28,14 +28,14 @@ data class LibraryFilters(
 data class LibraryFilterOptions(
     val types: List<String>,
     val consumptions: List<String>,
-    val tags: List<String>,
+    val tags: List<TagOption>,
     val sources: List<String>,
 )
 
 fun filterOptions(items: List<LibraryItem>): LibraryFilterOptions = LibraryFilterOptions(
     types = items.map { it.sourceType }.distinct().sorted(),
     consumptions = items.map { it.consumptionState }.distinct().sorted(),
-    tags = items.flatMap { it.tags }.distinct().sorted(),
+    tags = tagOptions(items),
     sources = items.map { it.platform }.distinct().sorted(),
 )
 
