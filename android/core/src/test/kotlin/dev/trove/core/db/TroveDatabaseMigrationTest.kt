@@ -81,6 +81,27 @@ class TroveDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration4To5CreatesCollectionDownloadIntents() {
+        helper.createDatabase(TEST_DB, 4).use { }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DB,
+            5,
+            true,
+            TroveDatabase.MIGRATION_4_5,
+        )
+        migrated.use { database ->
+            database.execSQL(
+                "INSERT INTO collection_download_intents (collection_id) VALUES ('collection-1')"
+            )
+            database.query("SELECT collection_id FROM collection_download_intents").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("collection-1", cursor.getString(0))
+            }
+        }
+    }
+
     private companion object {
         const val TEST_DB = "trove-migration-test.db"
     }

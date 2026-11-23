@@ -3,6 +3,7 @@ package dev.trove.core.sync
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import dev.trove.core.db.ArtifactEntity
+import dev.trove.core.db.CollectionDownloadIntentEntity
 import dev.trove.core.db.PendingMutationEntity
 import dev.trove.core.db.TroveDatabase
 import dev.trove.core.network.DeviceListResponse
@@ -510,6 +511,91 @@ class SyncEngineTest {
     }
 
     @Test
+    fun collectionDownloadIntentQueuesNewlyProcessedArtifacts() = runBlocking {
+        database.collectionDownloadIntentDao().enable(CollectionDownloadIntentEntity("c1"))
+        api.manifestPages += manifest(
+            items = listOf(item("a", version = 1, collectionId = "c1", files = emptyList())),
+            cursor = "1",
+        )
+        val enqueued = mutableListOf<String>()
+        val queue = object : DownloadQueue {
+            override suspend fun enqueue(itemId: String) {
+                enqueued += itemId
+            }
+        }
+        engine(downloadQueue = queue).sync()
+
+        assertTrue(database.artifactDao().forItem("a").isEmpty())
+        assertTrue(enqueued.isEmpty())
+
+        api.manifestPages.clear()
+        api.manifestPages += manifest(
+            items = listOf(
+                item("a", version = 2, collectionId = "c1", files = listOf(file("audio")))
+            ),
+            cursor = "2",
+        )
+        engine(downloadQueue = queue).sync()
+
+        assertEquals("queued", database.artifactDao().find("a", "audio")!!.downloadState)
+        assertEquals(listOf("a"), enqueued)
+    }
+
+    @Test
+    fun newArtifactWithoutCollectionIntentStaysUnselected() = runBlocking {
+        api.manifestPages += manifest(
+            items = listOf(
+                item("a", version = 1, collectionId = "c1", files = listOf(file("audio")))
+            ),
+            cursor = "1",
+        )
+        val enqueued = mutableListOf<String>()
+        engine(
+            downloadQueue = object : DownloadQueue {
+                override suspend fun enqueue(itemId: String) {
+                    enqueued += itemId
+                }
+            }
+        ).sync()
+
+        assertEquals("none", database.artifactDao().find("a", "audio")!!.downloadState)
+        assertTrue(enqueued.isEmpty())
+    }
+
+    @Test
+    fun collectionDownloadIntentDoesNotRequeueUnchangedRemovedArtifact() = runBlocking {
+        database.collectionDownloadIntentDao().enable(CollectionDownloadIntentEntity("c1"))
+        api.manifestPages += manifest(
+            items = listOf(
+                item("a", version = 1, collectionId = "c1", files = listOf(file("audio")))
+            ),
+            cursor = "1",
+        )
+        val enqueued = mutableListOf<String>()
+        val queue = object : DownloadQueue {
+            override suspend fun enqueue(itemId: String) {
+                enqueued += itemId
+            }
+        }
+        engine(downloadQueue = queue).sync()
+        assertEquals("queued", database.artifactDao().find("a", "audio")!!.downloadState)
+
+        database.artifactDao().setDownloadState("a", "audio", "none", null)
+        enqueued.clear()
+        api.manifestPages.clear()
+        api.manifestPages += manifest(
+            items = listOf(
+                item("a", version = 1, collectionId = "c1", files = listOf(file("audio")))
+            ),
+            cursor = "1",
+        )
+        engine(downloadQueue = queue).sync()
+
+        assertEquals("none", database.artifactDao().find("a", "audio")!!.downloadState)
+        assertTrue(enqueued.isEmpty())
+    }
+
+    @Test
     fun pendingProgressIsPushedBeforePullAndCanonicalValueWins() = runBlocking {
         api.manifestPages += manifest(items = listOf(item("a", version = 1)), cursor = "1")
         api.statePages += state(items = emptyList(), cursor = "0")
@@ -899,11 +985,13 @@ class SyncEngineTest {
         version: Int,
         title: String = "Item $id",
         files: List<SyncFileDto> = listOf(file("transcript")),
+        collectionId: String? = null,
     ) = SyncItemDto(
         id = id,
         version = version,
         sourceType = "video_url",
         platform = "youtube",
+        collectionId = collectionId,
         title = title,
         author = "作者",
         publishedAt = "2026-10-01",

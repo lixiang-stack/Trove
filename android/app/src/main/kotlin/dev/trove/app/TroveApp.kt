@@ -398,6 +398,10 @@ private fun MainShell(
                         onDownloadAll = {
                             libraryViewModel.downloadCollection(route.collectionId)
                         },
+                        autoDownload = route.collectionId in libraryState.autoDownloadCollections,
+                        onStopAutoDownload = {
+                            libraryViewModel.disableCollectionAutoDownload(route.collectionId)
+                        },
                         onDelete = { mode ->
                             libraryViewModel.deleteCollection(route.collectionId, mode)
                             if (backStack.lastOrNull() is CollectionRoute) {
