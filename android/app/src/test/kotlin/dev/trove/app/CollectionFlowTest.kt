@@ -25,6 +25,7 @@ import dev.trove.app.testing.scrollAndClick
 import dev.trove.app.testing.scrollAndClickText
 import dev.trove.app.testing.testHarness
 import dev.trove.app.testing.waitForTag
+import dev.trove.app.testing.waitForText
 import dev.trove.core.auth.StoredCredential
 import dev.trove.core.network.CollectionCreateResponseDto
 import dev.trove.core.network.CollectionDto
@@ -257,6 +258,7 @@ class CollectionFlowTest {
         waitForTag(compose, "library-collection-collection-1")
         compose.onNodeWithTag("library-collection-collection-1").performClick()
         waitForTag(compose, "collection-screen")
+        waitForText(compose, "已下载 0/2")
         compose.onNodeWithText("已下载 0/2").assertIsDisplayed()
         compose.onNodeWithTag("collection-episodes").performScrollToIndex(1)
         compose.onNodeWithTag("collection-episode-one").assertTextContains("未下载")
