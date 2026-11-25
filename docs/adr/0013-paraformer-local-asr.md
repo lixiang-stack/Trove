@@ -35,7 +35,7 @@ AISHELL-1 test 的确定性 1.95 小时样本（214 个 30 秒片段，20,326 �
 
 - `asr` extra 变为 `funasr` + `modelscope` + `torch` + `torchaudio`；安装体积和首次下载明显大于 mlx-whisper。
 - 子进程峰值内存约 2.8GB，CPU 单核、约 7.4x 实时；1 小时音频约 8 分钟，仍满足原 20 分钟/小时目标。
-- 每次转写都会重新加载模型（约 10 秒热启动）；集合批量处理时会有固定开销。
+- 模型加载开销已由 [ADR 0014](0014-warm-asr-process.md) 的常驻 ASR 子进程处理：首个 Item 加载，后续复用，空闲 10 分钟释放。
 - 标点使用中文小模型；英文可转写，但英文标点可能仍是中文句号。
 - `trove setup` 从 ModelScope 下载 ASR、VAD、标点三个模型；`trove doctor` 检查 `funasr` 和三份缓存。
 - 已补 ASR-only 重跑入口：Item 页面“重新转写（不重新下载）”，或 `trove collection reprocess <collection_id> --from-stage transcribing`。

@@ -523,6 +523,7 @@ queued
 - [0003 搜索使用 SQLite FTS5 + 中文 bigram](../adr/0003-sqlite-fts5-cjk-search.md)
 - [0004 转写使用 mlx-whisper large-v3-turbo](../adr/0004-mlx-whisper-local-asr.md)（已被 0013 取代）
 - [0013 转写使用 FunASR Paraformer-zh](../adr/0013-paraformer-local-asr.md)
+- [0014 转写进程常驻并复用模型](../adr/0014-warm-asr-process.md)
 - [0005 EPUB 直接解析，不引入 EbookLib/Audiobookshelf](../adr/0005-direct-epub-extraction.md)
 - [0006 原生 macOS 部署 + launchd + Tailscale Serve](../adr/0006-native-launchd-tailscale.md)
 - [0007 DeepSeek 整理按 token/调用数限额，不按金额止损](../adr/0007-deepseek-organization-limits.md)

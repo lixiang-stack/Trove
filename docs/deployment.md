@@ -179,9 +179,11 @@ ASR stage. Watch progress on the Item page; per-Run logs are linked there and
 stored under `~/Trove/logs/runs/<run-id>.log`.
 
 Expected cost on the M1 Pro reference host: about 2.8GB peak RSS, one CPU core,
-and roughly 7–8x realtime (about 8 minutes per audio hour). If the audio artifact
-is missing, the run fails with an ASR error; re-ingest the Item instead. To keep
-the old transcript for comparison, copy it before queueing:
+and roughly 7–8x realtime (about 8 minutes per audio hour). The worker keeps the
+ASR model warm for 10 minutes between runs, so the first Item pays the load cost
+and subsequent Items reuse it. If the audio artifact is missing, the run fails
+with an ASR error; re-ingest the Item instead. To keep the old transcript for
+comparison, copy it before queueing:
 
 ```bash
 cp ~/Trove/library/<item_id>/transcript.json \

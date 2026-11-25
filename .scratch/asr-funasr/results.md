@@ -108,7 +108,7 @@ A 2024 Paraformer-large ONNX int8 export (`yiyu-earth/sherpa-onnx-paraformer-zh-
 
 - AISHELL is read news speech; the real content is a Taiwanese-accented lecture with classical Chinese. The ranking is corroborated by the term counts, but CER on the library itself is not available without human transcripts.
 - The two FunASR options are a real trade-off; SenseVoice int8 is the choice if memory or speed becomes the constraint.
-- Model load is about 10s warm and dominates short clips; a persistent ASR worker would amortise it for large collections.
+- Model load is about 10s warm and dominates short clips; the follow-up warm-process change amortises it for large collections (see `.scratch/asr-warm/results.md`).
 - English is transcribed correctly by Paraformer (tested with `asr_example_en.wav`), but the small punctuation model may add Chinese `。`.
 
 ## Reproduction

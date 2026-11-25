@@ -13,7 +13,7 @@ uv run trove doctor
 uv run trove serve
 ```
 
-`funasr` is the optional `asr` extra. `trove setup` downloads the local FunASR Paraformer-zh model (about 1.25GB: 953MB ASR, 292MB punctuation, 4MB VAD) on first use. Without the extra, transcription fails with `asr.not_configured` and the `uv sync --extra asr` hint; without the model it fails with `asr.model_missing` and the `trove setup` hint. The ASR runs on CPU; no GPU is required. See [ADR 0013](docs/adr/0013-paraformer-local-asr.md) for the benchmark against the previous `mlx-whisper` setup.
+`funasr` is the optional `asr` extra. `trove setup` downloads the local FunASR Paraformer-zh model (about 1.25GB: 953MB ASR, 292MB punctuation, 4MB VAD) on first use. Without the extra, transcription fails with `asr.not_configured` and the `uv sync --extra asr` hint; without the model it fails with `asr.model_missing` and the `trove setup` hint. The ASR runs on CPU; no GPU is required. The worker keeps the model warm in a child process for up to 10 minutes between runs. See [ADR 0013](docs/adr/0013-paraformer-local-asr.md) for the benchmark against the previous `mlx-whisper` setup and [ADR 0014](docs/adr/0014-warm-asr-process.md) for model reuse.
 
 Open <http://127.0.0.1:8765>. `trove serve` also starts a built-in processing worker child process. For two-process deployment (or debugging), run only the API and start the worker separately:
 

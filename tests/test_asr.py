@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -10,7 +11,7 @@ import pytest
 from trove.adapters import asr
 from trove.config import DEFAULT_ASR_MODEL
 from trove.domain.items import error_label
-from trove.errors import ProcessingError
+from trove.errors import ProcessingCancelled, ProcessingError
 from trove.ports import StageContext
 
 from .fakes import FIXTURES
@@ -40,7 +41,7 @@ def test_missing_package_raises_install_error(tmp_path, monkeypatch):
 
 def test_missing_model_raises_setup_error(tmp_path, monkeypatch):
     monkeypatch.setattr(asr, "funasr_installed", lambda: True)
-    monkeypatch.setattr(asr, "cached_model_dir", lambda model: None)
+    monkeypatch.setattr(asr, "cached_model_paths", lambda model: None)
     transcriber = asr.ParaformerTranscriber(DEFAULT_ASR_MODEL)
 
     with pytest.raises(ProcessingError) as caught:
@@ -104,6 +105,91 @@ def test_transcript_payload_is_ordered_and_monotonic():
     ]
 
 
+class _FakeProcess:
+    def __init__(self) -> None:
+        self.alive = True
+        self.terminated = False
+
+    def is_alive(self) -> bool:
+        return self.alive
+
+    def terminate(self) -> None:
+        self.terminated = True
+        self.alive = False
+
+    def join(self, timeout=None) -> None:
+        return None
+
+    def kill(self) -> None:
+        self.terminated = True
+        self.alive = False
+
+
+class _FakeConnection:
+    def __init__(self) -> None:
+        self.closed = False
+
+    def send(self, payload) -> None:
+        return None
+
+    def poll(self, timeout) -> bool:
+        return False
+
+    def recv(self):
+        raise AssertionError("recv should not be called")
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def test_request_cancellation_stops_the_asr_process(tmp_path):
+    transcriber = asr.ParaformerTranscriber()
+    process = _FakeProcess()
+    connection = _FakeConnection()
+    transcriber._process = process
+    transcriber._connection = connection
+    context = _context(tmp_path)
+    context.should_cancel = lambda: True
+
+    with pytest.raises(ProcessingCancelled):
+        transcriber._request(tmp_path / "audio.wav", tmp_path / "out.json", context)
+
+    assert process.terminated
+    assert connection.closed
+    assert transcriber._process is None
+
+
+def test_request_timeout_stops_the_asr_process(tmp_path, monkeypatch):
+    monkeypatch.setattr(asr, "TRANSCRIBE_TIMEOUT_SECONDS", 0)
+    transcriber = asr.ParaformerTranscriber()
+    process = _FakeProcess()
+    connection = _FakeConnection()
+    transcriber._process = process
+    transcriber._connection = connection
+
+    with pytest.raises(ProcessingError) as caught:
+        transcriber._request(tmp_path / "audio.wav", tmp_path / "out.json", _context(tmp_path))
+
+    assert caught.value.message == "Transcription timed out"
+    assert process.terminated
+    assert transcriber._process is None
+
+
+def test_idle_timeout_stops_the_asr_process():
+    transcriber = asr.ParaformerTranscriber()
+    process = _FakeProcess()
+    connection = _FakeConnection()
+    transcriber._process = process
+    transcriber._connection = connection
+    transcriber._last_used = time.monotonic() - asr.ASR_IDLE_SECONDS - 1
+
+    transcriber._idle_stop()
+
+    assert process.terminated
+    assert connection.closed
+    assert transcriber._process is None
+
+
 @pytest.mark.slow
 def test_real_funasr_transcribes_fixture(tmp_path):
     if not os.environ.get("TROVE_RUN_SLOW_ASR"):
@@ -113,8 +199,18 @@ def test_real_funasr_transcribes_fixture(tmp_path):
     if not asr.model_cached(DEFAULT_ASR_MODEL):
         pytest.skip("run `uv run trove setup` before the slow ASR test")
 
-    result = asr.ParaformerTranscriber().transcribe(
-        FIXTURES / "short.m4a", _context(tmp_path)
-    )
+    transcriber = asr.ParaformerTranscriber()
+    try:
+        first = transcriber.transcribe(FIXTURES / "short.m4a", _context(tmp_path))
+        server = transcriber._process
+        assert server is not None
+        server_pid = server.pid
+        # The second call must reuse the warm ASR process.
+        second = transcriber.transcribe(FIXTURES / "short.m4a", _context(tmp_path))
+        assert transcriber._process is server
+        assert transcriber._process.pid == server_pid
+    finally:
+        transcriber.close()
 
-    assert result.model == DEFAULT_ASR_MODEL
+    assert first.model == DEFAULT_ASR_MODEL
+    assert second.model == DEFAULT_ASR_MODEL
