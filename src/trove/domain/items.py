@@ -69,6 +69,10 @@ STAGE_TRANSCRIBING = "transcribing"
 STAGE_ORGANIZING = "organizing"
 STAGE_INDEXING = "indexing"
 
+REPROCESSABLE_STAGES = frozenset(
+    {STAGE_TRANSCRIBING, STAGE_ORGANIZING, STAGE_INDEXING}
+)
+
 ACTIVE_RUN_STATES = frozenset(
     {
         RunState.QUEUED,

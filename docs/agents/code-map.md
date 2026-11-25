@@ -61,6 +61,7 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 |---|---|
 | New HTML page or form action | `web/html/` (Host Console) or `web/shell.py` (consumption) |
 | New JSON endpoint | `web/api/<resource>.py` |
+| Processing stage handler / artifact install | `services/stages/` + `services/artifacts.py`; `services/run_coordinator.py` owns run lifecycle |
 | Link classification / inspection | `domain/urls.py` + `domain/links.py` + `services/inspect.py` + `adapters/video_inspect.py` |
 | Collection aggregate / membership | `services/collections.py` + `db/models.py` (Collection, Item.collection_*) |
 | EPUB URL intake | `domain/items.py` (`EPUB_URL`) + `adapters/downloader.py` + `services/intake.py` |
@@ -74,3 +75,13 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 HTTP handlers and services do not contain raw SQL. Raw SQL belongs to adapters
 and `db/`; FTS5 SQL lives in `adapters/search.py`. The content package, not the
 DB, is the source of truth for transcript and book content.
+
+Layer dependencies are enforced by import-linter (`uv run lint-imports`, part of
+`./scripts/check.sh --fast`). `domain` cannot import `services`, `adapters`,
+`web`, or `db`; `services` cannot import `web` or `adapters`; `adapters` cannot
+import `services` or `web`; `web` cannot import `adapters` directly; and
+`domain`/`services`/`adapters` cannot import entry points or composition
+(`app`, `cli`, `composition`, `worker`, `deploy`, ...). `web` may read the DB only
+at the two documented boundaries in `pyproject.toml` (`api/health.py`,
+`api/runs.py`); remove those baselines when the handlers move behind services
+(tracked by [issue 21](../../.scratch/productization/issues/21-remove-web-db-baselines.md)).

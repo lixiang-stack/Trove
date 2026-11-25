@@ -32,6 +32,7 @@ asr = [
 
 [dependency-groups]
 dev = [
+  "import-linter>=2.17",
   "mypy>=1.14",
   "playwright>=1.49",
   "pytest>=8.3",
@@ -74,3 +75,59 @@ warn_unused_ignores = false
 ignore_missing_imports = true
 check_untyped_defs = true
 no_implicit_optional = true
+
+[tool.importlinter]
+root_package = "trove"
+
+[[tool.importlinter.contracts]]
+name = "Domain does not depend on outer layers"
+type = "forbidden"
+source_modules = ["trove.domain"]
+forbidden_modules = ["trove.services", "trove.adapters", "trove.web", "trove.db"]
+
+[[tool.importlinter.contracts]]
+name = "Services do not depend on HTTP or adapter implementations"
+type = "forbidden"
+source_modules = ["trove.services"]
+forbidden_modules = ["trove.web", "trove.adapters"]
+
+[[tool.importlinter.contracts]]
+name = "Adapters do not depend on services or HTTP"
+type = "forbidden"
+source_modules = ["trove.adapters"]
+forbidden_modules = ["trove.services", "trove.web"]
+
+[[tool.importlinter.contracts]]
+name = "Core layers do not depend on entry points or composition"
+type = "forbidden"
+source_modules = ["trove.domain", "trove.services", "trove.adapters"]
+forbidden_modules = [
+  "trove.app",
+  "trove.benchmarks",
+  "trove.cli",
+  "trove.composition",
+  "trove.deploy",
+  "trove.evaluation",
+  "trove.worker",
+]
+
+[[tool.importlinter.contracts]]
+name = "Web does not depend on adapter implementations"
+type = "forbidden"
+source_modules = ["trove.web"]
+forbidden_modules = ["trove.adapters"]
+allow_indirect_imports = true
+
+# Baseline: health checks need the engine for FTS5 and migration status;
+# api/runs.py reads Run/Item directly (see docs/agents/code-map.md). Remove both
+# once those handlers go through services.
+[[tool.importlinter.contracts]]
+name = "Web reads the database only through approved boundaries"
+type = "forbidden"
+source_modules = ["trove.web"]
+forbidden_modules = ["trove.db"]
+allow_indirect_imports = true
+ignore_imports = [
+  "trove.web.api.health -> trove.db.engine",
+  "trove.web.api.runs -> trove.db.models",
+]

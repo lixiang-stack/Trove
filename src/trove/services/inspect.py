@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from trove.adapters.safe_http import SafeHttpError
 from trove.domain.items import Platform
 from trove.domain.links import (
     InspectedEpisode,
@@ -20,7 +19,7 @@ from trove.domain.urls import (
     classify_link_url,
     epub_title_hint,
 )
-from trove.errors import ProcessingError, ValidationError
+from trove.errors import ProcessingError, SafeHttpError, ValidationError
 from trove.ports import (
     FeedClient,
     FeedPreview,

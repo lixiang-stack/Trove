@@ -15,11 +15,13 @@ case "$mode" in
   fast|--fast)
     uv run ruff check src tests
     uv run mypy
+    uv run lint-imports
     uv run pytest -q -n "$workers" -m "not browser and not network and not slow and not ffmpeg"
     ;;
   full|--full)
     uv run ruff check src tests
     uv run mypy
+    uv run lint-imports
     # Browser audio playback is sensitive to parallel Chromium instances;
     # keep the browser suite serial and run the rest with the normal workers.
     uv run pytest -q -n "$workers" -m "not browser and not network"
