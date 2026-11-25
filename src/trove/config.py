@@ -34,6 +34,9 @@ DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM = 200_000
 DEFAULT_LLM_INPUT_COST_PER_MILLION = 0.28
 DEFAULT_LLM_OUTPUT_COST_PER_MILLION = 0.42
 DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
+DEFAULT_WORKER_LEASE_SECONDS = 25
+DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
+DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
 LLM_CONFIG_FILENAME = "llm.toml"
 
 
@@ -120,11 +123,23 @@ class Config:
     max_collection_duration_sec: int = DEFAULT_MAX_COLLECTION_DURATION_SEC
     llm: LLMConfig = field(default_factory=load_llm_config)
     asr_model: str = DEFAULT_ASR_MODEL
+    worker_lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS
+    worker_heartbeat_seconds: int = DEFAULT_WORKER_HEARTBEAT_SECONDS
+    worker_reaper_interval_seconds: int = DEFAULT_WORKER_REAPER_INTERVAL_SECONDS
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
     def __post_init__(self) -> None:
         self.home = self.home.expanduser().resolve()
+        if self.worker_heartbeat_seconds <= 0:
+            raise ConfigError("TROVE_WORKER_HEARTBEAT_SECONDS must be positive")
+        if self.worker_lease_seconds <= self.worker_heartbeat_seconds:
+            raise ConfigError(
+                "TROVE_WORKER_LEASE_SECONDS must be greater than "
+                "TROVE_WORKER_HEARTBEAT_SECONDS"
+            )
+        if self.worker_reaper_interval_seconds <= 0:
+            raise ConfigError("TROVE_WORKER_REAPER_INTERVAL_SECONDS must be positive")
 
     # ------------------------------------------------------------------
     # Layout
@@ -336,6 +351,20 @@ def load_config(home: Path | str | None = None) -> Config:
             )
         ),
         asr_model=os.environ.get("TROVE_ASR_MODEL", DEFAULT_ASR_MODEL),
+        worker_lease_seconds=int(
+            os.environ.get("TROVE_WORKER_LEASE_SECONDS", str(DEFAULT_WORKER_LEASE_SECONDS))
+        ),
+        worker_heartbeat_seconds=int(
+            os.environ.get(
+                "TROVE_WORKER_HEARTBEAT_SECONDS", str(DEFAULT_WORKER_HEARTBEAT_SECONDS)
+            )
+        ),
+        worker_reaper_interval_seconds=int(
+            os.environ.get(
+                "TROVE_WORKER_REAPER_INTERVAL_SECONDS",
+                str(DEFAULT_WORKER_REAPER_INTERVAL_SECONDS),
+            )
+        ),
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},
     )

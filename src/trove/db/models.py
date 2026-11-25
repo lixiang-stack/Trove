@@ -11,6 +11,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from trove.domain.items import DEFAULT_MAX_ATTEMPTS
+
 
 class Base(DeclarativeBase):
     pass
@@ -148,6 +150,18 @@ class RunStep(Base):
     stage: Mapped[str] = mapped_column(String(32), nullable=False)
     state: Mapped[str] = mapped_column(String(16), nullable=False)
     attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    max_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=DEFAULT_MAX_ATTEMPTS,
+        server_default=str(DEFAULT_MAX_ATTEMPTS),
+    )
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    available_at: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    lease_until: Mapped[int | None] = mapped_column(Integer)
+    worker_id: Mapped[str | None] = mapped_column(String(64))
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(Text)
     started_at: Mapped[int | None] = mapped_column(Integer)
@@ -158,6 +172,7 @@ class RunStep(Base):
     __table_args__ = (
         UniqueConstraint("run_id", "stage", "attempt", name="uq_run_steps_attempt"),
         Index("ix_run_steps_run_stage", "run_id", "stage"),
+        Index("ix_run_steps_claim", "state", "available_at", "priority"),
     )
 
 

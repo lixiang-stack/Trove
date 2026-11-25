@@ -1,6 +1,6 @@
 # 07 — StageTask 队列：租约、心跳、回收
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P2
 Blocked by: 03
@@ -30,13 +30,13 @@ Spec: [spec.md](../spec.md)
 
 ## Acceptance Criteria
 
-- [ ] 两个 worker 并发领取同一队列时拿到不同 task；同一 task 不会被执行两次。
-- [ ] 过期租约在 reaper 周期内重新入队；超过 `max_attempts` 进入 dead。
-- [ ] 阶段依赖正确：前一个 stage 未完成时，后一个 stage 不会被领取。
-- [ ] Run 的最终状态、step 历史、错误码与现有 API/UI 兼容。
-- [ ] 取消在 queued/running 两种状态下都能生效；running 任务释放租约。
-- [ ] 迁移后旧库可正常启动，active Run 能继续处理。
-- [ ] 现有 `test_processing.py`、`test_processing_recovery.py` 全绿。
+- [x] 两个 worker 并发领取同一队列时拿到不同 task；同一 task 不会被执行两次。
+- [x] 过期租约在 reaper 周期内重新入队；超过 `max_attempts` 进入 dead。
+- [x] 阶段依赖正确：前一个 stage 未完成时，后一个 stage 不会被领取。
+- [x] Run 的最终状态、step 历史、错误码与现有 API/UI 兼容。
+- [x] 取消在 queued/running 两种状态下都能生效；running 任务释放租约。
+- [x] 迁移后旧库可正常启动，active Run 能继续处理。
+- [x] 现有 `test_processing.py`、`test_processing_recovery.py` 全绿。
 
 ## Testing
 
@@ -52,6 +52,43 @@ Spec: [spec.md](../spec.md)
 - 自动重试策略/退避/死信 UI（09）。
 - 外部 LLM/ASR 幂等缓存（10）。
 - 多机分布式队列；本 issue 只保证单机 SQLite。
+
+## Implementation
+
+- `run_steps` is now the StageTask table: added `lease_until`, `worker_id`,
+  `available_at`, `max_attempts`, and `priority`; `state` now includes
+  `queued`/`running`/`completed`/`failed`/`dead`/`cancelled`.
+- `RunCoordinator.create_run` enqueues only the first stage. Claiming atomically
+  moves one available, dependency-satisfied task to `running` and writes the
+  worker lease. Completing a stage enqueues the next one; the Run is summarized
+  only when all stages are terminal.
+- `Run.state` is now only `queued`/`completed`/`failed`/`cancelled`. The API and
+  Item views still derive the current stage from the running task, so existing
+  clients keep seeing `downloading`, `transcribing`, etc.
+- `reap_expired` requeues expired leases as a new attempt. The attempt that lost
+  its lease is kept as `failed` (`run.lease_expired`) and the final attempt
+  becomes `dead` (`run.dead`), failing the Run without silently retrying.
+- Completion and failure are fenced by `worker_id`, `running` state, and an
+  unexpired lease. A worker that finishes after losing its lease rolls back and
+  lets the requeued attempt win, so one stage cannot be completed twice.
+- HTTP podcast/EPUB downloads check `should_cancel` per chunk; yt-dlp already
+  polls it through `run_command`.
+- `trove worker` renews leases through the heartbeat thread and runs the reaper
+  every `TROVE_WORKER_REAPER_INTERVAL_SECONDS` (default 5s). Lease length is
+  `TROVE_WORKER_LEASE_SECONDS` (default 25s) and the heartbeat is
+  `TROVE_WORKER_HEARTBEAT_SECONDS` (default 5s); a lease that is not longer than
+  the heartbeat is rejected at startup. `recover_active_runs` repairs
+  active Runs that have no claimable task (for example after migration).
+- Cancelling a queued Run marks its queued task cancelled; cancelling a running
+  one sets `cancel_requested_at`, and the stage releases its lease when it stops.
+  `run.reclaimed`, `run.lease_expired`, and `run.dead` have user-facing labels.
+- Migration `0007_stage_tasks` backfills active Runs with a queued next-stage
+  task and maps old stage-named Run states to `queued`; completed Runs stay
+  completed.
+- Tests: `tests/test_stage_tasks.py` covers concurrent claims, `available_at`,
+  dependencies, lease expiry/dead, and lease renewal; `test_database_schema.py`
+  covers the migration backfill. Existing processing and recovery tests remain
+  green, with the restart test now exercising lease reaping.
 
 ## Notes
 

@@ -10,6 +10,7 @@ from typing import Any
 
 from trove.config import Config
 from trove.content_package import TranscriptDocument, TranscriptSegment
+from trove.domain.items import TERMINAL_RUN_STATES, stages_for
 from trove.ports import StageContext
 
 SEARCH_LIMIT = 20
@@ -139,9 +140,14 @@ def run_pipeline_benchmark(config: Config, url: str) -> dict[str, Any]:
     run = bundle.run
     if run is None:
         raise RuntimeError("Intake did not create a Processing Run")
-    runtime.processing.process(run.id)
-    elapsed = time.perf_counter() - started
+    worker_id = f"benchmark-{uuid.uuid4().hex[:8]}"
     final = runtime.library.get(bundle.item.id)
+    for _ in range(len(stages_for(final.item.source_type))):
+        runtime.processing.process(run.id, worker_id)
+        final = runtime.library.get(bundle.item.id)
+        if final.run is None or final.run.state in TERMINAL_RUN_STATES:
+            break
+    elapsed = time.perf_counter() - started
     return {
         "url": url,
         "item_id": bundle.item.id,

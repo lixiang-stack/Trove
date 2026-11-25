@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import calendar
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 import feedparser
@@ -102,12 +103,14 @@ def download_episode(
     destination,
     *,
     max_bytes: int,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> None:
     try:
         http.download_to_file(
             episode.enclosure_url,
             destination,
             max_bytes=max_bytes,
+            should_cancel=should_cancel,
             allowed_types={
                 "audio/mpeg",
                 "audio/mp4",

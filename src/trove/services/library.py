@@ -13,14 +13,15 @@ from trove.clock import utc_ms
 from trove.content_package import ContentPackage
 from trove.db.models import AiResult, Artifact, Collection, Item, ItemTag, Run, RunStep, Tag
 from trove.domain.items import (
-    ACTIVE_RUN_STATES,
     CONSUMPTION_LABELS,
     PLATFORM_LABELS,
     SOURCE_TYPE_LABELS,
     STAGE_LABELS,
+    TERMINAL_RUN_STATES,
     ConsumptionState,
     ContinueKind,
     RunState,
+    StageTaskState,
 )
 from trove.domain.reading import parse_book_locator
 from trove.domain.tags import normalize_tag
@@ -88,6 +89,17 @@ class ItemBundle:
     def run_state(self) -> str:
         if self.run is None:
             return RunState.COMPLETED if self.artifacts else RunState.QUEUED
+        if self.run.state == RunState.QUEUED:
+            running = next(
+                (
+                    step.stage
+                    for step in reversed(self.steps)
+                    if step.state == StageTaskState.RUNNING
+                ),
+                None,
+            )
+            if running is not None:
+                return running
         return self.run.state
 
     @property
@@ -97,20 +109,20 @@ class ItemBundle:
             return "failed"
         if state == RunState.CANCELLED:
             return "cancelled"
-        if state in ACTIVE_RUN_STATES:
-            return "processing"
-        return "ready"
+        if state in TERMINAL_RUN_STATES:
+            return "ready"
+        return "processing"
 
     @property
     def processing_label(self) -> str:
         state = self.run_state
-        if state in ACTIVE_RUN_STATES:
-            return STAGE_LABELS.get(state, state)
         if state == RunState.FAILED:
             return "Failed"
         if state == RunState.CANCELLED:
             return "Cancelled"
-        return "Completed"
+        if state == RunState.COMPLETED:
+            return "Completed"
+        return STAGE_LABELS.get(state, state)
 
 
 @dataclass(slots=True)
@@ -607,10 +619,11 @@ class LibraryService:
         if bundle.run is None:
             return None
         run = bundle.run
+        state = bundle.run_state
         return {
             "id": run.id,
-            "state": run.state,
-            "label": STAGE_LABELS.get(run.state, run.state),
+            "state": state,
+            "label": STAGE_LABELS.get(state, state),
             "current_stage": run.current_stage,
             "error_code": run.error_code,
             "error_message": self.public_text(
