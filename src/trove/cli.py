@@ -417,7 +417,7 @@ def _index_status(config, args) -> int:
 
 
 def _collection(config, args) -> int:
-    from trove.services.processing import REPROCESSABLE_STAGES
+    from trove.domain.items import REPROCESSABLE_STAGES
 
     if args.from_stage not in REPROCESSABLE_STAGES:
         print(

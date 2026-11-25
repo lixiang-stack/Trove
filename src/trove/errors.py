@@ -92,3 +92,12 @@ class ProcessingError(Exception):
 
 class ProcessingCancelled(Exception):
     """Raised when the current stage observes a cancellation request."""
+
+
+class SafeHttpError(Exception):
+    """An HTTP boundary failure with a stable error code."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message

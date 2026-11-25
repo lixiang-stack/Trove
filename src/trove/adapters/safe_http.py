@@ -8,18 +8,12 @@ from urllib.parse import urljoin, urlsplit
 
 import httpx
 
+from trove.errors import SafeHttpError
 from trove.ports import LinkProbeResult
 
 MAX_REDIRECTS = 5
 USER_AGENT = "Trove/0.1 (+local personal library)"
 CHUNK_SIZE = 1024 * 1024
-
-
-class SafeHttpError(Exception):
-    def __init__(self, code: str, message: str) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
 
 
 @dataclass(slots=True)
