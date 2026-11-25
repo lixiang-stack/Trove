@@ -70,7 +70,7 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 | Pure rule / value object | `domain/` |
 | External system | `ports.py` + `adapters/` |
 | DB model or schema | `db/models.py` + new Alembic migration |
-| Content package layout / document | `content_package.py` + `services/package_documents.py` |
+| Content package layout / document / manifest | `content_package.py` + `services/package_documents.py` |
 | FTS5 query / index | `adapters/search.py`; contract in `ports.py` |
 
 HTTP handlers and services do not contain raw SQL. Raw SQL belongs to adapters

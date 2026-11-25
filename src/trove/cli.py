@@ -90,6 +90,13 @@ def _build_parser() -> argparse.ArgumentParser:
     status = index_sub.add_parser("status", help="show search index coverage")
     status.add_argument("--json", action="store_true", dest="as_json")
 
+    package = subparsers.add_parser("package", help="content package commands")
+    package_sub = package.add_subparsers(dest="package_command", required=True)
+    package_verify = package_sub.add_parser(
+        "verify", help="verify an Item content package manifest"
+    )
+    package_verify.add_argument("item_id")
+
     collection = subparsers.add_parser("collection", help="collection maintenance")
     collection_sub = collection.add_subparsers(
         dest="collection_command", required=True
@@ -168,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
         return _search(config, args)
     if args.command == "index":
         return _index(config, args)
+    if args.command == "package":
+        return _package(config, args)
     if args.command == "collection":
         return _collection(config, args)
     if args.command == "bench":
@@ -413,6 +422,25 @@ def _index_status(config, args) -> int:
             if item.counts.get(kind)
         )
         print(f"✓ {item.title} · {counts or 'no indexed rows'}")
+    return 0
+
+
+def _package(config, args) -> int:
+    from trove.content_package import ContentPackage
+    from trove.errors import TroveError
+
+    package = ContentPackage(config)
+    try:
+        problems = package.verify_manifest(args.item_id)
+    except TroveError as exc:
+        print(f"{exc.code}: {exc.message}", file=sys.stderr)
+        return 1
+    if problems:
+        print(f"{args.item_id}: {len(problems)} package problem(s)", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem.path}: {problem.message}", file=sys.stderr)
+        return 1
+    print(f"{args.item_id}: content package verified")
     return 0
 
 

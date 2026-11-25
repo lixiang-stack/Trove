@@ -106,7 +106,7 @@ Python 继续用于 API、领域、服务、适配器和 worker。Go 重写明�
 - 分层与端口：`src/trove/ports.py` 定义 9 个协议；`composition.py` 是组合根；`web/` 是 HTTP 适配器。
 - 处理管线：`services/processing.py` 约 1000 行；`Run` 状态机支持重试、取消、心跳和启动时回收。
 - 适配器：`adapters/downloader.py`（yt-dlp/HTTP）、`adapters/asr.py`（FunASR 子进程）、`adapters/openai_chat.py`（OpenAI 兼容）；整理工作流在 `services/organization.py`、`adapters/search.py`（FTS5）。
-- 内容包：`content_package.py` 负责固定文件名、原子写入、sha256；无 manifest/schema_version。
+- 内容包：`content_package.py` 负责固定文件名、原子写入、sha256、`manifest.json` 与 `schema_version`；旧包无 manifest 仍可读。
 - 运维：`deploy.py` 只支持 macOS launchd；`web/api/health.py` 覆盖 API/DB/FTS5/worker 心跳。
 - 质量：ruff、mypy、pytest、契约 fixtures、复杂度门禁、CI；40+ 测试文件。
 - 观测：JSON 日志已带 `run_id`/`item_id`/`duration_ms`；无指标和 trace。

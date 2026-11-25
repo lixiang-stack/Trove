@@ -137,6 +137,50 @@ def test_transcript_and_listen_page(host):
     assert "<script type=\"application/json\" data-player-item>" in page.text
 
 
+def test_legacy_package_without_manifest_still_lists_reads_and_plays(host):
+    bundle = seed_item(host, title="Legacy item")
+    host.runtime.package.write_transcript(
+        bundle.item.id,
+        TranscriptDocument(
+            segments=[
+                TranscriptSegmentDocument(
+                    seq=0, start_ms=0, end_ms=1000, text="legacy transcript"
+                )
+            ]
+        ),
+    )
+    item_id = bundle.item.id
+    item_dir = host.config.library_dir / item_id
+    manifest = item_dir / "manifest.json"
+    manifest.unlink()
+
+    host.login()
+    library = host.client.get("/library")
+    assert library.status_code == 200
+    assert "Legacy item" in library.text
+    detail = host.client.get(f"/api/items/{item_id}").json()
+    assert detail["has_audio"] is True
+    transcript = host.client.get(f"/api/items/{item_id}/transcript").json()
+    assert transcript["segments"][0]["text"] == "legacy transcript"
+    audio = host.client.get(f"/api/items/{item_id}/audio")
+    assert audio.status_code == 200
+    listen = host.client.get(f"/items/{item_id}/listen")
+    assert listen.status_code == 200
+    assert "legacy transcript" in listen.text
+    assert not manifest.exists()
+
+    response = host.client.patch(
+        f"/api/items/{item_id}", json={"title": "Legacy item updated"}
+    )
+    assert response.status_code == 200, response.text
+    assert manifest.is_file()
+    manifest_payload = json.loads(manifest.read_text(encoding="utf-8"))
+    assert {artifact["kind"] for artifact in manifest_payload["artifacts"]} == {
+        "audio",
+        "transcript",
+    }
+
+
 def test_batch_replace_updates_package_artifact_and_search(host):
     bundle = seed_item(host, title="批量替换")
     package_path = host.runtime.package.write_transcript(
