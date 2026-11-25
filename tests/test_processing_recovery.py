@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from trove.clock import utc_ms
 from trove.db.models import Run, RunStep
 from trove.worker import WorkerThread
 
@@ -101,47 +102,63 @@ def test_cancel_running_stage_stops_and_keeps_audio(host):
     assert (host.config.library_dir / item_id / "audio.m4a").is_file()
     assert host.client.get(f"/api/items/{item_id}/audio").status_code == 200
     assert host.item(item_id)["run"]["current_stage"] == "transcribing"
-
-
-@pytest.mark.ffmpeg
-def test_restart_reclaims_running_run_and_resumes(host):
-    host.stack.transcriber.fail_code = "asr.failed"
-    item_id, run_id = _add(host, "https://youtu.be/restarttest")
-    failed = host.wait_for_item(item_id)
-    assert failed["run"]["state"] == "failed"
-    host.stack.transcriber.fail_code = None
-    # Simulate a worker crash inside the transcribing stage: the run is active and
-    # has a running attempt that never finished.
     with host.runtime.sessions() as session:
-        run = session.get(Run, run_id)
-        run.state = "transcribing"
-        run.error_code = None
-        run.error_message = None
-        run.finished_at = None
-        run.current_stage = "transcribing"
-        session.add(
-            RunStep(
-                run_id=run_id,
-                stage="transcribing",
-                state="running",
-                attempt=2,
-                started_at=1,
-            )
-        )
-        session.commit()
-    reclaimed = host.runtime.processing.reclaim_stale_runs()
-    assert reclaimed == 1
-    with host.runtime.sessions() as session:
-        run = session.get(Run, run_id)
-        assert run.state == "queued"
-        running = session.execute(
+        task = session.execute(
             select(RunStep).where(
                 RunStep.run_id == run_id,
                 RunStep.stage == "transcribing",
                 RunStep.state == "cancelled",
             )
-        ).scalars().all()
-        assert len(running) == 1
+        ).scalars().one()
+        assert task.lease_until is None
+        assert task.worker_id is None
+
+
+@pytest.mark.ffmpeg
+def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
+    host.stack.transcriber.fail_code = "asr.failed"
+    item_id, run_id = _add(host, "https://youtu.be/restarttest")
+    failed = host.wait_for_item(item_id)
+    assert failed["run"]["state"] == "failed"
+    host.stack.transcriber.fail_code = None
+
+    response = host.client.post(f"/api/items/{item_id}/retry")
+    assert response.status_code == 200
+    assert host.runtime.processing.claim_next(worker_id="crashed-worker") == run_id
+    with host.runtime.sessions() as session:
+        running = session.execute(
+            select(RunStep).where(
+                RunStep.run_id == run_id,
+                RunStep.stage == "transcribing",
+                RunStep.state == "running",
+            )
+        ).scalars().one()
+        assert running.attempt == 2
+        running.lease_until = 1
+        session.commit()
+
+    assert host.runtime.processing.reap_expired(now=utc_ms()) == 1
+    with host.runtime.sessions() as session:
+        run = session.get(Run, run_id)
+        assert run.state == "queued"
+        expired = session.execute(
+            select(RunStep).where(
+                RunStep.run_id == run_id,
+                RunStep.stage == "transcribing",
+                RunStep.state == "failed",
+                RunStep.error_code == "run.lease_expired",
+            )
+        ).scalars().one()
+        assert expired.attempt == 2
+        queued = session.execute(
+            select(RunStep).where(
+                RunStep.run_id == run_id,
+                RunStep.stage == "transcribing",
+                RunStep.state == "queued",
+            )
+        ).scalars().one()
+        assert queued.attempt == 3
+
     worker = WorkerThread(host.runtime).start()
     try:
         payload = host.wait_for_item(item_id)
@@ -151,6 +168,9 @@ def test_restart_reclaims_running_run_and_resumes(host):
     steps = _steps(host, item_id)
     for stage in ("downloading", "extracting_audio"):
         assert [step["state"] for step in steps if step["stage"] == stage] == ["completed"]
+    assert [
+        step["state"] for step in steps if step["stage"] == "transcribing"
+    ] == ["failed", "failed", "completed"]
     assert len(host.stack.downloader.calls) == 1
     assert host.config.library_dir.joinpath(item_id, "audio.m4a").is_file()
 

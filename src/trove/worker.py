@@ -13,7 +13,6 @@ from trove.logging_setup import append_run_log
 
 logger = logging.getLogger("trove.worker")
 POLL_SECONDS = 0.5
-HEARTBEAT_SECONDS = 5.0
 
 
 def ensure_migrated(runtime: Runtime) -> None:
@@ -26,50 +25,86 @@ def ensure_migrated(runtime: Runtime) -> None:
 def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> None:
     stop_event = stop_event or threading.Event()
     parent_pid = _parent_pid()
+    worker_id = f"worker-{os.getpid()}-{threading.get_ident()}"
     ensure_migrated(runtime)
     verify_fts5(runtime.engine)
-    reclaimed = runtime.processing.reclaim_stale_runs()
-    if reclaimed:
-        logger.info("reclaimed stale runs", extra={"status": reclaimed})
+    _reap_once(runtime)
+    reaper_stop = threading.Event()
+    reaper_thread = threading.Thread(
+        target=_reaper_loop,
+        args=(runtime, reaper_stop),
+        name="trove-reaper",
+        daemon=True,
+    )
+    reaper_thread.start()
     write_heartbeat(runtime, state="idle")
-    while not stop_event.is_set():
-        if parent_pid is not None and os.getppid() != parent_pid:
-            logger.info("serve parent exited; stopping embedded worker")
-            break
-        run_id = runtime.processing.claim_next()
-        if run_id is None:
-            write_heartbeat(runtime, state="idle")
-            stop_event.wait(POLL_SECONDS)
-            continue
-        write_heartbeat(runtime, state="busy", run_id=run_id)
-        heartbeat_stop = threading.Event()
-        heartbeat_thread = threading.Thread(
-            target=_heartbeat_loop,
-            args=(runtime, run_id, heartbeat_stop),
-            name=f"trove-heartbeat-{run_id}",
-            daemon=True,
-        )
-        heartbeat_thread.start()
-        try:
-            runtime.processing.process(run_id)
-        except Exception:  # noqa: BLE001 - the worker must survive one bad run
-            logger.exception("worker failed while processing run", extra={"run_id": run_id})
-            append_run_log(runtime.config, run_id, "worker crashed while processing", level="error")
+    try:
+        while not stop_event.is_set():
+            if parent_pid is not None and os.getppid() != parent_pid:
+                logger.info("serve parent exited; stopping embedded worker")
+                break
+            run_id = runtime.processing.claim_next(worker_id)
+            if run_id is None:
+                write_heartbeat(runtime, state="idle")
+                stop_event.wait(POLL_SECONDS)
+                continue
+            write_heartbeat(runtime, state="busy", run_id=run_id)
+            heartbeat_stop = threading.Event()
+            heartbeat_thread = threading.Thread(
+                target=_heartbeat_loop,
+                args=(runtime, run_id, worker_id, heartbeat_stop),
+                name=f"trove-heartbeat-{run_id}",
+                daemon=True,
+            )
+            heartbeat_thread.start()
             try:
-                runtime.processing.mark_worker_failure(run_id)
+                runtime.processing.process(run_id, worker_id)
             except Exception:  # noqa: BLE001 - the worker must survive one bad run
-                logger.debug("failed to mark run failed", exc_info=True)
-        finally:
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2)
-        write_heartbeat(runtime, state="idle")
+                logger.exception(
+                    "worker failed while processing run", extra={"run_id": run_id}
+                )
+                append_run_log(
+                    runtime.config, run_id, "worker crashed while processing", level="error"
+                )
+                try:
+                    runtime.processing.mark_worker_failure(run_id, worker_id)
+                except Exception:  # noqa: BLE001 - the worker must survive one bad run
+                    logger.debug("failed to mark run failed", exc_info=True)
+            finally:
+                heartbeat_stop.set()
+                heartbeat_thread.join(timeout=2)
+            write_heartbeat(runtime, state="idle")
+    finally:
+        reaper_stop.set()
+        reaper_thread.join(timeout=2)
     write_heartbeat(runtime, state="stopped")
 
 
-def _heartbeat_loop(runtime: Runtime, run_id: str, stop_event: threading.Event) -> None:
-    while not stop_event.wait(HEARTBEAT_SECONDS):
+def _reap_once(runtime: Runtime) -> None:
+    reaped = runtime.processing.reap_expired()
+    recovered = runtime.processing.recover_active_runs()
+    if reaped or recovered:
+        logger.info(
+            "recovered stage tasks",
+            extra={"reaped": reaped, "recovered": recovered},
+        )
+
+
+def _reaper_loop(runtime: Runtime, stop_event: threading.Event) -> None:
+    interval = max(1, runtime.config.worker_reaper_interval_seconds)
+    while not stop_event.wait(interval):
         try:
-            runtime.processing.heartbeat(run_id)
+            _reap_once(runtime)
+        except Exception:  # noqa: BLE001 - the reaper must not kill the worker
+            logger.exception("stage task reaper failed")
+
+
+def _heartbeat_loop(
+    runtime: Runtime, run_id: str, worker_id: str, stop_event: threading.Event
+) -> None:
+    while not stop_event.wait(runtime.config.worker_heartbeat_seconds):
+        try:
+            runtime.processing.heartbeat(run_id, worker_id)
         except Exception:  # noqa: BLE001 - heartbeat must not kill the worker
             logger.debug("heartbeat update failed", exc_info=True)
 

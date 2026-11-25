@@ -39,11 +39,15 @@ _Avoid_: Backup, dump
 ## Processing and consumption
 
 **Processing Run**:
-One attempt to turn an Item's Source into consumable artifacts. A failed Run can be retried without repeating completed steps.
-_Avoid_: Job, task
+One attempt to turn an Item's Source into consumable artifacts. It is the aggregate root for progress and history; its own state is queued, completed, failed, or cancelled. A failed Run can be retried without repeating completed steps.
+_Avoid_: Job, process
+
+**StageTask**:
+One claimable unit of work for a single Processing Run stage. It carries queued/running/completed/failed/dead/cancelled state, an attempt count, an available time, and a worker lease. A stage can have multiple attempt rows so its history is preserved.
+_Avoid_: Step, job
 
 **Processing State**:
-The state of a Processing Run: queued, downloading, extracting audio, transcribing, organizing, indexing, completed, or failed.
+The current or terminal stage progress of a Processing Run: queued, downloading, extracting audio, extracting text, transcribing, organizing, indexing, completed, failed, cancelled, or dead.
 _Avoid_: Status (when referring to processing)
 
 **Consumption State**:

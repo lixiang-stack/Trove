@@ -89,7 +89,7 @@ def test_health_contract_fixture_matches_host_schema():
     assert health.capabilities["device_tokens"] is True
     assert health.capabilities["file_download"] is True
     assert health.database["fts5"] is True
-    assert health.database["migration"]["head"] == "0006_idempotency_keys"
+    assert health.database["migration"]["head"] == "0007_stage_tasks"
 
 
 def test_inspect_contract_fixture_matches_host_schema():

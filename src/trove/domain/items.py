@@ -62,6 +62,18 @@ class RunState(StrEnum):
     CANCELLED = "cancelled"
 
 
+class StageTaskState(StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    DEAD = "dead"
+    CANCELLED = "cancelled"
+
+
+DEFAULT_MAX_ATTEMPTS = 3
+
+
 STAGE_DOWNLOADING = "downloading"
 STAGE_EXTRACTING_AUDIO = "extracting_audio"
 STAGE_EXTRACTING_TEXT = "extracting_text"
@@ -73,17 +85,6 @@ REPROCESSABLE_STAGES = frozenset(
     {STAGE_TRANSCRIBING, STAGE_ORGANIZING, STAGE_INDEXING}
 )
 
-ACTIVE_RUN_STATES = frozenset(
-    {
-        RunState.QUEUED,
-        STAGE_DOWNLOADING,
-        STAGE_EXTRACTING_AUDIO,
-        STAGE_EXTRACTING_TEXT,
-        STAGE_TRANSCRIBING,
-        STAGE_ORGANIZING,
-        STAGE_INDEXING,
-    }
-)
 TERMINAL_RUN_STATES = frozenset({RunState.COMPLETED, RunState.FAILED, RunState.CANCELLED})
 
 STAGES_BY_SOURCE: dict[str, tuple[str, ...]] = {
@@ -206,6 +207,8 @@ ERROR_LABELS = {
     "storage.error": "Failed to write the content package",
     "storage.source_missing": "Source file or package metadata is missing",
     "run.reclaimed": "Host restarted; run requeued",
+    "run.lease_expired": "Worker lease expired; the stage was requeued",
+    "run.dead": "Stage failed too many times; a manual retry is required",
     "internal.error": "Internal error",
 }
 
@@ -215,6 +218,24 @@ def stages_for(source_type: str) -> tuple[str, ...]:
         return STAGES_BY_SOURCE[source_type]
     except KeyError as exc:
         raise ValueError(f"unsupported source type: {source_type}") from exc
+
+
+def prior_stages(source_type: str, stage: str) -> tuple[str, ...] | None:
+    stages = stages_for(source_type)
+    try:
+        index = stages.index(stage)
+    except ValueError:
+        return None
+    return stages[:index]
+
+
+def next_stage(source_type: str, stage: str) -> str | None:
+    stages = stages_for(source_type)
+    try:
+        index = stages.index(stage)
+    except ValueError:
+        return None
+    return stages[index + 1] if index + 1 < len(stages) else None
 
 
 def error_label(code: str | None) -> str:

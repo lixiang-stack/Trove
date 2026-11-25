@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import ipaddress
 import socket
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 
-from trove.errors import SafeHttpError
+from trove.errors import ProcessingCancelled, SafeHttpError
 from trove.ports import LinkProbeResult
 
 MAX_REDIRECTS = 5
@@ -180,6 +181,7 @@ class SafeHttpClient:
         *,
         max_bytes: int,
         allowed_types: set[str] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
     ) -> tuple[str | None, int]:
         current = validate_public_url(url)
         with httpx.Client(
@@ -219,6 +221,8 @@ class SafeHttpClient:
                         try:
                             with temporary.open("wb") as handle:
                                 for chunk in response.iter_bytes(CHUNK_SIZE):
+                                    if should_cancel is not None and should_cancel():
+                                        raise ProcessingCancelled("cancelled")
                                     total += len(chunk)
                                     if total > max_bytes:
                                         raise SafeHttpError(

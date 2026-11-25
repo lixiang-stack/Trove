@@ -63,6 +63,18 @@ curl http://127.0.0.1:8765/api/health
 Open <http://127.0.0.1:8765>, sign in, and add a test item. Killing either process
 should make launchd restart it; queued and running Runs recover from SQLite.
 
+## Worker leases and recovery
+
+`trove worker` claims one StageTask at a time. It renews a 25-second lease every
+5 seconds and a reaper thread checks for expired leases every 5 seconds. If a
+worker dies, its task is requeued once the lease expires and only that stage is
+retried; completed earlier stages are kept. After three attempts the task becomes
+`dead`, the Run fails with `run.dead`, and the Item needs a manual retry.
+
+Tune the defaults with `TROVE_WORKER_LEASE_SECONDS`,
+`TROVE_WORKER_HEARTBEAT_SECONDS`, and `TROVE_WORKER_REAPER_INTERVAL_SECONDS`.
+The Host refuses to start when the lease is not longer than the heartbeat.
+
 ## Optional: Tailscale Serve (acceptance skipped)
 
 > Tailscale Serve remains documented as an alternative, but its acceptance is
@@ -281,8 +293,9 @@ Use this after installing or upgrading on the real Mac:
 - `trove doctor` lists missing tools, model, FTS5, permissions, migration, and
   port problems with the command to fix each.
 - If the worker restarts repeatedly, inspect
-  `~/Trove/logs/com.trove.worker.log` and `~/Trove/logs/trove.log`; runs whose
-  worker died are reclaimed as `queued` on the next worker start.
+  `~/Trove/logs/com.trove.worker.log` and `~/Trove/logs/trove.log`; tasks whose
+  worker died are requeued after their lease expires, and items fail with
+  `run.dead` after three attempts.
 - PWA installation is optional and its acceptance is skipped; HTTPS/Caddy is still
   required for Media Session and normal browser use.
 - If the app is reachable locally but not over Caddy, check the Caddy reverse proxy

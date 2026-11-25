@@ -1,15 +1,24 @@
 from __future__ import annotations
 
+import importlib.util
 import sqlite3
 
 import pytest
+from alembic import command
+from alembic.config import Config as AlembicConfig
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 
 from trove.clock import utc_ms
 from trove.config import Config
-from trove.db.engine import create_engine_for, create_session_factory, upgrade_database, verify_fts5
+from trove.db.engine import (
+    MIGRATIONS_DIR,
+    create_engine_for,
+    create_session_factory,
+    upgrade_database,
+    verify_fts5,
+)
 from trove.db.models import (
     Artifact,
     Item,
@@ -18,6 +27,7 @@ from trove.db.models import (
     RunStep,
     Tag,
 )
+from trove.domain.items import STAGES_BY_SOURCE
 
 
 def _item(source_key: str = "key-1", *, item_id: str = "item-1", source_path: str | None = None):
@@ -43,6 +53,13 @@ def _database(tmp_path):
     return config, engine, create_session_factory(engine)
 
 
+def _alembic_config(config: Config) -> AlembicConfig:
+    alembic = AlembicConfig()
+    alembic.set_main_option("script_location", str(MIGRATIONS_DIR))
+    alembic.set_main_option("sqlalchemy.url", f"sqlite:///{config.db_path}")
+    return alembic
+
+
 def test_migration_creates_tables_and_indexes(tmp_path):
     _, engine, _ = _database(tmp_path)
     with engine.connect() as connection:
@@ -56,6 +73,9 @@ def test_migration_creates_tables_and_indexes(tmp_path):
                 text("SELECT name FROM sqlite_master WHERE type = 'index'")
             ).scalars()
         )
+        run_step_columns = {
+            row.name for row in connection.execute(text("PRAGMA table_info(run_steps)"))
+        }
     assert {
         "items",
         "runs",
@@ -84,6 +104,117 @@ def test_migration_creates_tables_and_indexes(tmp_path):
         "uq_artifacts_item_kind",
     ):
         assert constraint in schema_sql
+    assert {
+        "max_attempts",
+        "priority",
+        "available_at",
+        "lease_until",
+        "worker_id",
+    } <= run_step_columns
+    assert "ix_run_steps_claim" in indexes
+
+
+def test_stage_task_migration_stage_order_matches_domain():
+    path = MIGRATIONS_DIR / "versions" / "0007_stage_tasks.py"
+    spec = importlib.util.spec_from_file_location("stage_tasks_migration", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    expected = {
+        str(source_type): stages for source_type, stages in STAGES_BY_SOURCE.items()
+    }
+    assert expected == module.STAGE_ORDER
+
+
+def test_stage_task_migration_backfills_active_runs(tmp_path):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    command.upgrade(_alembic_config(config), "0006_idempotency_keys")
+    engine = create_engine_for(config)
+    with engine.begin() as connection:
+        for item_id, source_type in (
+            ("active", "video_url"),
+            ("queued", "epub"),
+            ("done", "local_audio"),
+            ("failed", "local_audio"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO items (id, source_key, source_type, platform, title, "
+                    "fetched_at, consumption_state, audio_position_sec, created_at, "
+                    "updated_at) VALUES (:id, :key, :source_type, 'local', :id, "
+                    "1000, 'unstarted', 0, 1000, 1000)"
+                ),
+                {"id": item_id, "key": f"key-{item_id}", "source_type": source_type},
+            )
+        for run_id, item_id, state in (
+            ("run-active", "active", "transcribing"),
+            ("run-queued", "queued", "queued"),
+            ("run-done", "done", "completed"),
+            ("run-failed", "failed", "failed"),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO runs (id, item_id, state, current_stage, created_at) "
+                    "VALUES (:id, :item_id, :state, :state, 1000)"
+                ),
+                {"id": run_id, "item_id": item_id, "state": state},
+            )
+        for run_id, stage, state, attempt in (
+            ("run-active", "downloading", "completed", 1),
+            ("run-active", "extracting_audio", "completed", 1),
+            ("run-active", "transcribing", "running", 1),
+            ("run-done", "extracting_audio", "completed", 1),
+            ("run-done", "transcribing", "completed", 1),
+            ("run-done", "organizing", "completed", 1),
+            ("run-done", "indexing", "completed", 1),
+            ("run-failed", "extracting_audio", "running", 1),
+        ):
+            connection.execute(
+                text(
+                    "INSERT INTO run_steps (run_id, stage, state, attempt, started_at) "
+                    "VALUES (:run_id, :stage, :state, :attempt, 1000)"
+                ),
+                {
+                    "run_id": run_id,
+                    "stage": stage,
+                    "state": state,
+                    "attempt": attempt,
+                },
+            )
+    engine.dispose()
+
+    upgrade_database(config)
+    upgrade_database(config)
+
+    engine = create_engine_for(config)
+    with engine.connect() as connection:
+        active_run = connection.execute(
+            text("SELECT state FROM runs WHERE id = 'run-active'")
+        ).scalar()
+        active_task = connection.execute(
+            text(
+                "SELECT stage, state, attempt, max_attempts, available_at, "
+                "lease_until, worker_id FROM run_steps "
+                "WHERE run_id = 'run-active' AND stage = 'transcribing'"
+            )
+        ).one()
+        queued_task = connection.execute(
+            text(
+                "SELECT stage, state, attempt, max_attempts FROM run_steps "
+                "WHERE run_id = 'run-queued'"
+            )
+        ).one()
+        failed_task = connection.execute(
+            text(
+                "SELECT state, error_code FROM run_steps "
+                "WHERE run_id = 'run-failed'"
+            )
+        ).one()
+    assert active_run == "queued"
+    assert tuple(active_task) == ("transcribing", "queued", 1, 3, 0, None, None)
+    assert tuple(queued_task) == ("extracting_text", "queued", 1, 3)
+    assert tuple(failed_task) == ("failed", "run.reclaimed")
 
 
 def test_unique_constraints(tmp_path):

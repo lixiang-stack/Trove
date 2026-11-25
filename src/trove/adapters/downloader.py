@@ -101,6 +101,7 @@ class DefaultDownloader:
                 url,
                 destination,
                 max_bytes=self.config.max_epub_bytes,
+                should_cancel=context.should_cancel,
             )
         except SafeHttpError as exc:
             code = exc.code if exc.code.startswith(("ebook.", "download.")) else "ebook.not_found"
@@ -144,6 +145,7 @@ class DefaultDownloader:
                 episode,
                 destination,
                 max_bytes=self.config.max_podcast_media_bytes,
+                should_cancel=context.should_cancel,
             )
         except SafeHttpError as exc:
             raise ProcessingError(exc.code, exc.message) from exc

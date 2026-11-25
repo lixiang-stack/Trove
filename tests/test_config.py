@@ -72,3 +72,12 @@ def test_llm_config_rejects_invalid_toml(tmp_path):
 
     with pytest.raises(ConfigError):
         load_llm_config(path)
+
+
+def test_worker_lease_must_be_longer_than_the_heartbeat(tmp_path):
+    with pytest.raises(ConfigError, match="LEASE_SECONDS"):
+        Config(
+            home=tmp_path / "Trove",
+            worker_lease_seconds=5,
+            worker_heartbeat_seconds=5,
+        )
