@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from trove.content_package import ContentPackage
 from trove.db.models import Item
 from trove.domain.search import build_match_query, norm_text, normalize_text
-from trove.errors import StorageError
+from trove.errors import PackageVersionError, StorageError
 from trove.ports import (
     IndexItemStatus,
     IndexStatus,
@@ -110,6 +110,8 @@ class FtsSearchIndex:
         try:
             transcript = self.package.read_transcript(item_id)
             book = self.package.read_book(item_id)
+        except PackageVersionError:
+            raise
         except StorageError:
             return 0, 0
         return (
@@ -231,6 +233,8 @@ class FtsSearchIndex:
     def _package_transcript(self, item_id: str) -> list[tuple[str, str, str]] | None:
         try:
             document = self.package.read_transcript(item_id)
+        except PackageVersionError:
+            raise
         except StorageError:
             return None
         if document is None:
@@ -246,6 +250,8 @@ class FtsSearchIndex:
     def _package_book(self, item_id: str) -> list[tuple[str, str, str]] | None:
         try:
             document = self.package.read_book(item_id)
+        except PackageVersionError:
+            raise
         except StorageError:
             return None
         if document is None:

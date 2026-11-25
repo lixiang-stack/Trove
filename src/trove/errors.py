@@ -71,6 +71,10 @@ class StorageError(TroveError):
     code = "storage.error"
 
 
+class PackageVersionError(StorageError):
+    code = "storage.package_version"
+
+
 class RateLimitedError(TroveError):
     status_code = 429
     code = "auth.rate_limited"

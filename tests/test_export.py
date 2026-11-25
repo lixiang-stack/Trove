@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import io
+import json
 import zipfile
+
+from sqlalchemy import select
 
 from trove.clock import utc_ms
 from trove.content_package import (
@@ -10,6 +13,7 @@ from trove.content_package import (
     TranscriptSegment,
     sha256_file,
 )
+from trove.db.models import Artifact
 
 from .conftest import seed_item
 from .fakes import FIXTURES
@@ -42,8 +46,6 @@ def _seed_video(host):
     )
     item_id = bundle.item.id
     with host.runtime.sessions() as session:
-        from trove.db.models import Artifact
-
         transcript = host.runtime.package.write_transcript(
             item_id,
             TranscriptDocument(
@@ -110,13 +112,40 @@ def test_export_all_contains_content_packages_and_markdown_index(host):
         f"items/{video_id}/audio.m4a",
         f"items/{video_id}/transcript.json",
         f"items/{video_id}/ai.json",
+        f"items/{video_id}/manifest.json",
         f"items/{book_id}/source.json",
         f"items/{book_id}/book.epub",
         f"items/{book_id}/book.json",
         f"items/{book_id}/ai.json",
+        f"items/{book_id}/manifest.json",
     ):
         assert name in names
     assert not any(name.endswith((".mp4", ".webm", ".mov", ".mkv")) for name in names)
+
+    with host.runtime.sessions() as session:
+        expected = {
+            item_id: {
+                (artifact.kind, artifact.path, artifact.sha256, artifact.size, artifact.mime)
+                for artifact in session.execute(
+                    select(Artifact).where(Artifact.item_id == item_id)
+                ).scalars()
+            }
+            for item_id in (video_id, book_id)
+        }
+    for item_id in (video_id, book_id):
+        manifest = json.loads(archive.read(f"items/{item_id}/manifest.json"))
+        assert manifest["schema_version"] == 1
+        assert manifest["item_id"] == item_id
+        assert {
+            (
+                artifact["kind"],
+                artifact["path"],
+                artifact["sha256"],
+                artifact["size"],
+                artifact["mime"],
+            )
+            for artifact in manifest["artifacts"]
+        } == expected[item_id]
 
     index = archive.read("index.md").decode("utf-8")
     assert "Export video" in index
@@ -126,6 +155,25 @@ def test_export_all_contains_content_packages_and_markdown_index(host):
     assert "transcript.json" in index
     assert "https://www.youtube.com/watch?v=export" in index
     assert "audio.m4a" in index
+
+
+def test_export_includes_manifest_for_a_legacy_package(host):
+    video_id = _seed_video(host)
+    manifest_path = host.config.library_dir / video_id / "manifest.json"
+    manifest_path.unlink()
+
+    host.login()
+    response = host.client.get("/api/export", params={"ids": video_id})
+    assert response.status_code == 200, response.text
+    archive = _zip(response)
+    assert f"items/{video_id}/manifest.json" in archive.namelist()
+
+    manifest = json.loads(archive.read(f"items/{video_id}/manifest.json"))
+    assert manifest["schema_version"] == 1
+    assert manifest["item_id"] == video_id
+    kinds = {artifact["kind"] for artifact in manifest["artifacts"]}
+    assert {"audio", "transcript", "ai"} <= kinds
+    assert not manifest_path.exists()
 
 
 def test_export_subset_and_empty_selection(host):

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from sqlalchemy import text
 
 from trove.content_package import (
@@ -12,6 +13,7 @@ from trove.content_package import (
 from trove.content_package import (
     TranscriptSegment as TranscriptSegmentDocument,
 )
+from trove.errors import PackageVersionError
 
 from .conftest import seed_item
 
@@ -319,6 +321,41 @@ def test_index_rebuild_is_idempotent_and_preserves_results(host, monkeypatch):
 
     assert main(["index", "rebuild"]) == 0
     assert host.client.get("/api/search", params={"q": "重建"}).json() == before
+
+
+def test_index_rebuild_reads_a_legacy_package_without_manifest(host):
+    item = seed_item(host, title="Legacy Package")
+    _add_segments(host, item.item.id, "旧包仍然可以搜索")
+    manifest = host.runtime.package.artifact_path(item.item.id, "manifest.json")
+    manifest.unlink()
+
+    assert host.runtime.search_index.rebuild() == 1
+    host.login()
+    payload = host.client.get("/api/search", params={"q": "旧包"}).json()
+    assert payload["count"] == 1
+    assert payload["results"][0]["item"]["id"] == item.item.id
+    assert not manifest.exists()
+
+
+def test_index_rebuild_does_not_silently_skip_incompatible_packages(host):
+    item = seed_item(host, title="Incompatible Package")
+    _add_segments(host, item.item.id, "版本不兼容")
+    manifest = host.runtime.package.artifact_path(item.item.id, "manifest.json")
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "item_id": item.item.id,
+                "created_at": 1,
+                "updated_at": 2,
+                "artifacts": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(PackageVersionError):
+        host.runtime.search_index.rebuild()
 
 
 def test_cli_search_and_index_status(host, monkeypatch, capsys):

@@ -3,8 +3,32 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlalchemy import select
+
+from trove.db.models import Artifact
 
 from .fakes import FIXTURES, wait_until
+
+
+def _assert_manifest_matches_artifacts(host, item_id: str) -> None:
+    manifest = json.loads(
+        (host.config.library_dir / item_id / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["schema_version"] == 1
+    assert manifest["item_id"] == item_id
+    with host.runtime.sessions() as session:
+        artifacts = list(
+            session.execute(
+                select(Artifact).where(Artifact.item_id == item_id)
+            ).scalars()
+        )
+    assert {
+        (item["kind"], item["path"], item["sha256"], item["size"], item["mime"])
+        for item in manifest["artifacts"]
+    } == {
+        (item.kind, item.path, item.sha256, item.size, item.mime)
+        for item in artifacts
+    }
 
 
 def test_host_seam_can_login_and_read_pages(host):
@@ -36,6 +60,7 @@ def test_fake_pipeline_completes_with_real_files(host):
     assert (item_dir / "audio.m4a").is_file()
     assert (item_dir / "transcript.json").is_file()
     assert (item_dir / "ai.json").is_file()
+    _assert_manifest_matches_artifacts(host, item_id)
     assert payload["summary"] == "这是一段关于记忆与智能体的讨论。"
     assert set(payload["tags"]) == {"智能体", "记忆", "LLM"}
 
@@ -74,6 +99,7 @@ def test_epub_fixture_is_parsed(host):
     assert detail["has_book"] is True
     assert (host.config.library_dir / item_id / "book.epub").is_file()
     assert (host.config.library_dir / item_id / "book.json").is_file()
+    _assert_manifest_matches_artifacts(host, item_id)
 
 
 @pytest.mark.ffmpeg

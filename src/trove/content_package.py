@@ -7,16 +7,19 @@ import os
 import secrets
 import shutil
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from trove.clock import utc_ms
 from trove.config import Config
 from trove.domain.items import Platform, SourceType
-from trove.errors import StorageError
+from trove.errors import PackageVersionError, StorageError
 
 CHUNK_SIZE = 1024 * 1024
+MANIFEST_FILENAME = "manifest.json"
+MANIFEST_SCHEMA_VERSION = 1
 
 _FIXED_ARTIFACT_FILENAMES = {
     "transcript": "transcript.json",
@@ -54,6 +57,10 @@ _FEED_KEYS = frozenset(
         "enclosure_size",
     }
 )
+_MANIFEST_ARTIFACT_KEYS = frozenset({"kind", "path", "sha256", "size", "mime"})
+_MANIFEST_KEYS = frozenset(
+    {"schema_version", "item_id", "created_at", "updated_at", "artifacts"}
+)
 _TRANSCRIPT_KEYS = frozenset({"language", "model", "segments"})
 _TRANSCRIPT_SEGMENT_KEYS = frozenset({"seq", "start_ms", "end_ms", "text"})
 _BOOK_KEYS = frozenset({"title", "author", "language", "cover", "chapters"})
@@ -84,6 +91,9 @@ class ArtifactKind(StrEnum):
     COVER = "cover"
 
 
+_ARTIFACT_KIND_ORDER = {str(kind): index for index, kind in enumerate(ArtifactKind)}
+
+
 @dataclass(slots=True)
 class InstalledArtifact:
     kind: ArtifactKind
@@ -92,6 +102,94 @@ class InstalledArtifact:
     sha256: str
     size: int
     mime: str
+
+
+@dataclass(slots=True)
+class ManifestArtifact:
+    kind: str
+    path: str
+    sha256: str
+    size: int
+    mime: str
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> ManifestArtifact:
+        return cls(
+            kind=_require_str(data, "kind"),
+            path=_require_str(data, "path"),
+            sha256=_require_str(data, "sha256"),
+            size=_require_int(data, "size"),
+            mime=_require_str(data, "mime"),
+            extra=_extra_fields(data, _MANIFEST_ARTIFACT_KEYS),
+        )
+
+    def to_json(self) -> dict[str, Any]:
+        data = dict(self.extra)
+        data.update(
+            {
+                "kind": self.kind,
+                "path": self.path,
+                "sha256": self.sha256,
+                "size": self.size,
+                "mime": self.mime,
+            }
+        )
+        return data
+
+
+@dataclass(slots=True)
+class PackageManifest:
+    schema_version: int
+    item_id: str
+    created_at: int
+    updated_at: int
+    artifacts: list[ManifestArtifact] = field(default_factory=list)
+    extra: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_json(cls, data: Mapping[str, Any]) -> PackageManifest:
+        try:
+            schema_version = _require_int(data, "schema_version")
+            if schema_version != MANIFEST_SCHEMA_VERSION:
+                raise PackageVersionError(
+                    "Unsupported content package manifest schema_version "
+                    f"{schema_version}; supported: {MANIFEST_SCHEMA_VERSION}"
+                )
+            return cls(
+                schema_version=schema_version,
+                item_id=_require_str(data, "item_id"),
+                created_at=_require_int(data, "created_at"),
+                updated_at=_require_int(data, "updated_at"),
+                artifacts=[
+                    ManifestArtifact.from_json(_require_mapping(artifact, "artifact"))
+                    for artifact in _require_list(data, "artifacts")
+                ],
+                extra=_extra_fields(data, _MANIFEST_KEYS),
+            )
+        except PackageVersionError:
+            raise
+        except (TypeError, ValueError) as exc:
+            raise StorageError(f"Invalid content package manifest.json: {exc}") from exc
+
+    def to_json(self) -> dict[str, Any]:
+        data = dict(self.extra)
+        data.update(
+            {
+                "schema_version": self.schema_version,
+                "item_id": self.item_id,
+                "created_at": self.created_at,
+                "updated_at": self.updated_at,
+                "artifacts": [artifact.to_json() for artifact in self.artifacts],
+            }
+        )
+        return data
+
+
+@dataclass(frozen=True, slots=True)
+class ManifestProblem:
+    path: str
+    message: str
 
 
 @dataclass(slots=True)
@@ -526,33 +624,128 @@ class ContentPackage:
     def _source_path(self, item_id: str) -> Path:
         return self._directory(item_id) / "source.json"
 
+    def read_manifest(self, item_id: str) -> PackageManifest | None:
+        data = self._read_json(item_id, MANIFEST_FILENAME)
+        if data is None:
+            return None
+        if not isinstance(data, dict):
+            raise StorageError(
+                "Invalid content package manifest.json: expected an object"
+            )
+        manifest = PackageManifest.from_json(data)
+        if manifest.item_id != item_id:
+            raise StorageError(
+                f"Content package manifest item_id {manifest.item_id} "
+                f"does not match {item_id}"
+            )
+        return manifest
+
+    def write_manifest(self, item_id: str, document: PackageManifest) -> Path:
+        return self._write_json(item_id, MANIFEST_FILENAME, document.to_json())
+
+    def manifest_for_export(
+        self,
+        item_id: str,
+        artifacts: Iterable[ManifestArtifact],
+        *,
+        created_at: int,
+        updated_at: int,
+    ) -> PackageManifest:
+        existing = self.read_manifest(item_id)
+        previous = (
+            {artifact.kind: artifact.extra for artifact in existing.artifacts}
+            if existing is not None
+            else {}
+        )
+        return PackageManifest(
+            schema_version=MANIFEST_SCHEMA_VERSION,
+            item_id=item_id,
+            created_at=existing.created_at if existing is not None else created_at,
+            updated_at=existing.updated_at if existing is not None else updated_at,
+            artifacts=[
+                replace(artifact, extra=dict(previous.get(artifact.kind, {})))
+                for artifact in artifacts
+            ],
+            extra=dict(existing.extra) if existing is not None else {},
+        )
+
+    def _ensure_supported_manifest(self, item_id: str) -> None:
+        self.read_manifest(item_id)
+
+    def verify_manifest(self, item_id: str) -> list[ManifestProblem]:
+        if not self._directory(item_id).is_dir():
+            return [ManifestProblem(item_id, "content package directory is missing")]
+        problems: list[ManifestProblem] = []
+        if not self._source_path(item_id).is_file():
+            problems.append(ManifestProblem("source.json", "file is missing"))
+        manifest = self.read_manifest(item_id)
+        if manifest is None:
+            problems.append(ManifestProblem(MANIFEST_FILENAME, "manifest is missing"))
+            return problems
+        for artifact in manifest.artifacts:
+            try:
+                path = self.artifact_path(item_id, artifact.path)
+            except FileNotFoundError:
+                problems.append(ManifestProblem(artifact.path, "invalid path"))
+                continue
+            try:
+                if not path.is_file():
+                    problems.append(ManifestProblem(artifact.path, "file is missing"))
+                elif path.stat().st_size != artifact.size:
+                    problems.append(
+                        ManifestProblem(
+                            artifact.path,
+                            f"size is {path.stat().st_size}, expected {artifact.size}",
+                        )
+                    )
+                elif sha256_file(path) != artifact.sha256:
+                    problems.append(ManifestProblem(artifact.path, "sha256 mismatch"))
+            except OSError as exc:
+                problems.append(
+                    ManifestProblem(artifact.path, f"could not read file: {exc}")
+                )
+        return problems
+
     def read_source(self, item_id: str) -> SourceDocument | None:
+        self._ensure_supported_manifest(item_id)
         data = self._read_document(item_id, "source.json")
         return SourceDocument.from_json(data) if data is not None else None
 
     def write_source(self, item_id: str, document: SourceDocument) -> Path:
-        return self._write_json(item_id, "source.json", document.to_json())
+        self._ensure_supported_manifest(item_id)
+        path = self._write_json(item_id, "source.json", document.to_json())
+        self._refresh_manifest(item_id)
+        return path
 
     def read_transcript(self, item_id: str) -> TranscriptDocument | None:
+        self._ensure_supported_manifest(item_id)
         data = self._read_document(item_id, "transcript.json")
         return TranscriptDocument.from_json(data) if data is not None else None
 
     def write_transcript(self, item_id: str, document: TranscriptDocument) -> Path:
-        return self._write_json(item_id, "transcript.json", document.to_json())
+        return self._write_document(
+            item_id, ArtifactKind.TRANSCRIPT, "transcript.json", document.to_json()
+        )
 
     def read_book(self, item_id: str) -> BookDocument | None:
+        self._ensure_supported_manifest(item_id)
         data = self._read_document(item_id, "book.json")
         return BookDocument.from_json(data) if data is not None else None
 
     def write_book(self, item_id: str, document: BookDocument) -> Path:
-        return self._write_json(item_id, "book.json", document.to_json())
+        return self._write_document(
+            item_id, ArtifactKind.BOOK_JSON, "book.json", document.to_json()
+        )
 
     def read_ai(self, item_id: str) -> AiDocument | None:
+        self._ensure_supported_manifest(item_id)
         data = self._read_document(item_id, "ai.json")
         return AiDocument.from_json(data) if data is not None else None
 
     def write_ai(self, item_id: str, document: AiDocument) -> Path:
-        return self._write_json(item_id, "ai.json", document.to_json())
+        return self._write_document(
+            item_id, ArtifactKind.AI, "ai.json", document.to_json()
+        )
 
     def install_artifact(
         self,
@@ -565,16 +758,24 @@ class ContentPackage:
         replaces: str | None = None,
     ) -> InstalledArtifact:
         filename = _artifact_filename(kind, extension)
+        self._ensure_supported_manifest(item_id)
         self._validate_replacement(item_id, replaces, filename)
         destination, checksum, size = self._install_temp(item_id, temp_path, filename)
         self._remove_replaced(item_id, replaces, filename)
+        installed_mime = mime or guess_mime(filename)
+        self._refresh_manifest(
+            item_id,
+            changed=self._manifest_artifact(
+                kind, filename, checksum=checksum, size=size, mime=installed_mime
+            ),
+        )
         return InstalledArtifact(
             kind=kind,
             path=destination,
             relative_path=filename,
             sha256=checksum,
             size=size,
-            mime=mime or guess_mime(filename),
+            mime=installed_mime,
         )
 
     def copy_artifact(
@@ -588,24 +789,35 @@ class ContentPackage:
         replaces: str | None = None,
     ) -> InstalledArtifact:
         filename = _artifact_filename(kind, extension)
+        self._ensure_supported_manifest(item_id)
         self._validate_replacement(item_id, replaces, filename)
         destination, checksum, size = self._copy_in(item_id, source, filename)
         self._remove_replaced(item_id, replaces, filename)
+        installed_mime = mime or guess_mime(filename)
+        self._refresh_manifest(
+            item_id,
+            changed=self._manifest_artifact(
+                kind, filename, checksum=checksum, size=size, mime=installed_mime
+            ),
+        )
         return InstalledArtifact(
             kind=kind,
             path=destination,
             relative_path=filename,
             sha256=checksum,
             size=size,
-            mime=mime or guess_mime(filename),
+            mime=installed_mime,
         )
 
     def remove_artifact(self, item_id: str, relative: str) -> None:
+        self._ensure_supported_manifest(item_id)
         self.artifact_path(item_id, relative).unlink(missing_ok=True)
+        self._refresh_manifest(item_id, removed_path=relative)
 
     def export_files(
         self, item_id: str, artifact_paths: Iterable[str]
     ) -> list[tuple[Path, str]]:
+        self._ensure_supported_manifest(item_id)
         source = self._source_path(item_id)
         if not source.is_file():
             raise StorageError("Content package file is missing: source.json")
@@ -621,6 +833,131 @@ class ContentPackage:
                 raise StorageError(f"Content package file is missing: {relative}")
             files.append((path, Path(relative).as_posix()))
         return files
+
+    def _write_document(
+        self, item_id: str, kind: ArtifactKind, filename: str, data: Any
+    ) -> Path:
+        self._ensure_supported_manifest(item_id)
+        path = self._write_json(item_id, filename, data)
+        self._refresh_manifest(
+            item_id, changed=self._manifest_artifact_from_file(item_id, kind, filename)
+        )
+        return path
+
+    def _manifest_artifact_from_file(
+        self, item_id: str, kind: ArtifactKind, filename: str
+    ) -> ManifestArtifact:
+        path = self._directory(item_id) / filename
+        return self._manifest_artifact(
+            kind,
+            filename,
+            checksum=sha256_file(path),
+            size=path.stat().st_size,
+            mime=guess_mime(filename),
+        )
+
+    @staticmethod
+    def _manifest_artifact(
+        kind: ArtifactKind, filename: str, *, checksum: str, size: int, mime: str
+    ) -> ManifestArtifact:
+        return ManifestArtifact(
+            kind=str(kind),
+            path=filename,
+            sha256=checksum,
+            size=size,
+            mime=mime,
+        )
+
+    def _refresh_manifest(
+        self,
+        item_id: str,
+        *,
+        changed: ManifestArtifact | None = None,
+        removed_path: str | None = None,
+    ) -> Path:
+        existing = self.read_manifest(item_id)
+        now = utc_ms()
+        if existing is None:
+            artifacts = self._scan_artifacts(item_id)
+            if changed is not None:
+                artifacts = [
+                    artifact
+                    for artifact in artifacts
+                    if artifact.kind != changed.kind
+                ]
+                artifacts.append(changed)
+            if removed_path is not None:
+                artifacts = [
+                    artifact for artifact in artifacts if artifact.path != removed_path
+                ]
+            created_at = now
+            extra: dict[str, Any] = {}
+        else:
+            artifacts = list(existing.artifacts)
+            if changed is not None:
+                previous = next(
+                    (artifact for artifact in artifacts if artifact.kind == changed.kind),
+                    None,
+                )
+                if previous is not None:
+                    artifacts.remove(previous)
+                    changed = replace(changed, extra=dict(previous.extra))
+                artifacts.append(changed)
+            if removed_path is not None:
+                artifacts = [
+                    artifact for artifact in artifacts if artifact.path != removed_path
+                ]
+            created_at = existing.created_at
+            extra = dict(existing.extra)
+        artifacts.sort(
+            key=lambda artifact: (
+                _ARTIFACT_KIND_ORDER.get(
+                    artifact.kind, len(_ARTIFACT_KIND_ORDER)
+                ),
+                artifact.path,
+            )
+        )
+        return self.write_manifest(
+            item_id,
+            PackageManifest(
+                schema_version=MANIFEST_SCHEMA_VERSION,
+                item_id=item_id,
+                created_at=created_at,
+                updated_at=now,
+                artifacts=artifacts,
+                extra=extra,
+            ),
+        )
+
+    def _scan_artifacts(self, item_id: str) -> list[ManifestArtifact]:
+        directory = self._directory(item_id)
+        artifacts: list[ManifestArtifact] = []
+        for kind in ArtifactKind:
+            path = self._find_artifact_file(directory, kind)
+            if path is None:
+                continue
+            artifacts.append(
+                ManifestArtifact(
+                    kind=str(kind),
+                    path=path.name,
+                    sha256=sha256_file(path),
+                    size=path.stat().st_size,
+                    mime=guess_mime(path.name),
+                )
+            )
+        return artifacts
+
+    @staticmethod
+    def _find_artifact_file(directory: Path, kind: ArtifactKind) -> Path | None:
+        fixed = _FIXED_ARTIFACT_FILENAMES.get(str(kind))
+        if fixed is not None:
+            candidate = directory / fixed
+            return candidate if candidate.is_file() else None
+        prefix = _EXTENSION_ARTIFACT_PREFIXES[str(kind)]
+        candidates = sorted(
+            path for path in directory.glob(f"{prefix}.*") if path.is_file()
+        )
+        return candidates[0] if candidates else None
 
     def _validate_replacement(
         self, item_id: str, replaces: str | None, filename: str
@@ -716,12 +1053,12 @@ def sha256_file(path: Path) -> str:
 
 
 def guess_mime(filename: str) -> str:
-    mime, _ = mimetypes.guess_type(filename)
-    if mime:
-        return mime
-    suffixes = Path(filename).suffix.lower()
-    return {
+    known = {
         ".m4a": "audio/mp4",
         ".epub": "application/epub+zip",
         ".json": "application/json",
-    }.get(suffixes, "application/octet-stream")
+    }.get(Path(filename).suffix.lower())
+    if known is not None:
+        return known
+    mime, _ = mimetypes.guess_type(filename)
+    return mime or "application/octet-stream"

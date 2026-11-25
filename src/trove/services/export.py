@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import zipfile
 from datetime import UTC, datetime
@@ -9,7 +10,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.config import Config
-from trove.content_package import ArtifactKind, ContentPackage
+from trove.content_package import (
+    MANIFEST_FILENAME,
+    ArtifactKind,
+    ContentPackage,
+    ManifestArtifact,
+)
 from trove.db.models import Artifact, Item, ItemTag, Tag
 from trove.domain.items import PLATFORM_LABELS, SOURCE_TYPE_LABELS
 from trove.errors import NotFoundError
@@ -98,6 +104,26 @@ class ExportService:
             ):
                 archive.write(path, f"{folder}/{name}")
                 files.append(name)
+            manifest = self.package.manifest_for_export(
+                item.id,
+                [
+                    ManifestArtifact(
+                        kind=artifact.kind,
+                        path=artifact.path,
+                        sha256=artifact.sha256,
+                        size=artifact.size,
+                        mime=artifact.mime,
+                    )
+                    for artifact in artifacts
+                ],
+                created_at=item.created_at,
+                updated_at=item.updated_at,
+            )
+            archive.writestr(
+                f"{folder}/{MANIFEST_FILENAME}",
+                json.dumps(manifest.to_json(), ensure_ascii=False, indent=2) + "\n",
+            )
+            files.append(MANIFEST_FILENAME)
             sections.append(self._item_markdown(item, files))
         exported_at = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
         header = [

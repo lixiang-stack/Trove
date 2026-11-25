@@ -161,7 +161,11 @@ def test_atomic_artifact_install_does_not_expose_partial_files(host):
     leftovers = [path.name for path in item_dir.iterdir() if path.name.endswith((".tmp", ".part"))]
     assert leftovers == []
     # A failed stage leaves only completed artifacts in the content package.
-    assert sorted(path.name for path in item_dir.iterdir()) == ["audio.m4a", "source.json"]
+    assert sorted(path.name for path in item_dir.iterdir()) == [
+        "audio.m4a",
+        "manifest.json",
+        "source.json",
+    ]
 
 
 def test_cancelled_subprocess_is_terminated(tmp_path):
