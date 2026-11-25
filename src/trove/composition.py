@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import httpx
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -10,7 +11,7 @@ from trove.adapters.downloader import DefaultDownloader
 from trove.adapters.epub import EpubExtractor
 from trove.adapters.feed import PodcastFeedClient
 from trove.adapters.ffmpeg import FfmpegAudioExtractor
-from trove.adapters.llm import LLMOrganizer
+from trove.adapters.openai_chat import OpenAICompatibleChatClient
 from trove.adapters.safe_http import SafeHttpClient
 from trove.adapters.search import FtsSearchIndex
 from trove.adapters.video_inspect import YtDlpVideoInspector
@@ -36,6 +37,7 @@ from trove.services.idempotency import IdempotencyService
 from trove.services.inspect import InspectService
 from trove.services.intake import IntakeService
 from trove.services.library import LibraryService
+from trove.services.organization import OrganizationWorkflow
 from trove.services.playback import PlaybackService
 from trove.services.processing import ProcessingService
 from trove.services.reading import ReadingService
@@ -82,12 +84,15 @@ class Runtime:
 
 def default_ports(config: Config) -> Ports:
     http = SafeHttpClient()
+    llm_http = httpx.Client(timeout=config.llm.timeout_seconds)
     return Ports(
         downloader=DefaultDownloader(config, http),
         feed_client=PodcastFeedClient(http, max_bytes=config.max_feed_bytes),
         audio_extractor=FfmpegAudioExtractor(),
         transcriber=ParaformerTranscriber(config.asr_model),
-        organizer=LLMOrganizer(config.llm),
+        organizer=OrganizationWorkflow(
+            config.llm, OpenAICompatibleChatClient(config.llm, llm_http)
+        ),
         book_extractor=EpubExtractor(),
         video_inspector=YtDlpVideoInspector(config),
         link_probe=http,

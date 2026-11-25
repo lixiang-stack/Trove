@@ -66,6 +66,7 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 | Collection aggregate / membership | `services/collections.py` + `db/models.py` (Collection, Item.collection_*) |
 | EPUB URL intake | `domain/items.py` (`EPUB_URL`) + `adapters/downloader.py` + `services/intake.py` |
 | Business workflow / transaction | `services/` |
+| LLM organization (prompts, map-reduce, limits) | `services/organization.py` + `domain/organization_prompts.py`; transport in `adapters/openai_chat.py` |
 | Pure rule / value object | `domain/` |
 | External system | `ports.py` + `adapters/` |
 | DB model or schema | `db/models.py` + new Alembic migration |
