@@ -59,10 +59,13 @@ class OpenAICompatibleChatClient:
             )
         if response.status_code >= 400:
             retry_after = _retry_after_seconds(response)
+            details = {"status": response.status_code}
+            if retry_after is not None:
+                details["retry_after"] = retry_after
             raise ProcessingError(
                 "llm.failed",
                 f"LLM request failed with HTTP {response.status_code}",
-                details={"retry_after": retry_after} if retry_after is not None else None,
+                details=details,
             )
         try:
             data = response.json()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -73,6 +74,30 @@ def test_missing_source_json_fails_the_run(api_host):
         assert row.error_code == "storage.source_missing"
         assert row.current_stage is None
         assert row.finished_at is not None
+
+
+def test_incompatible_manifest_fails_the_run_with_a_stable_code(api_host):
+    bundle, _ = api_host.runtime.library.create_item(
+        source_key="unsupported-manifest",
+        source_type="local_audio",
+        platform="local",
+        title="Unsupported manifest",
+    )
+    path = api_host.config.library_dir / bundle.item.id / "manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    manifest["schema_version"] = 999
+    path.write_text(json.dumps(manifest), encoding="utf-8")
+    run = api_host.runtime.processing.create_run(bundle.item.id)
+    assert api_host.runtime.processing.claim_next() == run.id
+
+    api_host.runtime.processing.process(run.id)
+
+    with api_host.runtime.sessions() as session:
+        row = session.get(Run, run.id)
+        assert row is not None
+        assert row.state == "failed"
+        assert row.error_code == "storage.package_version"
+        assert row.current_stage is None
 
 
 def test_two_workers_claim_only_one_run(api_host):
@@ -193,3 +218,28 @@ def test_cancelled_subprocess_is_terminated(tmp_path):
             timeout=60,
         )
     assert time.monotonic() - started < 5
+
+
+def test_command_timeout_is_marked_transient(tmp_path):
+    import sys
+
+    from trove.adapters.process import run_command
+    from trove.errors import ProcessingError
+    from trove.ports import StageContext
+
+    context = StageContext(
+        item_id="item",
+        run_id="run",
+        work_dir=tmp_path,
+        should_cancel=lambda: False,
+        log=lambda message: None,
+    )
+    with pytest.raises(ProcessingError) as excinfo:
+        run_command(
+            context,
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            timeout=0.1,
+            error_code="asr.failed",
+        )
+    assert excinfo.value.code == "asr.failed"
+    assert excinfo.value.details == {"transient": True}

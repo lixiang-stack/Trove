@@ -59,10 +59,13 @@ def source_document(
     )
 
 
-def transcript_document(result: TranscriptResult, item: Item) -> TranscriptDocument:
+def transcript_document(
+    result: TranscriptResult, item: Item, *, input_sha256: str | None = None
+) -> TranscriptDocument:
     return TranscriptDocument(
         language=result.language or item.language,
         model=result.model,
+        input_sha256=input_sha256,
         segments=[
             TranscriptSegment(
                 seq=segment.seq,
@@ -100,12 +103,15 @@ def book_document(result: BookResult, *, title: str) -> BookDocument:
     )
 
 
-def ai_document(result: OrganizationResult, generated_at: int) -> AiDocument:
+def ai_document(
+    result: OrganizationResult, generated_at: int, *, input_sha256: str | None = None
+) -> AiDocument:
     return AiDocument(
         summary=result.summary,
         tags=list(result.tags),
         model=result.model,
         prompt_version=result.prompt_version,
+        input_sha256=input_sha256,
         input_tokens=result.input_tokens,
         output_tokens=result.output_tokens,
         cost_usd=result.cost_usd,

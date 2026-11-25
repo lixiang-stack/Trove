@@ -12,6 +12,8 @@ from typing import Any
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
+from trove.domain.retry import STAGE_MAX_ATTEMPTS
+
 DEFAULT_HOME = Path("~/Trove")
 CONFIG_FILENAME = "config.toml"
 ENV_FILENAME = ".env"
@@ -37,6 +39,7 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
 DEFAULT_WORKER_LEASE_SECONDS = 25
 DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
 DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
+STAGE_MAX_ATTEMPTS_ENV = "TROVE_STAGE_MAX_ATTEMPTS"
 LLM_CONFIG_FILENAME = "llm.toml"
 
 
@@ -123,6 +126,7 @@ class Config:
     max_collection_duration_sec: int = DEFAULT_MAX_COLLECTION_DURATION_SEC
     llm: LLMConfig = field(default_factory=load_llm_config)
     asr_model: str = DEFAULT_ASR_MODEL
+    stage_max_attempts: dict[str, int] = field(default_factory=dict)
     worker_lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS
     worker_heartbeat_seconds: int = DEFAULT_WORKER_HEARTBEAT_SECONDS
     worker_reaper_interval_seconds: int = DEFAULT_WORKER_REAPER_INTERVAL_SECONDS
@@ -131,6 +135,16 @@ class Config:
 
     def __post_init__(self) -> None:
         self.home = self.home.expanduser().resolve()
+        overrides = self.stage_max_attempts
+        unknown_stages = set(overrides) - set(STAGE_MAX_ATTEMPTS)
+        if unknown_stages:
+            raise ConfigError(
+                f"{STAGE_MAX_ATTEMPTS_ENV} contains unknown stages: "
+                + ", ".join(sorted(unknown_stages))
+            )
+        if any(value <= 0 for value in overrides.values()):
+            raise ConfigError(f"{STAGE_MAX_ATTEMPTS_ENV} values must be positive")
+        self.stage_max_attempts = {**STAGE_MAX_ATTEMPTS, **overrides}
         if self.worker_heartbeat_seconds <= 0:
             raise ConfigError("TROVE_WORKER_HEARTBEAT_SECONDS must be positive")
         if self.worker_lease_seconds <= self.worker_heartbeat_seconds:
@@ -320,9 +334,37 @@ class Config:
             return
 
 
+def _parse_stage_max_attempts(value: str) -> dict[str, int]:
+    if not value.strip():
+        return {}
+    parsed: dict[str, int] = {}
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        stage, separator, raw_attempts = item.partition("=")
+        stage = stage.strip()
+        if not separator or not stage or not raw_attempts.strip():
+            raise ConfigError(
+                f"{STAGE_MAX_ATTEMPTS_ENV} must look like "
+                "'downloading=4,transcribing=2'"
+            )
+        try:
+            attempts = int(raw_attempts)
+        except ValueError as exc:
+            raise ConfigError(
+                f"{STAGE_MAX_ATTEMPTS_ENV} has a non-integer value for {stage}"
+            ) from exc
+        parsed[stage] = attempts
+    return parsed
+
+
 def load_config(home: Path | str | None = None) -> Config:
     if home is not None:
         os.environ["TROVE_HOME"] = str(Path(home).expanduser().resolve())
+    stage_max_attempts = _parse_stage_max_attempts(
+        os.environ.get(STAGE_MAX_ATTEMPTS_ENV, "")
+    )
     config = Config(
         host=os.environ.get("TROVE_BIND", "127.0.0.1"),
         port=int(os.environ.get("TROVE_PORT", "8765")),
@@ -351,6 +393,7 @@ def load_config(home: Path | str | None = None) -> Config:
             )
         ),
         asr_model=os.environ.get("TROVE_ASR_MODEL", DEFAULT_ASR_MODEL),
+        stage_max_attempts=stage_max_attempts,
         worker_lease_seconds=int(
             os.environ.get("TROVE_WORKER_LEASE_SECONDS", str(DEFAULT_WORKER_LEASE_SECONDS))
         ),

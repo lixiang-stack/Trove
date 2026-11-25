@@ -10,6 +10,7 @@ from trove.config import (
     ConfigError,
     LLMConfig,
     default_llm_config_path,
+    load_config,
     load_llm_config,
 )
 
@@ -81,3 +82,41 @@ def test_worker_lease_must_be_longer_than_the_heartbeat(tmp_path):
             worker_lease_seconds=5,
             worker_heartbeat_seconds=5,
         )
+
+
+def test_stage_max_attempts_default_to_the_retry_policy(tmp_path):
+    config = Config(home=tmp_path / "Trove")
+
+    assert config.stage_max_attempts == {
+        "downloading": 3,
+        "extracting_audio": 3,
+        "extracting_text": 3,
+        "transcribing": 1,
+        "organizing": 3,
+        "indexing": 2,
+    }
+
+
+def test_stage_max_attempts_can_be_overridden_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv(
+        "TROVE_STAGE_MAX_ATTEMPTS", "downloading=4,transcribing=2"
+    )
+
+    config = load_config()
+
+    assert config.stage_max_attempts["downloading"] == 4
+    assert config.stage_max_attempts["transcribing"] == 2
+    assert config.stage_max_attempts["organizing"] == 3
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["downloading=0", "unknown=2", "downloading", "downloading=two"],
+)
+def test_invalid_stage_max_attempts_fail_at_startup(tmp_path, monkeypatch, value):
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv("TROVE_STAGE_MAX_ATTEMPTS", value)
+
+    with pytest.raises(ConfigError, match="TROVE_STAGE_MAX_ATTEMPTS"):
+        load_config()

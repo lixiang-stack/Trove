@@ -63,17 +63,53 @@ curl http://127.0.0.1:8765/api/health
 Open <http://127.0.0.1:8765>, sign in, and add a test item. Killing either process
 should make launchd restart it; queued and running Runs recover from SQLite.
 
-## Worker leases and recovery
+## Worker leases, retries, and dead letters
 
 `trove worker` claims one StageTask at a time. It renews a 25-second lease every
 5 seconds and a reaper thread checks for expired leases every 5 seconds. If a
-worker dies, its task is requeued once the lease expires and only that stage is
-retried; completed earlier stages are kept. After three attempts the task becomes
-`dead`, the Run fails with `run.dead`, and the Item needs a manual retry.
+worker dies, its task is requeued once the lease expires; only that stage is
+retried and completed earlier stages are kept.
 
-Tune the defaults with `TROVE_WORKER_LEASE_SECONDS`,
+Stage failures follow `domain/retry.py`:
+
+- Retryable errors (`download.network`, `llm.failed`, and transient
+  `storage.error`) back off with jitter instead of blocking the worker:
+  30s, 2m, then 10m, written to the task's `available_at`.
+- Permanent errors (login/region restrictions, unsupported input, EPUB/DRM
+  failures, missing LLM/ASR configuration) fail immediately and do not consume
+  a retry.
+- ASR `asr.failed` is not retried automatically by default because the
+  `transcribing` stage allows one attempt. Raise `TROVE_STAGE_MAX_ATTEMPTS` for
+  that stage only when your ASR failures are known to be transient.
+- A failed or cancelled Run no longer retries automatically.
+- Per-stage attempt limits default to 3 for downloading, extracting, and
+  organizing, 1 for transcribing, and 2 for indexing. Override them with
+  `TROVE_STAGE_MAX_ATTEMPTS`, for example
+  `TROVE_STAGE_MAX_ATTEMPTS="downloading=4,transcribing=2"`.
+- Exhausting the budget moves the task to `dead`, fails the Run with
+  `run.dead`, keeps the last error on the task, and leaves the Item waiting for
+  a manual retry. Lease expiry always allows one crash recovery, even for a
+  one-attempt stage such as transcribing.
+
+Tune lease timing with `TROVE_WORKER_LEASE_SECONDS`,
 `TROVE_WORKER_HEARTBEAT_SECONDS`, and `TROVE_WORKER_REAPER_INTERVAL_SECONDS`.
 The Host refuses to start when the lease is not longer than the heartbeat.
+
+## External-call cache
+
+Automatic retries and worker reclaims reuse completed external work:
+
+- AI results in `ai.json`/`AiResult` carry `input_sha256`. A matching
+  `(Item, prompt version, model, input hash)` is reused with no LLM call and no
+  new cost.
+- Transcripts in `transcript.json` carry the audio artifact's `input_sha256` and
+  the ASR model. A matching `(audio hash, model)` is reused with no ASR call.
+- `POST /api/items/{id}/reprocess`, the Item page's "重新整理/重新转写" buttons,
+  and `trove collection reprocess --reset-ai-tags` are explicit reruns: they
+  bypass the cache by setting the Run's `force` flag.
+- `POST /api/items/{id}/retry` and worker recovery are not explicit reruns;
+  they reuse matching cached results. Old `ai.json`/transcript files without a
+  hash are treated as cache misses and regenerate normally.
 
 ## Optional: Tailscale Serve (acceptance skipped)
 

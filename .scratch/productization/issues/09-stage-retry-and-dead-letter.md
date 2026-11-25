@@ -25,13 +25,13 @@ Spec: [spec.md](../spec.md)
 
 ## Acceptance Criteria
 
-- [ ] 可重试错误按策略重试，最终成功；attempt 和日志正确。
-- [ ] 不可重试错误立即失败，不消耗重试次数。
-- [ ] 超过 `max_attempts` 进入 dead；手动 retry 能重新入队并成功。
-- [ ] 退避使用 `available_at`，不会忙等；测试用注入时钟，不真实 sleep。
-- [ ] 取消后不再重试。
-- [ ] 每个 stage 的策略可配置，默认值有文档。
-- [ ] 现有失败/取消/重试测试保持绿。
+- [x] 可重试错误按策略重试，最终成功；attempt 和日志正确。
+- [x] 不可重试错误立即失败，不消耗重试次数。
+- [x] 超过 `max_attempts` 进入 dead；手动 retry 能重新入队并成功。
+- [x] 退避使用 `available_at`，不会忙等；测试用注入时钟，不真实 sleep。
+- [x] 取消后不再重试。
+- [x] 每个 stage 的策略可配置，默认值有文档。
+- [x] 现有失败/取消/重试测试保持绿。
 
 ## Testing
 
@@ -46,6 +46,44 @@ Spec: [spec.md](../spec.md)
 - 熔断器、跨服务重试、全局速率限制。
 - 自动重试 ASR 模型缺失/配置错误。
 - 死信管理 UI 的完整设计；先提供 API + 现有 Item 页面提示即可。
+
+## Implementation
+
+- `domain/retry.py` is the single retry policy: `is_retryable` classifies
+  `download.network`, `llm.failed` (429/5xx/timeout), transient `storage.error`,
+  and explicitly transient `asr.failed`; login/region, unsupported input,
+  EPUB/DRM, missing LLM/ASR configuration, and unknown codes fail immediately.
+  Direct `OSError`s are transient only for `EAGAIN`, `EBUSY`, `EINTR`,
+  `ETIMEDOUT`, and `ENOSPC`; missing files and permissions fail immediately.
+- Default per-stage attempts: downloading/extracting/organizing 3, transcribing
+  1, indexing 2. Override with `TROVE_STAGE_MAX_ATTEMPTS="stage=n,..."`.
+- Delays are 30s, 2m, and 10m with ±20% jitter. `retry_delay_ms` takes an
+  injectable jitter source; tests use `lambda: 0.5` and do not sleep.
+- `RunCoordinator._handle_stage_error` marks the attempt failed, keeps the Run
+  queued, and inserts the next attempt with `available_at = now + delay`. A
+  transient `OSError` is recorded as `storage.error` with `transient: true`.
+- Permanent errors mark the attempt failed and fail the Run immediately. When
+  the attempt budget is exhausted, the task becomes `dead`, keeps its last error
+  code/message, and the Run fails with `run.dead`.
+- The reaper applies the same backoff when a lease expires. Every stage gets at
+  least one crash recovery (`MIN_LEASE_ATTEMPTS = 2`) even when its error budget
+  is one, so a single ASR worker crash does not dead-letter the item; a second
+  lease loss does. Manual retry keeps history (new attempt number) and extends
+  `max_attempts` to a fresh per-stage budget, so a dead task can run and succeed
+  again.
+- Cancellation wins over retry: a failure observed while
+  `cancel_requested_at` is set becomes `cancelled`, and queued backoff waiters
+  are cancelled with the Run.
+- Retry logs include `run_id`, `task_id`, `stage`, `attempt`, `error_code`, and
+  `delay_ms`; `event=stage_retry`/`stage_dead` is also emitted to the JSON
+  application log.
+- `trove.metrics` keeps process-local `stage_retries_total{stage}` and
+  `stage_dead_total{stage}` counters, incremented on both stage errors and lease
+  reclaims. Ticket 12 exposes the registry through `/metrics`.
+- Tests: `tests/test_retry.py` covers classification, attempt/backoff defaults,
+  auto retry, permanent failure, dead + manual retry, cancellation, log fields,
+  metrics, and LLM status handling; `test_stage_tasks.py` and
+  `test_processing_recovery.py` cover reaper backoff and lease recovery.
 
 ## Notes
 

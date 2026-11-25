@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from trove.content_package import SourceDocument
+    from trove.domain.cache import AiCacheIdentity
 
 __all__ = [
     "AudioExtractor",
@@ -53,6 +54,7 @@ class StageContext:
     work_dir: Path
     should_cancel: Callable[[], bool]
     log: Callable[[str], None]
+    force: bool = False
 
     def check_cancelled(self) -> None:
         from trove.errors import ProcessingCancelled
@@ -256,6 +258,9 @@ class AudioExtractor(Protocol):
 
 
 class Transcriber(Protocol):
+    @property
+    def model(self) -> str: ...
+
     def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult: ...
 
 
@@ -269,6 +274,9 @@ class ChatClient(Protocol):
 
 
 class Organizer(Protocol):
+    @property
+    def cache_identity(self) -> AiCacheIdentity | None: ...
+
     def organize(
         self,
         *,

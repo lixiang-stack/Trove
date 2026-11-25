@@ -54,7 +54,11 @@ def run_command(
                 raise ProcessingCancelled("cancelled")
             if timeout is not None and time.monotonic() - started > timeout:
                 _terminate(process)
-                raise ProcessingError(error_code, "External command timed out")
+                raise ProcessingError(
+                    error_code,
+                    "External command timed out",
+                    details={"transient": True},
+                )
             time.sleep(POLL_INTERVAL)
         stdout_file.seek(0)
         stderr_file.seek(0)

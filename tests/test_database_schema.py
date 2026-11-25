@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 from alembic import command
 from alembic.config import Config as AlembicConfig
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -20,6 +20,7 @@ from trove.db.engine import (
     verify_fts5,
 )
 from trove.db.models import (
+    AiResult,
     Artifact,
     Item,
     ItemTag,
@@ -215,6 +216,43 @@ def test_stage_task_migration_backfills_active_runs(tmp_path):
     assert tuple(active_task) == ("transcribing", "queued", 1, 3, 0, None, None)
     assert tuple(queued_task) == ("extracting_text", "queued", 1, 3)
     assert tuple(failed_task) == ("failed", "run.reclaimed")
+
+
+def test_retry_cache_migration_keeps_legacy_ai_results_readable(tmp_path):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    command.upgrade(_alembic_config(config), "0007_stage_tasks")
+    engine = create_engine_for(config)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO items (id, source_key, source_type, platform, title, "
+                "fetched_at, consumption_state, audio_position_sec, created_at, "
+                "updated_at) VALUES ('item-1', 'key-1', 'local_audio', 'local', "
+                "'Legacy', 1000, 'unstarted', 0, 1000, 1000)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO ai_results (item_id, summary, model, prompt_version, "
+                "input_tokens, output_tokens, cost_usd, created_at) "
+                "VALUES ('item-1', 'old', 'fake-model', 'v1', 10, 5, 0.1, 1000)"
+            )
+        )
+    engine.dispose()
+
+    upgrade_database(config)
+
+    engine = create_engine_for(config)
+    sessions = create_session_factory(engine)
+    with sessions() as session:
+        result = session.execute(select(AiResult)).scalars().one()
+        assert result.input_sha256 is None
+        result.input_sha256 = "c" * 64
+        session.commit()
+    with sessions() as session:
+        assert session.get(AiResult, 1).input_sha256 == "c" * 64
+    engine.dispose()
 
 
 def test_unique_constraints(tmp_path):

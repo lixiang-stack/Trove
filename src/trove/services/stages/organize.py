@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from trove.clock import utc_ms
-from trove.content_package import ArtifactKind, ContentPackage, SourceDocument
+from trove.content_package import (
+    AI_FILENAME,
+    AiDocument,
+    ArtifactKind,
+    ContentPackage,
+    SourceDocument,
+)
 from trove.db.models import AiResult, Collection, Item, ItemTag, Tag
+from trove.domain.cache import ai_input_sha256
 from trove.domain.organization import MAX_EXISTING_TAGS
 from trove.domain.tags import normalize_tag
-from trove.errors import TroveError
+from trove.errors import PackageVersionError, StorageError, TroveError
+from trove.metrics import add, increment
 from trove.ports import Organizer, StageContext
 from trove.services.artifacts import ArtifactStore
 from trove.services.package_documents import ai_document
+
+logger = logging.getLogger("trove.processing")
 
 
 class OrganizeStage:
@@ -33,6 +45,48 @@ class OrganizeStage:
         context: StageContext,
     ) -> None:
         source_text = self._item_text(item)
+        input_sha256 = ai_input_sha256(source_text)
+        identity = self.organizer.cache_identity
+        if identity is not None and not context.force:
+            model = identity.model
+            prompt_version = identity.prompt_version
+            cached = self._cached_ai(
+                item,
+                input_sha256=input_sha256,
+                model=model,
+                prompt_version=prompt_version,
+            )
+            if cached is not None:
+                self._apply_cached(session, item, cached, context)
+                return
+            context.log(
+                "ai cache miss: "
+                f"input_sha256={input_sha256} model={model} "
+                f"prompt_version={prompt_version}"
+            )
+            logger.info(
+                "ai cache miss",
+                extra={
+                    "event": "cache_miss",
+                    "cache": "ai",
+                    "run_id": context.run_id,
+                    "item_id": item.id,
+                    "model": model,
+                    "prompt_version": prompt_version,
+                },
+            )
+            increment("external_cache_misses_total", cache="ai")
+        elif context.force:
+            context.log("ai cache bypassed: explicit reprocess")
+            logger.info(
+                "ai cache bypassed",
+                extra={
+                    "event": "cache_bypass",
+                    "cache": "ai",
+                    "run_id": context.run_id,
+                    "item_id": item.id,
+                },
+            )
         collection = session.get(Collection, item.collection_id) if item.collection_id else None
         collection_tags = (
             self._collection_tag_vocabulary(session, item.collection_id)
@@ -49,7 +103,10 @@ class OrganizeStage:
             reuse_existing_tags=bool(collection_tags),
         )
         generated_at = utc_ms()
-        path = self.package.write_ai(item.id, ai_document(result, generated_at))
+        path = self.package.write_ai(
+            item.id,
+            ai_document(result, generated_at, input_sha256=input_sha256),
+        )
         self.artifacts.record_document(session, item, kind=ArtifactKind.AI, path=path)
         item.summary = result.summary
         item.updated_at = utc_ms()
@@ -60,6 +117,7 @@ class OrganizeStage:
                 summary=result.summary,
                 model=result.model,
                 prompt_version=result.prompt_version,
+                input_sha256=input_sha256,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 cost_usd=result.cost_usd,
@@ -67,6 +125,68 @@ class OrganizeStage:
             )
         )
         self._replace_ai_tags(session, item.id, result.tags)
+
+    def _cached_ai(
+        self,
+        item: Item,
+        *,
+        input_sha256: str,
+        model: str,
+        prompt_version: str,
+    ) -> AiDocument | None:
+        try:
+            document = self.package.read_ai(item.id)
+        except PackageVersionError:
+            raise
+        except StorageError:
+            return None
+        if (
+            document is None
+            or document.input_sha256 != input_sha256
+            or document.model != model
+            or document.prompt_version != prompt_version
+        ):
+            return None
+        return document
+
+    def _apply_cached(
+        self,
+        session: Session,
+        item: Item,
+        document: AiDocument,
+        context: StageContext,
+    ) -> None:
+        path = self.package.artifact_path(item.id, AI_FILENAME)
+        self.artifacts.record_document(session, item, kind=ArtifactKind.AI, path=path)
+        item.summary = document.summary
+        item.updated_at = utc_ms()
+        self._replace_ai_tags(session, item.id, document.tags)
+        context.log(
+            "ai cache hit: "
+            f"input_sha256={document.input_sha256} model={document.model} "
+            f"prompt_version={document.prompt_version}; cached=true cost=0 "
+            f"saved_input_tokens={document.input_tokens} "
+            f"saved_output_tokens={document.output_tokens} "
+            f"saved_cost_usd={document.cost_usd or 0}"
+        )
+        logger.info(
+            "ai cache hit",
+            extra={
+                "event": "cache_hit",
+                "cache": "ai",
+                "run_id": context.run_id,
+                "item_id": item.id,
+                "model": document.model,
+                "prompt_version": document.prompt_version,
+                "saved_input_tokens": document.input_tokens,
+                "saved_output_tokens": document.output_tokens,
+                "saved_cost_usd": document.cost_usd or 0,
+            },
+        )
+        increment("external_cache_hits_total", cache="ai")
+        add("external_cache_saved_tokens_total", document.input_tokens, kind="input")
+        add("external_cache_saved_tokens_total", document.output_tokens, kind="output")
+        add("external_cache_saved_cost_usd_total", document.cost_usd or 0)
 
     def _item_text(self, item: Item) -> str:
         transcript = self.package.read_transcript(item.id)

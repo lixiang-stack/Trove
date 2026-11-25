@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from trove.clock import utc_ms
@@ -14,11 +15,15 @@ from trove.content_package import (
     ArtifactKind,
     ContentPackage,
     SourceDocument,
+    TranscriptDocument,
+    TranscriptSegment,
 )
 from trove.db.engine import create_engine_for
 from trove.db.models import AiResult, Artifact, Base, Item, ItemTag, Run, Tag
+from trove.domain.cache import AiCacheIdentity, ai_input_sha256
 from trove.domain.items import Platform, SourceType
-from trove.errors import ProcessingCancelled, ProcessingError
+from trove.errors import PackageVersionError, ProcessingCancelled, ProcessingError
+from trove.metrics import counter_value
 from trove.ports import (
     AudioResult,
     BookChapterData,
@@ -100,7 +105,9 @@ def _source(item: Item) -> SourceDocument:
     )
 
 
-def _context(env: StageEnv, item: Item, run_id: str, *, cancel: bool = False) -> StageContext:
+def _context(
+    env: StageEnv, item: Item, run_id: str, *, cancel: bool = False, force: bool = False
+) -> StageContext:
     work_dir = env.tmp_path / "work" / run_id
     work_dir.mkdir(parents=True, exist_ok=True)
     return StageContext(
@@ -109,6 +116,7 @@ def _context(env: StageEnv, item: Item, run_id: str, *, cancel: bool = False) ->
         work_dir=work_dir,
         should_cancel=lambda: cancel,
         log=lambda message: None,
+        force=force,
     )
 
 
@@ -119,22 +127,28 @@ def _execute(
     run_id: str,
     *,
     cancel: bool = False,
+    force: bool = False,
 ) -> None:
     with env.sessions() as session:
         item = session.get(Item, item_id)
         assert item is not None
         source = _source(item)
         env.package.write_source(item.id, source)
-        stage.execute(session, item, source, _context(env, item, run_id, cancel=cancel))
+        stage.execute(
+            session,
+            item,
+            source,
+            _context(env, item, run_id, cancel=cancel, force=force),
+        )
         session.commit()
 
 
-def _install_audio(env: StageEnv, item_id: str) -> None:
+def _install_audio(env: StageEnv, item_id: str, *, content: bytes = b"fake audio") -> None:
     with env.sessions() as session:
         item = session.get(Item, item_id)
         assert item is not None
         temp = env.tmp_path / "audio.tmp"
-        temp.write_bytes(b"fake audio")
+        temp.write_bytes(content)
         ArtifactStore(env.package).install(
             session,
             item,
@@ -145,6 +159,26 @@ def _install_audio(env: StageEnv, item_id: str) -> None:
             duration=2.0,
         )
         session.commit()
+
+
+def _install_transcript(env: StageEnv, item_id: str, text: str = "记忆") -> None:
+    env.package.write_transcript(
+        item_id,
+        TranscriptDocument(
+            language="zh",
+            model="fake-model",
+            segments=[
+                TranscriptSegment(seq=0, start_ms=0, end_ms=1000, text=text)
+            ],
+        ),
+    )
+
+
+def _set_manifest_version(env: StageEnv, item_id: str, version: int) -> None:
+    path = env.package.config.library_dir / item_id / "manifest.json"
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["schema_version"] = version
+    path.write_text(json.dumps(data), encoding="utf-8")
 
 
 def _install_book(env: StageEnv, item_id: str) -> None:
@@ -224,10 +258,14 @@ class StubUploads:
 
 
 class StubTranscriber:
+    model = "fake-model"
+
     def __init__(self, *, fail_code: str | None = None) -> None:
         self.fail_code = fail_code
+        self.calls: list[Path] = []
 
     def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult:
+        self.calls.append(audio_path)
         context.check_cancelled()
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake transcription failure")
@@ -237,7 +275,7 @@ class StubTranscriber:
                 TranscriptSegmentData(seq=2, start_ms=1000, end_ms=2000, text="智能体"),
             ],
             language="zh",
-            model="fake-model",
+            model=self.model,
         )
 
 
@@ -272,6 +310,15 @@ class StubBookExtractor:
 class StubOrganizer:
     def __init__(self, *, fail_code: str | None = None) -> None:
         self.fail_code = fail_code
+        self.calls: list[str] = []
+        self.model = "fake-model"
+        self.prompt_version = "test-1"
+        self.summary = "A summary"
+        self.tags = ["memory", "agents"]
+
+    @property
+    def cache_identity(self) -> AiCacheIdentity:
+        return AiCacheIdentity(model=self.model, prompt_version=self.prompt_version)
 
     def organize(
         self,
@@ -284,14 +331,15 @@ class StubOrganizer:
         collection_index: int | None = None,
         reuse_existing_tags: bool = False,
     ) -> OrganizationResult:
+        self.calls.append(text)
         context.check_cancelled()
         if self.fail_code:
             raise ProcessingError(self.fail_code, "fake organization failure")
         return OrganizationResult(
-            summary="A summary",
-            tags=["memory", "agents"],
-            model="fake-model",
-            prompt_version="test-1",
+            summary=self.summary,
+            tags=list(self.tags),
+            model=self.model,
+            prompt_version=self.prompt_version,
             input_tokens=10,
             output_tokens=5,
             cost_usd=0.001,
@@ -405,12 +453,101 @@ def test_transcribe_stage_writes_transcript(env: StageEnv) -> None:
     assert transcript is not None
     assert [segment.text for segment in transcript.segments] == ["记忆", "智能体"]
     with env.sessions() as session:
+        audio = session.execute(
+            select(Artifact).where(
+                Artifact.item_id == item_id, Artifact.kind == ArtifactKind.AUDIO
+            )
+        ).scalars().one()
+    assert transcript.input_sha256 == audio.sha256
+    with env.sessions() as session:
         artifact = session.execute(
             select(Artifact).where(
                 Artifact.item_id == item_id, Artifact.kind == ArtifactKind.TRANSCRIPT
             )
         ).scalars().one()
         assert artifact.path == "transcript.json"
+
+
+def test_transcribe_stage_reuses_a_matching_transcript(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_audio(env, item_id)
+    transcriber = StubTranscriber()
+    stage = TranscribeStage(env.package, ArtifactStore(env.package), transcriber)
+    hits_before = counter_value("external_cache_hits_total", cache="asr")
+    misses_before = counter_value("external_cache_misses_total", cache="asr")
+    seconds_before = counter_value("external_cache_saved_asr_seconds_total")
+
+    _execute(env, stage, item_id, run_id)
+    first = env.package.read_transcript(item_id)
+    assert first is not None
+    assert len(transcriber.calls) == 1
+    assert counter_value("external_cache_misses_total", cache="asr") == misses_before + 1
+
+    _execute(env, stage, item_id, run_id)
+    assert len(transcriber.calls) == 1
+    assert env.package.read_transcript(item_id) == first
+    assert counter_value("external_cache_hits_total", cache="asr") == hits_before + 1
+    assert (
+        counter_value("external_cache_saved_asr_seconds_total")
+        == seconds_before + 2.0
+    )
+
+    _execute(env, stage, item_id, run_id, force=True)
+    assert len(transcriber.calls) == 2
+
+
+def test_transcribe_stage_misses_when_audio_or_model_changes(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_audio(env, item_id)
+    transcriber = StubTranscriber()
+    stage = TranscribeStage(env.package, ArtifactStore(env.package), transcriber)
+    _execute(env, stage, item_id, run_id)
+
+    _install_audio(env, item_id, content=b"different audio")
+    _execute(env, stage, item_id, run_id)
+    assert len(transcriber.calls) == 2
+
+    transcriber.model = "other-model"
+    _execute(env, stage, item_id, run_id)
+    assert len(transcriber.calls) == 3
+
+
+def test_transcribe_stage_treats_a_legacy_transcript_as_a_miss(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_audio(env, item_id)
+    transcriber = StubTranscriber()
+    stage = TranscribeStage(env.package, ArtifactStore(env.package), transcriber)
+    _execute(env, stage, item_id, run_id)
+    path = env.package.artifact_path(item_id, "transcript.json")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw.pop("input_sha256")
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    _execute(env, stage, item_id, run_id)
+    assert len(transcriber.calls) == 2
+    transcript = env.package.read_transcript(item_id)
+    assert transcript is not None
+    assert transcript.input_sha256 is not None
+
+
+def test_transcribe_stage_propagates_package_version_errors(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_audio(env, item_id)
+    transcriber = StubTranscriber()
+    stage = TranscribeStage(env.package, ArtifactStore(env.package), transcriber)
+    _execute(env, stage, item_id, run_id)
+    with env.sessions() as session:
+        item = session.get(Item, item_id)
+        assert item is not None
+        source = _source(item)
+    _set_manifest_version(env, item_id, 999)
+
+    with env.sessions() as session:
+        item = session.get(Item, item_id)
+        assert item is not None
+        with pytest.raises(PackageVersionError):
+            stage.execute(session, item, source, _context(env, item, run_id))
+    assert len(transcriber.calls) == 1
 
 
 def test_extract_text_stage_writes_book_json_and_cover(env: StageEnv) -> None:
@@ -437,6 +574,7 @@ def test_extract_text_stage_writes_book_json_and_cover(env: StageEnv) -> None:
 
 def test_organize_stage_writes_ai_result_and_tags(env: StageEnv) -> None:
     item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
     stage = OrganizeStage(env.package, ArtifactStore(env.package), StubOrganizer())
     _execute(env, stage, item_id, run_id)
 
@@ -446,12 +584,14 @@ def test_organize_stage_writes_ai_result_and_tags(env: StageEnv) -> None:
     assert ai is not None
     assert ai.summary == "A summary"
     assert ai.tags == ["memory", "agents"]
+    assert ai.input_sha256 == ai_input_sha256("记忆")
     with env.sessions() as session:
         result = session.execute(
             select(AiResult).where(AiResult.item_id == item_id)
         ).scalars().one()
         assert result.run_id == run_id
         assert result.model == "fake-model"
+        assert result.input_sha256 == ai.input_sha256
         tags = set(
             session.execute(
                 select(Tag.normalized_name)
@@ -460,6 +600,128 @@ def test_organize_stage_writes_ai_result_and_tags(env: StageEnv) -> None:
             ).scalars()
         )
         assert tags == {"memory", "agent"}
+
+
+def test_organize_stage_reuses_matching_ai_result_without_calling_the_llm(
+    env: StageEnv,
+) -> None:
+    item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
+    organizer = StubOrganizer()
+    stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
+    hits_before = counter_value("external_cache_hits_total", cache="ai")
+    misses_before = counter_value("external_cache_misses_total", cache="ai")
+    input_tokens_before = counter_value(
+        "external_cache_saved_tokens_total", kind="input"
+    )
+    output_tokens_before = counter_value(
+        "external_cache_saved_tokens_total", kind="output"
+    )
+
+    _execute(env, stage, item_id, run_id)
+    first = env.package.read_ai(item_id)
+    assert first is not None
+    assert len(organizer.calls) == 1
+    assert counter_value("external_cache_misses_total", cache="ai") == misses_before + 1
+
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 1
+    assert env.package.read_ai(item_id) == first
+    assert counter_value("external_cache_hits_total", cache="ai") == hits_before + 1
+    assert (
+        counter_value("external_cache_saved_tokens_total", kind="input")
+        == input_tokens_before + 10
+    )
+    assert (
+        counter_value("external_cache_saved_tokens_total", kind="output")
+        == output_tokens_before + 5
+    )
+    with env.sessions() as session:
+        results = session.execute(
+            select(AiResult).where(AiResult.item_id == item_id)
+        ).scalars().all()
+        assert len(results) == 1
+        assert results[0].cost_usd == 0.001
+
+    _execute(env, stage, item_id, run_id, force=True)
+    assert len(organizer.calls) == 2
+
+
+def test_organize_stage_can_hit_the_package_without_an_ai_result_row(
+    env: StageEnv,
+) -> None:
+    item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
+    organizer = StubOrganizer()
+    stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
+    _execute(env, stage, item_id, run_id)
+    with env.sessions() as session:
+        session.execute(delete(AiResult).where(AiResult.item_id == item_id))
+        session.commit()
+
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 1
+
+
+def test_organize_stage_misses_when_input_prompt_or_model_changes(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
+    organizer = StubOrganizer()
+    stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
+    _execute(env, stage, item_id, run_id)
+
+    _install_transcript(env, item_id, "不同的文本")
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 2
+
+    organizer.prompt_version = "test-2"
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 3
+
+    organizer.model = "other-model"
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 4
+
+
+def test_organize_stage_treats_legacy_ai_results_as_a_miss(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
+    organizer = StubOrganizer()
+    stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
+    _execute(env, stage, item_id, run_id)
+    with env.sessions() as session:
+        result = session.execute(
+            select(AiResult).where(AiResult.item_id == item_id)
+        ).scalars().one()
+        result.input_sha256 = None
+        session.commit()
+    path = env.package.artifact_path(item_id, "ai.json")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw.pop("input_sha256")
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    _execute(env, stage, item_id, run_id)
+    assert len(organizer.calls) == 2
+
+
+def test_organize_stage_propagates_package_version_errors(env: StageEnv) -> None:
+    item_id, run_id = _add_item(env)
+    _install_transcript(env, item_id)
+    organizer = StubOrganizer()
+    stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
+    _execute(env, stage, item_id, run_id)
+    with env.sessions() as session:
+        item = session.get(Item, item_id)
+        assert item is not None
+        source = _source(item)
+    _set_manifest_version(env, item_id, 999)
+
+    with env.sessions() as session:
+        item = session.get(Item, item_id)
+        assert item is not None
+        with pytest.raises(PackageVersionError):
+            stage.execute(session, item, source, _context(env, item, run_id))
+    assert len(organizer.calls) == 1
 
 
 def test_index_stage_refreshes_search_index(env: StageEnv) -> None:

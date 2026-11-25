@@ -46,6 +46,18 @@ _Avoid_: Job, process
 One claimable unit of work for a single Processing Run stage. It carries queued/running/completed/failed/dead/cancelled state, an attempt count, an available time, and a worker lease. A stage can have multiple attempt rows so its history is preserved.
 _Avoid_: Step, job
 
+**Retry Policy**:
+The centralized rules that decide whether a failed StageTask is retried, how long it waits, and how many attempts each stage gets. Retryable errors use exponential backoff plus jitter written to the task's available time; permanent errors fail immediately.
+_Avoid_: Backoff logic in each stage, retry loop
+
+**Dead Letter**:
+A StageTask that exhausted its retry budget or kept losing its worker lease. Its Processing Run fails with `run.dead` and waits for a manual retry; the last error code and message stay on the task.
+_Avoid_: Failed task, permanently failed
+
+**Idempotency Cache**:
+A completed external-call result reused when an automatic retry sees the same input key: Item, prompt version, model, and input hash for LLM; audio hash and model for ASR. Explicit reprocess bypasses the cache and performs the call again.
+_Avoid_: Deduplication, result memoization
+
 **Processing State**:
 The current or terminal stage progress of a Processing Run: queued, downloading, extracting audio, extracting text, transcribing, organizing, indexing, completed, failed, cancelled, or dead.
 _Avoid_: Status (when referring to processing)
