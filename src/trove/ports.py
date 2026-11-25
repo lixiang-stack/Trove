@@ -15,6 +15,8 @@ __all__ = [
     "BookCoverData",
     "BookExtractor",
     "BookResult",
+    "ChatClient",
+    "ChatResult",
     "DOWNLOAD_MEDIA_FILENAME",
     "DownloadResult",
     "Downloader",
@@ -148,6 +150,14 @@ class OrganizationResult:
 
 
 @dataclass(slots=True)
+class ChatResult:
+    content: str
+    input_tokens: int = 0
+    output_tokens: int = 0
+    finish_reason: str | None = None
+
+
+@dataclass(slots=True)
 class BookChapterData:
     chapter_index: int
     title: str
@@ -247,6 +257,15 @@ class AudioExtractor(Protocol):
 
 class Transcriber(Protocol):
     def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult: ...
+
+
+class ChatClient(Protocol):
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        max_tokens: int,
+    ) -> ChatResult: ...
 
 
 class Organizer(Protocol):

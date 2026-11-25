@@ -5,7 +5,7 @@ import json
 import httpx
 import pytest
 
-from trove.adapters.llm import LLMOrganizer
+from trove.adapters.openai_chat import OpenAICompatibleChatClient
 from trove.config import Config, LLMConfig
 from trove.domain.organization import (
     MAX_TAGS_PER_ITEM,
@@ -17,6 +17,7 @@ from trove.domain.organization import (
 )
 from trove.errors import ProcessingError
 from trove.ports import StageContext
+from trove.services.organization import OrganizationWorkflow
 
 from .conftest import seed_item
 
@@ -110,8 +111,9 @@ def _config(tmp_path) -> Config:
     )
 
 
-def _organizer(config: Config, handler) -> LLMOrganizer:
-    return LLMOrganizer(config.llm, client=_client(handler))
+def _organizer(config: Config, handler) -> OrganizationWorkflow:
+    chat_client = OpenAICompatibleChatClient(config.llm, client=_client(handler))
+    return OrganizationWorkflow(config.llm, chat_client)
 
 
 def test_environment_key_is_ignored(monkeypatch, tmp_path):
@@ -389,7 +391,7 @@ def test_persistent_invalid_json_fails(tmp_path):
 def test_disabled_llm_returns_an_empty_result(tmp_path):
     config = _config(tmp_path)
     config.llm.enabled = False
-    organizer = LLMOrganizer(config.llm)
+    organizer = _organizer(config, lambda request: httpx.Response(500))
     result = organizer.organize(
         text="短文本",
         title="disabled",

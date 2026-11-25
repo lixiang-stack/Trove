@@ -1,6 +1,6 @@
 # 04 — 拆分 LLMOrganizer 为 OrganizationWorkflow、ChatClient 与 PromptCatalog
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P1
 Blocked by: none
@@ -22,12 +22,12 @@ Spec: [spec.md](../spec.md)
 
 ## Acceptance Criteria
 
-- [ ] `adapters/llm.py` 降到 250 行以内；workflow 文件不出现 `httpx`。
-- [ ] `LLMOrganizer.organize()` 签名、`OrganizationResult` 字段、错误码不变。
-- [ ] fake `ChatClient` 能覆盖：单块、多块 map-reduce、空文本、无效 JSON、缺 summary/tags、超 token/调用上限、429/5xx。
-- [ ] 现有 `test_organization.py`、`test_organizer_real.py`（如可运行）保持绿。
-- [ ] `PROMPT_VERSION` 和 prompt 文案有单一来源；不再散落在函数参数里。
-- [ ] `ruff`、`mypy` 通过；`test_complexity.py` 不因拆分出现新告警。
+- [x] `adapters/openai_chat.py` 降到 250 行以内（`adapters/llm.py` 已删除）；workflow 文件不出现 `httpx`。
+- [x] `LLMOrganizer.organize()` 签名、`OrganizationResult` 字段、错误码不变。
+- [x] fake `ChatClient` 能覆盖：单块、多块 map-reduce、空文本、无效 JSON、缺 summary/tags、超 token/调用上限、429/5xx。
+- [x] 现有 `test_organization.py`、`test_organizer_real.py`（如可运行）保持绿。
+- [x] `PROMPT_VERSION` 和 prompt 文案有单一来源；不再散落在函数参数里。
+- [x] `ruff`、`mypy` 通过；`test_complexity.py` 不因拆分出现新告警。
 
 ## Testing
 
@@ -47,3 +47,18 @@ Spec: [spec.md](../spec.md)
 
 - `ChatClient` 不要设计成通用 SDK；只覆盖 workflow 需要的 chat completion + JSON 模式。
 - 如果 `reasoning_effort`/`response_format` 是 provider 特性，放到 client 的请求构造里，workflow 只传业务参数。
+
+## Implementation
+
+- `services/organization.py` 新增 `OrganizationWorkflow`：chunking、map-reduce、限额、tag 选择、成本估算都在这里；只依赖 `LLMConfig`、domain、`ChatClient`，不出现 `httpx`。
+- `ports.py` 新增 `ChatClient.complete(messages, *, max_tokens) -> ChatResult`；`ChatResult` 携带 content、input/output tokens 和 finish_reason。
+- `adapters/openai_chat.py` 新增 `OpenAICompatibleChatClient`：构造 OpenAI 兼容请求（`response_format`、`reasoning_effort`、temperature、URL、headers、timeout）；401/403 → `llm.not_configured`，429/5xx/timeout → `llm.failed`（429 带 `retry_after` details），非 JSON → `llm.invalid_output`。
+- `domain/organization_prompts.py` 集中 `PROMPT_VERSION`（仍为 `organize-2`）和 SYSTEM/MAP/SINGLE/REDUCE 文案；与 `origin/main` 逐字比对一致。
+- `composition.py` 组装 `OrganizationWorkflow(config.llm, OpenAICompatibleChatClient(config.llm, llm_http))`；`llm_http` 是组合根持有的单个 `httpx.Client(timeout=...)`，map-reduce 之间复用连接，所有权明确。
+- 偏差：`LLMOrganizer` 不再保留为 adapter facade。05 引入的 import-linter 契约禁止 `trove.adapters -> trove.services`，adapter 组装 workflow 会破坏门禁；`OrganizationWorkflow` 成为 `Organizer` 实现，`organize()` 签名、`OrganizationResult` 字段和错误码保持不变。`adapters/llm.py` 删除，传输实现为 84 行的 `adapters/openai_chat.py`。
+- 测试：`test_organization.py` / `test_organizer_real.py` 改为组装 workflow + client；新增 `tests/test_organization_workflow.py`（fake `ChatClient`：单块、map-reduce、空文本、无效 JSON、缺 summary/tags、调用/token 上限、tag 选择、成本、client 失败不触发 JSON 重试）和 `tests/test_openai_chat.py`（MockTransport：401/403/429/5xx/timeout/非 JSON/缺 usage）。
+- 验证：`./scripts/check.sh --fast` / `./scripts/check.sh` 全绿；`uv run lint-imports` 6 kept / 0 broken；`test_complexity.py` 通过；新旧实现差分（单块、合集复用、map-reduce、无效 JSON、禁用、限额、length finish）结果与请求体一致。
+
+## Comments
+
+- 2026-11-25：完成拆分；为保持 05 的分层门禁，移除 `LLMOrganizer`，由 `OrganizationWorkflow` 直接实现 `Organizer`，组合根注入 `OpenAICompatibleChatClient`。
