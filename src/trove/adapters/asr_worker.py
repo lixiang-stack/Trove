@@ -5,38 +5,50 @@ import json
 from pathlib import Path
 from typing import Any
 
+from trove.adapters.asr import PUNC_MODEL, VAD_MODEL
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run mlx-whisper in a child process")
+    parser = argparse.ArgumentParser(description="Run FunASR Paraformer in a child process")
     parser.add_argument("audio")
     parser.add_argument("output")
     parser.add_argument("model")
     args = parser.parse_args(argv)
 
-    import mlx_whisper
+    # Load FunASR only in the worker process, not when this module is imported.
+    from funasr import AutoModel
 
-    result: dict[str, Any] = mlx_whisper.transcribe(
-        args.audio,
-        path_or_hf_repo=args.model,
-        language=None,
-        task="transcribe",
-        word_timestamps=False,
-        condition_on_previous_text=False,
-        no_speech_threshold=0.6,
-        logprob_threshold=-1.0,
-        compression_ratio_threshold=2.4,
-        verbose=False,
+    model = AutoModel(
+        model=args.model,
+        vad_model=VAD_MODEL,
+        punc_model=PUNC_MODEL,
+        device="cpu",
+        disable_update=True,
+        disable_pbar=True,
+        disable_log=True,
+        log_level="ERROR",
     )
+    outputs = model.generate(
+        input=args.audio,
+        batch_size_s=300,
+        sentence_timestamp=True,
+    )
+    result: dict[str, Any] = outputs[0] if outputs else {}
+    segments = [
+        {
+            "start": float(sentence.get("start") or 0) / 1000,
+            "end": float(sentence.get("end") or 0) / 1000,
+            "text": str(sentence.get("text") or "").strip(),
+        }
+        for sentence in result.get("sentence_info") or []
+        if str(sentence.get("text") or "").strip()
+    ]
+    if not segments:
+        text = str(result.get("text") or "").strip()
+        if text:
+            segments = [{"start": 0.0, "end": 0.0, "text": text}]
     payload = {
-        "language": result.get("language"),
-        "segments": [
-            {
-                "start": segment.get("start"),
-                "end": segment.get("end"),
-                "text": segment.get("text"),
-            }
-            for segment in result.get("segments") or []
-        ],
+        "segments": segments,
     }
     Path(args.output).write_text(
         json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"

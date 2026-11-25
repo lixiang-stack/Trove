@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from trove.adapters.asr import MlxWhisperTranscriber
+from trove.adapters.asr import ParaformerTranscriber
 from trove.adapters.downloader import DefaultDownloader
 from trove.adapters.epub import EpubExtractor
 from trove.adapters.feed import PodcastFeedClient
@@ -84,7 +84,7 @@ def default_ports(config: Config) -> Ports:
         downloader=DefaultDownloader(config, http),
         feed_client=PodcastFeedClient(http, max_bytes=config.max_feed_bytes),
         audio_extractor=FfmpegAudioExtractor(),
-        transcriber=MlxWhisperTranscriber(config.asr_model),
+        transcriber=ParaformerTranscriber(config.asr_model),
         organizer=LLMOrganizer(config.llm),
         book_extractor=EpubExtractor(),
         video_inspector=YtDlpVideoInspector(config),

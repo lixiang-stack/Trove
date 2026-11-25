@@ -611,13 +611,14 @@ def _doctor(config) -> int:
 
 
 def _doctor_asr(config, problems: list[str]) -> None:
-    if importlib.util.find_spec("mlx_whisper") is None:
-        problems.append(ASR_NOT_INSTALLED_HINT)
-        print("mlx-whisper: missing")
-        return
-    print("mlx-whisper: OK")
-    from trove.adapters.asr import model_cached
+    # Optional ASR adapter; keep unrelated CLI commands free of the ASR stack.
+    from trove.adapters.asr import funasr_installed, model_cached
 
+    if not funasr_installed():
+        problems.append(ASR_NOT_INSTALLED_HINT)
+        print("funasr: missing")
+        return
+    print("funasr: OK")
     if model_cached(config.asr_model):
         print(f"ASR model: {config.asr_model}")
     else:
@@ -630,7 +631,10 @@ def _setup(config) -> int:
     problems: list[str] = []
     if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
         problems.append("Missing FFmpeg/ffprobe; install with: brew install ffmpeg")
-    if importlib.util.find_spec("mlx_whisper") is None:
+    # Optional ASR check; imported only by setup.
+    from trove.adapters.asr import funasr_installed
+
+    if not funasr_installed():
         problems.append(ASR_NOT_INSTALLED_HINT)
     if importlib.util.find_spec("yt_dlp") is None:
         problems.append("yt-dlp is missing; run: uv sync")
@@ -645,6 +649,7 @@ def _setup(config) -> int:
             print(f"  - {problem}")
         return 1
 
+    # Optional ASR download; imported only when setup reaches the model step.
     from trove.adapters.asr import download_model
 
     print(f"Downloading transcription model {config.asr_model} …")

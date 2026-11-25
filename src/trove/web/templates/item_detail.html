@@ -72,6 +72,12 @@
         <button type="submit" class="secondary">重新整理（不重新下载/转写）</button>
       </form>
       {% endif %}
+      {% if bundle.audio_artifact %}
+      <form method="post" action="/items/{{ bundle.item.id }}/reprocess" class="inline-form">
+        <input type="hidden" name="from_stage" value="transcribing">
+        <button type="submit" class="secondary">重新转写（不重新下载）</button>
+      </form>
+      {% endif %}
     </section>
 
     <section>

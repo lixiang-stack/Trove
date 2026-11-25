@@ -402,7 +402,7 @@ def test_disabled_llm_returns_an_empty_result(tmp_path):
 
 
 @pytest.mark.ffmpeg
-def test_reprocess_only_reruns_organizing_and_indexing(host):
+def test_reprocess_from_organizing_reruns_only_organizing_and_indexing(host):
     host.login()
     response = host.client.post(
         "/api/items", json={"kind": "url", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}
@@ -429,6 +429,35 @@ def test_reprocess_only_reruns_organizing_and_indexing(host):
     assert len(host.stack.transcriber.calls) == transcriptions_before
     stages = [step["stage"] for step in payload["run"]["steps"] if step["state"] == "completed"]
     assert "organizing" in stages and "indexing" in stages
+
+
+@pytest.mark.ffmpeg
+def test_reprocess_from_transcribing_reruns_asr_without_download(host):
+    host.login()
+    response = host.client.post(
+        "/api/items", json={"kind": "url", "url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"}
+    )
+    assert response.status_code == 201, response.text
+    item_id = response.json()["item"]["id"]
+    host.wait_for_item(item_id)
+
+    downloads_before = len(host.stack.downloader.calls)
+    transcriptions_before = len(host.stack.transcriber.calls)
+    organizations_before = len(host.stack.organizer.calls)
+
+    reprocess = host.client.post(
+        f"/api/items/{item_id}/reprocess", json={"from_stage": "transcribing"}
+    )
+    assert reprocess.status_code == 202, reprocess.text
+    payload = host.wait_for_item(item_id)
+
+    assert len(host.stack.downloader.calls) == downloads_before
+    assert len(host.stack.transcriber.calls) == transcriptions_before + 1
+    assert len(host.stack.organizer.calls) == organizations_before + 1
+    stages = [step["stage"] for step in payload["run"]["steps"] if step["state"] == "completed"]
+    assert "transcribing" in stages
+    assert "organizing" in stages
+    assert "indexing" in stages
 
 
 @pytest.mark.ffmpeg

@@ -21,7 +21,11 @@ Audiobookshelf (GPL) are intentionally avoided.
 | nh3            | EPUB HTML sanitization           | MIT            |
 | python-multipart | Streaming upload parsing       | Apache-2.0     |
 | yt-dlp         | Bilibili/YouTube extraction      | Unlicense      |
-| mlx-whisper    | Optional local ASR               | MIT            |
+| funasr         | Optional local ASR toolkit       | MIT            |
+| modelscope     | ASR model download/cache         | Apache-2.0     |
+| torch          | ASR runtime                      | BSD-3-Clause   |
+| torchaudio     | ASR audio frontend               | BSD-2-Clause   |
+| Paraformer-zh / CT-Transformer | ASR and punctuation weights | Apache-2.0     |
 | FFmpeg/ffprobe | Media probing and transcoding    | LGPL/GPL build-dependent |
 | Playwright     | Browser tests (dev only)         | Apache-2.0     |
 | pytest         | Tests (dev only)                 | MIT            |
@@ -30,4 +34,6 @@ Audiobookshelf (GPL) are intentionally avoided.
 
 FFmpeg is invoked as a separate process; no FFmpeg code is linked into Trove.
 The Homebrew build's license depends on the enabled codecs. Review it if you
-redistribute the application or a build artifact.
+redistribute the application or a build artifact. Model weights are downloaded
+separately by `trove setup`; their licenses are recorded above and on the
+ModelScope model cards.

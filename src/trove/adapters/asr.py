@@ -16,9 +16,14 @@ from trove.ports import StageContext, TranscriptResult, TranscriptSegmentData
 
 SAMPLE_RATE = 16000
 TRANSCRIBE_TIMEOUT_SECONDS = 4 * 3600
+VAD_MODEL = "iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
+PUNC_MODEL = "iic/punc_ct-transformer_zh-cn-common-vocab272727-pytorch"
+MODEL_ALIASES = {
+    "paraformer-zh": "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+}
 
 
-class MlxWhisperTranscriber:
+class ParaformerTranscriber:
     """Local ASR adapter; keep the heavy model work in a child process."""
 
     def __init__(self, model: str = DEFAULT_ASR_MODEL, *, ffmpeg: str = "ffmpeg") -> None:
@@ -26,7 +31,7 @@ class MlxWhisperTranscriber:
         self.ffmpeg = ffmpeg
 
     def transcribe(self, audio_path: Path, context: StageContext) -> TranscriptResult:
-        if not mlx_installed():
+        if not funasr_installed():
             raise ProcessingError("asr.not_configured", ASR_NOT_INSTALLED_HINT)
         if not model_cached(self.model):
             raise ProcessingError("asr.model_missing", ASR_MODEL_MISSING_HINT)
@@ -71,15 +76,12 @@ class MlxWhisperTranscriber:
                     "trove.adapters.asr_worker",
                     str(prepared),
                     str(output),
-                    self.model,
+                    resolve_model_id(self.model),
                 ],
                 timeout=TRANSCRIBE_TIMEOUT_SECONDS,
                 error_code="asr.failed",
             )
             if result.returncode != 0 or not output.is_file():
-                detail = (result.stderr or result.stdout)[-2000:].lower()
-                if "localentrynotfound" in detail or "could not locate" in detail:
-                    raise ProcessingError("asr.model_missing", ASR_MODEL_MISSING_HINT)
                 raise ProcessingError(
                     "asr.failed",
                     "Transcription failed",
@@ -101,7 +103,7 @@ def transcript_from_payload(payload: dict[str, Any], *, model: str | None) -> Tr
         if not isinstance(segment, dict):
             continue
         text = str(segment.get("text") or "").strip()
-        if not text:
+        if not text or not any(char.isalnum() for char in text):
             continue
         start_ms = _milliseconds(segment.get("start"))
         end_ms = max(start_ms, _milliseconds(segment.get("end")))
@@ -117,28 +119,47 @@ def transcript_from_payload(payload: dict[str, Any], *, model: str | None) -> Tr
     )
 
 
-def mlx_installed() -> bool:
-    return importlib.util.find_spec("mlx_whisper") is not None
+def funasr_installed() -> bool:
+    return (
+        importlib.util.find_spec("funasr") is not None
+        and importlib.util.find_spec("torch") is not None
+    )
+
+
+def resolve_model_id(model: str) -> str:
+    return MODEL_ALIASES.get(model, model)
+
+
+def cached_model_dir(model: str) -> Path | None:
+    # Optional ASR dependency; keep base installs and CLI startup free of modelscope.
+    try:
+        from modelscope import snapshot_download
+    except ImportError:
+        return None
+    paths = []
+    for model_id in (resolve_model_id(model), VAD_MODEL, PUNC_MODEL):
+        try:
+            paths.append(Path(snapshot_download(model_id, local_files_only=True)))
+        except Exception:  # noqa: BLE001 - any cache miss means "not ready"
+            return None
+    return paths[0]
 
 
 def model_cached(model: str) -> bool:
-    try:
-        from huggingface_hub import snapshot_download
-    except ImportError:
-        return False
-    try:
-        snapshot_download(model, local_files_only=True)
-        return True
-    except Exception:  # noqa: BLE001 - any cache miss or local metadata error means "not ready"
-        return False
+    return cached_model_dir(model) is not None
 
 
 def download_model(model: str) -> Path:
+    # Optional ASR dependency; imported only when setup downloads model weights.
     try:
-        from huggingface_hub import snapshot_download
+        from modelscope import snapshot_download
     except ImportError as exc:
         raise RuntimeError(ASR_NOT_INSTALLED_HINT) from exc
-    return Path(snapshot_download(model))
+    paths = {
+        model_id: Path(snapshot_download(model_id))
+        for model_id in (resolve_model_id(model), VAD_MODEL, PUNC_MODEL)
+    }
+    return paths[resolve_model_id(model)]
 
 
 def _milliseconds(value: Any) -> int:

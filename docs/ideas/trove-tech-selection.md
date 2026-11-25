@@ -5,6 +5,8 @@
 > 依据：[trove-requirements.md](trove-requirements.md)（最终需求）与 [GLOSSARY.md](../../GLOSSARY.md)  
 > 范围：MVP（Mac 主机 + Host Console Core + Consumer Web Shell）；V1 Android、云端、同步只做接口预留，不实现。  
 > **Q10**：手机浏览器能否承担主要听设备（连续播放、后台/锁屏、倍速、进度续听、媒体通知）？定义见 [trove-requirements.md 的 Q10 门控](trove-requirements.md#q10)。
+>
+> **2026-11-24 更新**：转写已改为 FunASR Paraformer-zh；本文中 mlx-whisper 相关内容为历史记录，见 [ADR 0013](../adr/0013-paraformer-local-asr.md)。
 
 ## 0. 结论
 
@@ -519,7 +521,8 @@ queued
 - [0001 MVP 主机采用 Python 单体、SQLite 与独立 worker](../adr/0001-python-monolith-sqlite-worker.md)
 - [0002 Web 客户端采用服务端渲染 + HTMX，不引入 React SPA](../adr/0002-server-rendered-htmx-web-shell.md)
 - [0003 搜索使用 SQLite FTS5 + 中文 bigram](../adr/0003-sqlite-fts5-cjk-search.md)
-- [0004 转写使用 mlx-whisper large-v3-turbo](../adr/0004-mlx-whisper-local-asr.md)
+- [0004 转写使用 mlx-whisper large-v3-turbo](../adr/0004-mlx-whisper-local-asr.md)（已被 0013 取代）
+- [0013 转写使用 FunASR Paraformer-zh](../adr/0013-paraformer-local-asr.md)
 - [0005 EPUB 直接解析，不引入 EbookLib/Audiobookshelf](../adr/0005-direct-epub-extraction.md)
 - [0006 原生 macOS 部署 + launchd + Tailscale Serve](../adr/0006-native-launchd-tailscale.md)
 - [0007 DeepSeek 整理按 token/调用数限额，不按金额止损](../adr/0007-deepseek-organization-limits.md)
