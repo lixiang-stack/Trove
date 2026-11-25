@@ -74,5 +74,13 @@ def _openapi(app: FastAPI) -> dict:
                 operation.setdefault(
                     "security", [{"cookieAuth": []}, {"bearerAuth": []}]
                 )
+    for operations in schema.get("paths", {}).values():
+        for method, operation in operations.items():
+            if method not in {"get", "post", "put", "patch", "delete"}:
+                continue
+            for response in operation.get("responses", {}).values():
+                response.setdefault("headers", {}).setdefault(
+                    "X-Request-ID", {"schema": {"type": "string"}}
+                )
     app.openapi_schema = schema
     return schema

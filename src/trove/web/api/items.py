@@ -1,13 +1,21 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import JSONResponse, Response
 
+from trove.composition import Runtime
 from trove.domain.links import LinkKind
 from trove.domain.reading import BookLocator
 from trove.errors import ValidationError
+from trove.services.idempotency import (
+    BeginState,
+    normalize_key,
+    request_fingerprint,
+)
+from trove.services.library import ItemBundle
 from trove.web.deps import runtime
 from trove.web.schemas import (
     BookChapterResponse,
@@ -27,6 +35,7 @@ from trove.web.schemas import (
 )
 
 router = APIRouter()
+logger = logging.getLogger("trove.idempotency")
 
 
 @router.get("/items", response_model=ItemListResponse)
@@ -70,27 +79,83 @@ def api_list_items(
     response_model=ItemCreateResponse,
     responses={201: {"model": ItemCreateResponse, "description": "Item created"}},
 )
-def api_create_item(request: Request, payload: ItemCreateRequest):
+def api_create_item(
+    request: Request,
+    payload: ItemCreateRequest,
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
     app_runtime = runtime(request)
+    key = normalize_key(idempotency_key)
+    started_token: int | None = None
+    if key is not None:
+        result = app_runtime.idempotency.begin(
+            key,
+            method="POST",
+            path=request.url.path,
+            request_hash=request_fingerprint(
+                "POST", request.url.path, payload.model_dump(mode="json")
+            ),
+        )
+        if result.state is BeginState.REPLAY:
+            return JSONResponse(
+                result.payload or {},
+                status_code=result.status_code or 200,
+                headers={"Idempotency-Replayed": "true"},
+            )
+        started_token = result.token
+    try:
+        bundle, duplicated = _create_item(app_runtime, payload)
+        body = {
+            "item": app_runtime.library.payload(bundle),
+            "deduplicated": duplicated,
+        }
+        status_code = 200 if duplicated else 201
+        if key is not None and started_token is not None:
+            try:
+                app_runtime.idempotency.complete(
+                    key,
+                    token=started_token,
+                    status_code=status_code,
+                    payload=body,
+                )
+            except Exception:  # noqa: BLE001 - response is already committed
+                logger.exception(
+                    "failed to store idempotent response",
+                    extra={"request_id": getattr(request.state, "request_id", None)},
+                )
+        return JSONResponse(body, status_code=status_code)
+    except Exception:
+        if key is not None and started_token is not None:
+            try:
+                app_runtime.idempotency.abort(key, token=started_token)
+            except Exception:  # noqa: BLE001 - preserve the original error
+                logger.exception(
+                    "failed to abort idempotent request",
+                    extra={"request_id": getattr(request.state, "request_id", None)},
+                )
+        raise
+
+
+def _create_item(app_runtime: Runtime, payload: ItemCreateRequest) -> tuple[ItemBundle, bool]:
     if payload.kind == "url":
         if not payload.url:
             raise ValidationError("Missing url")
-        bundle, duplicated = app_runtime.intake.add_video_url(payload.url)
-    elif payload.kind == "path":
+        return app_runtime.intake.add_video_url(payload.url)
+    if payload.kind == "path":
         if not payload.path:
             raise ValidationError("Missing path")
-        bundle, duplicated = app_runtime.intake.add_host_path(payload.path)
-    elif payload.kind == "upload":
+        return app_runtime.intake.add_host_path(payload.path)
+    if payload.kind == "upload":
         if not payload.upload_id:
             raise ValidationError("Missing upload_id")
-        bundle, duplicated = app_runtime.intake.add_upload(payload.upload_id)
-    elif payload.kind == "podcast":
+        return app_runtime.intake.add_upload(payload.upload_id)
+    if payload.kind == "podcast":
         if not payload.feed_url or not (payload.episode_guid or payload.enclosure_url):
             raise ValidationError("Missing feed_url or episode identifier")
-        bundle, duplicated = app_runtime.intake.add_podcast_episode(
+        return app_runtime.intake.add_podcast_episode(
             payload.feed_url, payload.episode_guid, payload.enclosure_url
         )
-    elif payload.kind == "ebook_url":
+    if payload.kind == "ebook_url":
         if not payload.url:
             raise ValidationError("Missing url")
         inspection = app_runtime.inspect.inspect(payload.url)
@@ -98,16 +163,11 @@ def api_create_item(request: Request, payload: ItemCreateRequest):
             raise ValidationError(
                 "Link is not an EPUB file", details={"code": "ebook.invalid_type"}
             )
-        bundle, duplicated = app_runtime.intake.add_epub_url(
+        return app_runtime.intake.add_epub_url(
             payload.url, canonical_url=inspection.canonical_url
         )
-    else:
-        raise ValidationError(
-            "kind must be one of url, path, upload, podcast, or ebook_url"
-        )
-    return JSONResponse(
-        {"item": app_runtime.library.payload(bundle), "deduplicated": duplicated},
-        status_code=200 if duplicated else 201,
+    raise ValidationError(
+        "kind must be one of url, path, upload, podcast, or ebook_url"
     )
 
 

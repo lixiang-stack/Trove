@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse,
 
 from trove.domain.sync import HOST_WEB_DEVICE
 from trove.services.auth import SESSION_COOKIE, SESSION_MAX_AGE, is_secure_request
+from trove.web.request_id import RequestIDMiddleware
 from trove.worker import heartbeat_is_fresh, read_heartbeat
 
 logger = logging.getLogger("trove.request")
@@ -66,7 +67,12 @@ def wants_json(request: Request) -> bool:
 def unauthorized(request: Request) -> Response:
     if wants_json(request):
         return JSONResponse(
-            {"code": "auth.required", "message": "Sign in required"}, status_code=401
+            {
+                "code": "auth.required",
+                "message": "Sign in required",
+                "request_id": _request_id(request),
+            },
+            status_code=401,
         )
     target = request.url.path
     if request.url.query:
@@ -77,9 +83,18 @@ def unauthorized(request: Request) -> Response:
 def csrf_denied(request: Request) -> Response:
     if wants_json(request):
         return JSONResponse(
-            {"code": "auth.csrf", "message": "Cross-site request rejected"}, status_code=403
+            {
+                "code": "auth.csrf",
+                "message": "Cross-site request rejected",
+                "request_id": _request_id(request),
+            },
+            status_code=403,
         )
     return PlainTextResponse("Cross-site request rejected", status_code=403)
+
+
+def _request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None)
 
 
 def check_csrf(request: Request) -> Response | None:
@@ -151,15 +166,35 @@ def install_middleware(app) -> None:
     async def security_and_logging(request: Request, call_next):
         started = time.monotonic()
         runtime = app.state.runtime
+        path = request.url.path
+
+        def log_request(status: int) -> None:
+            if path.startswith("/static/"):
+                return
+            logger.info(
+                "request",
+                extra={
+                    "method": request.method,
+                    "path": path,
+                    "status": status,
+                    "duration_ms": round((time.monotonic() - started) * 1000, 1),
+                    "client": request.client.host if request.client else "unknown",
+                    "request_id": _request_id(request),
+                },
+            )
+
+        def finish(response: Response) -> Response:
+            log_request(response.status_code)
+            return response
+
         request.state.authenticated, auth_error = _authenticate(request)
         uses_bearer = bearer_token(request) is not None
 
         if not uses_bearer:
             csrf_response = check_csrf(request)
             if csrf_response is not None:
-                return csrf_response
+                return finish(csrf_response)
 
-        path = request.url.path
         public = path in PUBLIC_PATHS or any(
             path.startswith(prefix) for prefix in PUBLIC_PREFIXES
         )
@@ -172,12 +207,19 @@ def install_middleware(app) -> None:
                     if auth_error == "auth.device_revoked"
                     else "Device token is invalid"
                 )
-                return JSONResponse(
-                    {"code": auth_error, "message": message}, status_code=401
+                return finish(
+                    JSONResponse(
+                        {
+                            "code": auth_error,
+                            "message": message,
+                            "request_id": _request_id(request),
+                        },
+                        status_code=401,
+                    )
                 )
-            return unauthorized(request)
+            return finish(unauthorized(request))
         if request.state.authenticated and path == "/login" and request.method == "GET":
-            return RedirectResponse("/library", status_code=303)
+            return finish(RedirectResponse("/library", status_code=303))
 
         if not path.startswith("/static/"):
             heartbeat = read_heartbeat(runtime.config)
@@ -196,16 +238,6 @@ def install_middleware(app) -> None:
             response.headers["Cache-Control"] = "no-cache"
         else:
             response.headers.setdefault("Cache-Control", "no-store")
-        duration_ms = round((time.monotonic() - started) * 1000, 1)
-        if not path.startswith("/static/"):
-            logger.info(
-                "request",
-                extra={
-                    "method": request.method,
-                    "path": path,
-                    "status": response.status_code,
-                    "duration_ms": duration_ms,
-                    "client": request.client.host if request.client else "unknown",
-                },
-            )
-        return response
+        return finish(response)
+
+    app.add_middleware(RequestIDMiddleware)

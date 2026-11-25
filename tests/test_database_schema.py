@@ -64,6 +64,7 @@ def test_migration_creates_tables_and_indexes(tmp_path):
         "tags",
         "item_tags",
         "ai_results",
+        "idempotency_keys",
         "search_fts",
     } <= tables
     assert {
