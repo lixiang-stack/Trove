@@ -249,6 +249,25 @@ class SyncMutation(Base):
     __table_args__ = (Index("ix_sync_mutations_created_at", "created_at"),)
 
 
+class IdempotencyKey(Base):
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    method: Mapped[str] = mapped_column(String(16), nullable=False)
+    path: Mapped[str] = mapped_column(String(512), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    state: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="in_progress", server_default="in_progress"
+    )
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    response_json: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[int] = mapped_column(Integer, nullable=False)
+    expires_at: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (Index("ix_idempotency_keys_expires_at", "expires_at"),)
+
+
+
 class AiResult(Base):
     __tablename__ = "ai_results"
 

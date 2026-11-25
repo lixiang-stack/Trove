@@ -3,6 +3,15 @@
 Read `GLOSSARY.md` for domain terms and `docs/adr/` for decisions. This file is
 only the "where does this change go?" map.
 
+## Productization roadmap
+
+- [Backend productization spec](../../.scratch/productization/spec.md) — phases,
+  SLOs, service-extraction gates, and non-goals.
+- [ADR 0014](../adr/0014-single-tenant-self-hosted-python.md) — single-tenant
+  self-hosted Host, Python core, no Go rewrite, stage-oriented pools.
+- [API contract](../api-contract.md) — v1 compatibility, request ids,
+  idempotency, and error envelope.
+
 ## Android app
 
 `android/` — native Android client. Read `android/AGENTS.md` before changing it.

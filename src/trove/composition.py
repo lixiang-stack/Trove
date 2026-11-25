@@ -32,6 +32,7 @@ from trove.services.auth import AuthService
 from trove.services.collections import CollectionService
 from trove.services.devices import DeviceService
 from trove.services.export import ExportService
+from trove.services.idempotency import IdempotencyService
 from trove.services.inspect import InspectService
 from trove.services.intake import IntakeService
 from trove.services.library import LibraryService
@@ -75,6 +76,7 @@ class Runtime:
     auth: AuthService
     devices: DeviceService
     uploads: UploadStore
+    idempotency: IdempotencyService
     ports: Ports
 
 
@@ -139,6 +141,7 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
     sync = SyncService(config, sessions, package, library)
     auth = AuthService(config)
     devices = DeviceService(config, sessions, auth.rate_limiter)
+    idempotency = IdempotencyService(sessions)
     return Runtime(
         config=config,
         engine=engine,
@@ -158,5 +161,6 @@ def build_runtime(config: Config, ports: Ports | None = None) -> Runtime:
         auth=auth,
         devices=devices,
         uploads=uploads,
+        idempotency=idempotency,
         ports=ports,
     )

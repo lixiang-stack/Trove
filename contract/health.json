@@ -13,8 +13,8 @@
   "database": {
     "status": "ok",
     "migration": {
-      "current": "0005_collections",
-      "head": "0005_collections",
+      "current": "0006_idempotency_keys",
+      "head": "0006_idempotency_keys",
       "up_to_date": true
     },
     "fts5": true

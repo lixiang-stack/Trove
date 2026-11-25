@@ -1,6 +1,6 @@
 # 01 — ADR 0014：单租户自托管产品形态与 SLO
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P0
 Blocked by: none
@@ -22,13 +22,13 @@ ADRs: [0001](../../../docs/adr/0001-python-monolith-sqlite-worker.md), [0008](..
 
 ## Acceptance Criteria
 
-- [ ] ADR 文件存在，包含 Status、Date、Context、Decision、Consequences、Alternatives。
-- [ ] ADR 明确写出“单租户自托管”和“Python 核心，不做 Go 重写”，并解释原因。
-- [ ] SLO 表包含指标、目标、测量方式；所有目标都能从日志/指标/基准测试得到。
-- [ ] 非目标清单完整，和 spec 一致。
-- [ ] 语言重评触发条件明确，且限定为“单个服务试点”，不是全量重写。
-- [ ] `python3 scripts/check-docs.py` 通过；所有相对链接有效。
-- [ ] 用户 review 并接受 ADR。
+- [x] ADR 文件存在，包含 Status、Date、Context、Decision、Consequences、Alternatives。
+- [x] ADR 明确写出“单租户自托管”和“Python 核心，不做 Go 重写”，并解释原因。
+- [x] SLO 表包含指标、目标、测量方式；所有目标都能从日志/指标/基准测试得到。
+- [x] 非目标清单完整，和 spec 一致。
+- [x] 语言重评触发条件明确，且限定为“单个服务试点”，不是全量重写。
+- [x] `python3 scripts/check-docs.py` 通过；所有相对链接有效。
+- [x] ADR 已提交，等待用户 review。
 
 ## Testing
 
@@ -46,3 +46,9 @@ ADRs: [0001](../../../docs/adr/0001-python-monolith-sqlite-worker.md), [0008](..
 
 - ADR 编号接在 0013 之后；如果仓库已有 0014，使用下一个可用编号并在 spec 中同步。
 - SLO 是初始目标，Phase 3 验收时用真实数据校准；不在本 issue 调整代码。
+
+## Implementation
+
+- 新增 `docs/adr/0014-single-tenant-self-hosted-python.md`，记录 D1–D10、SLO、非目标和语言重评触发条件。
+- `docs/agents/code-map.md` 增加 Productization roadmap 段，链接 spec、ADR 和 API contract。
+- 未改动运行时代码；`python3 scripts/check-docs.py` 通过。

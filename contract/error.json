@@ -1,5 +1,6 @@
 {
   "code": "auth.device_revoked",
   "message": "Device authorization has been revoked",
-  "details": null
+  "details": null,
+  "request_id": "req-fixture-1"
 }

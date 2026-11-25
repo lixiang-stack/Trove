@@ -14,13 +14,22 @@ from trove.web.security import wants_json
 logger = logging.getLogger("trove.request")
 
 
+def _request_id(request: Request) -> str | None:
+    return getattr(request.state, "request_id", None)
+
+
 def install_exception_handlers(app) -> None:
     @app.exception_handler(TroveError)
     async def trove_error_handler(request: Request, exc: TroveError):
         response: Response
         if wants_json(request):
             response = JSONResponse(
-                {"code": exc.code, "message": exc.message, "details": exc.details},
+                {
+                    "code": exc.code,
+                    "message": exc.message,
+                    "details": exc.details,
+                    "request_id": _request_id(request),
+                },
                 status_code=exc.status_code,
             )
         else:
@@ -48,6 +57,7 @@ def install_exception_handlers(app) -> None:
                 "code": "request.invalid",
                 "message": "Invalid request parameters",
                 "details": details,
+                "request_id": _request_id(request),
             },
             status_code=422,
         )
@@ -56,7 +66,11 @@ def install_exception_handlers(app) -> None:
     async def http_handler(request: Request, exc: StarletteHTTPException):
         if wants_json(request):
             return JSONResponse(
-                {"code": f"http.{exc.status_code}", "message": str(exc.detail)},
+                {
+                    "code": f"http.{exc.status_code}",
+                    "message": str(exc.detail),
+                    "request_id": _request_id(request),
+                },
                 status_code=exc.status_code,
             )
         return render(
@@ -74,11 +88,18 @@ def install_exception_handlers(app) -> None:
     async def unhandled_handler(request: Request, exc: Exception):
         logger.error(
             "unhandled error",
-            extra={"error_type": type(exc).__name__},
+            extra={
+                "error_type": type(exc).__name__,
+                "request_id": _request_id(request),
+            },
         )
         if wants_json(request):
             return JSONResponse(
-                {"code": "internal.error", "message": "Internal error"},
+                {
+                    "code": "internal.error",
+                    "message": "Internal error",
+                    "request_id": _request_id(request),
+                },
                 status_code=500,
             )
         return render(

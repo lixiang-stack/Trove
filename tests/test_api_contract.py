@@ -123,6 +123,18 @@ def test_openapi_covers_mvp_endpoints_and_security(api_host):
             and parameter["name"].lower() == "idempotency-key"
             for parameter in operation["parameters"]
         )
+    create_item = schema["paths"]["/api/items"]["post"]
+    assert any(
+        parameter["in"] == "header"
+        and parameter["name"].lower() == "idempotency-key"
+        for parameter in create_item["parameters"]
+    )
+    assert (
+        schema["paths"]["/api/items"]["get"]["responses"]["200"]["headers"][
+            "X-Request-ID"
+        ]["schema"]["type"]
+        == "string"
+    )
 
     file_responses = schema["paths"]["/api/items/{item_id}/files/{kind}"]["get"][
         "responses"
@@ -211,11 +223,11 @@ def test_title_validation_and_run_state_conflict(host):
 
     conflict = host.client.post(f"/api/items/{bundle.item.id}/retry")
     assert conflict.status_code == 409
-    assert conflict.json() == {
-        "code": "item.conflict",
-        "message": "The current Processing Run does not need a retry",
-        "details": None,
-    }
+    payload = conflict.json()
+    assert payload["code"] == "item.conflict"
+    assert payload["message"] == "The current Processing Run does not need a retry"
+    assert payload["details"] is None
+    assert payload["request_id"] == conflict.headers["x-request-id"]
 
 
 def test_duplicate_add_returns_existing_item(api_host):

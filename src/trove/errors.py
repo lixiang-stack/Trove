@@ -57,6 +57,15 @@ class ConflictError(TroveError):
     code = "item.conflict"
 
 
+class IdempotencyKeyReusedError(ConflictError):
+    code = "idempotency.key_reused"
+
+
+class IdempotencyInProgressError(ConflictError):
+    code = "idempotency.in_progress"
+
+
+
 class StorageError(TroveError):
     status_code = 500
     code = "storage.error"

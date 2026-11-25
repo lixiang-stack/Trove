@@ -27,7 +27,12 @@ def api_device_token(request: Request, payload: DeviceTokenRequest):
     )
     if issued is None:
         return JSONResponse(
-            {"code": "auth.invalid", "message": "Incorrect password"}, status_code=401
+            {
+                "code": "auth.invalid",
+                "message": "Incorrect password",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+            status_code=401,
         )
     return JSONResponse(
         {
@@ -47,7 +52,12 @@ def api_login(request: Request, payload: LoginRequest):
     token = app_runtime.auth.login(payload.password, client)
     if token is None:
         return JSONResponse(
-            {"code": "auth.invalid", "message": "Incorrect password"}, status_code=401
+            {
+                "code": "auth.invalid",
+                "message": "Incorrect password",
+                "request_id": getattr(request.state, "request_id", None),
+            },
+            status_code=401,
         )
     response = JSONResponse({"ok": True})
     set_session_cookie(request, response, token)

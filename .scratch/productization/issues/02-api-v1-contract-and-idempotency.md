@@ -1,6 +1,6 @@
 # 02 — API v1 契约、版本与幂等策略
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P0
 Blocked by: 01
@@ -26,13 +26,13 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 ## Acceptance Criteria
 
-- [ ] `docs/api-contract.md` 覆盖版本、错误、幂等、分页、Run 进度和兼容规则。
-- [ ] 所有 API 响应带 `X-Request-ID`；日志包含同一个 `request_id`。
-- [ ] `POST /api/items` 带同一 `Idempotency-Key` 重放时返回相同 `item.id`/`deduplicated`，不新增 Run。
-- [ ] 不带幂等键的现有调用行为不变。
-- [ ] 错误响应体仍能被现有 Android/CLI 解析；新增字段可选。
-- [ ] OpenAPI 与 `contract/*.json` 的一致性测试通过。
-- [ ] 现有 auth/sync/items 测试保持绿。
+- [x] `docs/api-contract.md` 覆盖版本、错误、幂等、分页、Run 进度和兼容规则。
+- [x] 所有 API 响应带 `X-Request-ID`；日志包含同一个 `request_id`。
+- [x] `POST /api/items` 带同一 `Idempotency-Key` 重放时返回相同 `item.id`/`deduplicated`，不新增 Run。
+- [x] 不带幂等键的现有调用行为不变。
+- [x] 错误响应体仍能被现有 Android/CLI 解析；新增字段可选。
+- [x] OpenAPI 与 `contract/*.json` 的一致性测试通过。
+- [x] 现有 auth/sync/items 测试保持绿。
 
 ## Testing
 
@@ -52,3 +52,13 @@ ADRs: [0009](../../../docs/adr/0009-native-android-client-app-managed-sync.md)
 
 - 幂等存储优先复用 SQLite，不引入 Redis；键值包含 method/path/body hash，响应保存状态码和 JSON。
 - 如果 `POST /api/items` 的重复检测已经由 `source_key` 完成，幂等键只负责“同一请求重放返回同一响应”，不要改变去重语义。
+
+## Implementation
+
+- 新增 `docs/api-contract.md`，定义 v1 additive 规则、错误信封、请求 ID、幂等、分页、Run 进度和兼容清单。
+- 新增 `web/request_id.py`：所有 HTTP 响应带 `X-Request-ID`；合法客户端值透传，否则生成；安全/错误响应和日志带同一 `request_id`。
+- 新增 `services/idempotency.py`、`idempotency_keys` 表和 Alembic `0006_idempotency_keys`；支持重放、请求指纹冲突、in-progress 冲突、5 分钟租约、24 小时完成 TTL 和 token 防陈旧覆盖。
+- `POST /api/items` 接受 `Idempotency-Key`；重放返回原状态码/响应并带 `Idempotency-Replayed: true`；失败释放 key；无 key 行为不变。
+- `ErrorResponse` 增加可选 `request_id`；OpenAPI 增加 `X-Request-ID` 响应头；`contract/health.json` 更新迁移 head，`contract/error.json` 增加 request_id。
+- 新增 `tests/test_idempotency.py`（服务级并发/过期/token、API 重放/冲突/并发/请求 ID/日志）；更新契约、schema、安全测试。
+- `./scripts/check.sh` 全绿。

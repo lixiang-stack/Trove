@@ -324,10 +324,10 @@ def test_session_cookie_attributes(api_host):
 def test_file_routes_require_auth_and_hide_missing_artifacts(api_host):
     response = api_host.client.get("/api/items/anything/audio")
     assert response.status_code == 401
-    assert response.json() == {
-        "code": "auth.required",
-        "message": "Sign in required",
-    }
+    payload = response.json()
+    assert payload["code"] == "auth.required"
+    assert payload["message"] == "Sign in required"
+    assert payload["request_id"] == response.headers["x-request-id"]
 
 
 def test_starlette_is_patched_for_range_dos():
