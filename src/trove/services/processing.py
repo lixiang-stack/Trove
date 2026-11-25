@@ -71,7 +71,9 @@ from trove.services.uploads import UploadStore
 INDEX_AFTER_STAGES = frozenset(
     {STAGE_DOWNLOADING, STAGE_TRANSCRIBING, STAGE_EXTRACTING_TEXT, STAGE_ORGANIZING}
 )
-REPROCESSABLE_STAGES = frozenset({STAGE_ORGANIZING, STAGE_INDEXING})
+REPROCESSABLE_STAGES = frozenset(
+    {STAGE_TRANSCRIBING, STAGE_ORGANIZING, STAGE_INDEXING}
+)
 
 
 class ProcessingService:
@@ -291,7 +293,7 @@ class ProcessingService:
     def reprocess(self, item_id: str, from_stage: str) -> Run:
         if from_stage not in REPROCESSABLE_STAGES:
             raise ValidationError(
-                "Only organizing or indexing can be rerun",
+                "Only transcribing, organizing, or indexing can be rerun",
                 details={"code": "reprocess.invalid_stage"},
             )
         with self.sessions() as session:

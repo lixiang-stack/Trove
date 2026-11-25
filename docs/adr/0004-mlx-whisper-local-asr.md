@@ -1,5 +1,7 @@
 # 转写使用 mlx-whisper large-v3-turbo
 
+**Superseded by [0013](0013-paraformer-local-asr.md)** · 2026-11-24
+
 MVP 在 M1 Pro 上要求 1 小时视频端到端 <30 分钟，中文优先、英文可转写，且不需要词级时间戳。选择 Apple Silicon 原生的 mlx-whisper 0.4.x + `mlx-community/whisper-large-v3-turbo`，在独立子进程中运行；FFmpeg 抽取 64kbps 单声道 AAC 用于播放，视频不落盘。
 
 **Status**: Accepted · 2026-11-08

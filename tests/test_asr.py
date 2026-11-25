@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -25,8 +27,8 @@ def _context(tmp_path: Path) -> StageContext:
 
 
 def test_missing_package_raises_install_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(asr, "mlx_installed", lambda: False)
-    transcriber = asr.MlxWhisperTranscriber("mlx-community/whisper-large-v3-turbo")
+    monkeypatch.setattr(asr, "funasr_installed", lambda: False)
+    transcriber = asr.ParaformerTranscriber(DEFAULT_ASR_MODEL)
 
     with pytest.raises(ProcessingError) as caught:
         transcriber.transcribe(tmp_path / "audio.m4a", _context(tmp_path))
@@ -37,9 +39,9 @@ def test_missing_package_raises_install_error(tmp_path, monkeypatch):
 
 
 def test_missing_model_raises_setup_error(tmp_path, monkeypatch):
-    monkeypatch.setattr(asr, "mlx_installed", lambda: True)
-    monkeypatch.setattr(asr, "model_cached", lambda model: False)
-    transcriber = asr.MlxWhisperTranscriber("mlx-community/whisper-large-v3-turbo")
+    monkeypatch.setattr(asr, "funasr_installed", lambda: True)
+    monkeypatch.setattr(asr, "cached_model_dir", lambda model: None)
+    transcriber = asr.ParaformerTranscriber(DEFAULT_ASR_MODEL)
 
     with pytest.raises(ProcessingError) as caught:
         transcriber.transcribe(tmp_path / "audio.m4a", _context(tmp_path))
@@ -47,6 +49,35 @@ def test_missing_model_raises_setup_error(tmp_path, monkeypatch):
     assert caught.value.code == "asr.model_missing"
     assert "trove setup" in caught.value.message
     assert "trove setup" in error_label("asr.model_missing")
+
+
+def test_model_alias_resolves_to_modelscope_id():
+    assert asr.resolve_model_id("paraformer-zh") == (
+        "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+    )
+    assert asr.resolve_model_id("custom/model") == "custom/model"
+
+
+def test_download_model_fetches_asr_vad_and_punctuation(monkeypatch, tmp_path):
+    calls = []
+    module = types.ModuleType("modelscope")
+
+    def snapshot_download(model_id, **_kwargs):
+        calls.append(model_id)
+        return str(tmp_path / model_id.replace("/", "--"))
+
+    module.snapshot_download = snapshot_download
+    monkeypatch.setitem(sys.modules, "modelscope", module)
+
+    path = asr.download_model("paraformer-zh")
+
+    assert [call.split("/")[0] for call in calls] == ["iic", "iic", "iic"]
+    assert calls == [
+        "iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch",
+        asr.VAD_MODEL,
+        asr.PUNC_MODEL,
+    ]
+    assert path.name.endswith("vocab8404-pytorch")
 
 
 def test_transcript_payload_is_ordered_and_monotonic():
@@ -59,10 +90,10 @@ def test_transcript_payload_is_ordered_and_monotonic():
         ],
     }
 
-    result = asr.transcript_from_payload(payload, model="whisper-large-v3-turbo")
+    result = asr.transcript_from_payload(payload, model="paraformer-zh")
 
     assert result.language == "zh"
-    assert result.model == "whisper-large-v3-turbo"
+    assert result.model == "paraformer-zh"
     rows = [
         (segment.seq, segment.start_ms, segment.end_ms, segment.text)
         for segment in result.segments
@@ -74,15 +105,15 @@ def test_transcript_payload_is_ordered_and_monotonic():
 
 
 @pytest.mark.slow
-def test_real_mlx_whisper_transcribes_fixture(tmp_path):
+def test_real_funasr_transcribes_fixture(tmp_path):
     if not os.environ.get("TROVE_RUN_SLOW_ASR"):
         pytest.skip("set TROVE_RUN_SLOW_ASR=1 to run the real model")
-    if not asr.mlx_installed():
+    if not asr.funasr_installed():
         pytest.skip("run `uv sync --extra asr` before the slow ASR test")
     if not asr.model_cached(DEFAULT_ASR_MODEL):
         pytest.skip("run `uv run trove setup` before the slow ASR test")
 
-    result = asr.MlxWhisperTranscriber().transcribe(
+    result = asr.ParaformerTranscriber().transcribe(
         FIXTURES / "short.m4a", _context(tmp_path)
     )
 

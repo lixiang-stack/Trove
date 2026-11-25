@@ -25,7 +25,7 @@ cd ~/src/Trove
 uv sync --extra asr
 uv run trove db upgrade
 uv run trove auth set-password
-uv run trove setup          # downloads the ASR model (~1.6 GB) and checks tools
+uv run trove setup          # downloads the FunASR models (~1.25 GB) and checks tools
 uv run trove doctor
 ```
 
@@ -123,6 +123,73 @@ launchctl kickstart -k gui/$(id -u)/com.trove.worker
 `trove db upgrade` is repeatable. Content packages are written before database
 commits, so a crash during upgrade leaves either the old or the new state. Run
 `uv run trove doctor` after upgrading.
+
+## Re-run ASR
+
+Use this after changing the ASR model or when an Item's transcript needs to be
+regenerated. The existing audio artifact is reused; Trove does not download or
+extract media again. The new run executes `transcribing`, `organizing`, and
+`indexing`; the old `transcript.json` is overwritten and the AI summary/tags are
+regenerated from the new transcript.
+
+Prerequisite: the running worker must be on the checkout that contains the ASR
+change. Restart the worker after deploying the new code. Do not run two workers
+against the same `~/Trove`.
+
+```bash
+cd ~/src/Trove
+uv sync --locked --extra asr
+uv run trove doctor          # funasr: OK and ASR model: paraformer-zh
+launchctl kickstart -k gui/$(id -u)/com.trove.api
+launchctl kickstart -k gui/$(id -u)/com.trove.worker
+```
+
+Find the Item or Collection id:
+
+```bash
+sqlite3 ~/Trove/trove.db "select id, title from items order by updated_at desc limit 20;"
+sqlite3 ~/Trove/trove.db "select id, title from collections;"
+```
+
+Single Item:
+
+- Web: open the Item page and click **重新转写（不重新下载）**.
+- API: `POST /api/items/<item_id>/reprocess` with `{"from_stage": "transcribing"}`.
+- Scripted, using the Host runtime (queues the run; the worker executes it):
+
+```bash
+uv run python - <<'PY'
+from trove.composition import build_runtime
+from trove.config import load_config
+
+runtime = build_runtime(load_config())
+runtime.processing.reprocess("<item_id>", "transcribing")
+PY
+```
+
+Whole Collection:
+
+```bash
+uv run trove collection reprocess <collection_id> --from-stage transcribing
+```
+
+`--from-stage organizing` only refreshes AI summaries/tags and does not re-run
+ASR. `--from-stage transcribing` is rejected for EPUB Items; they do not have an
+ASR stage. Watch progress on the Item page; per-Run logs are linked there and
+stored under `~/Trove/logs/runs/<run-id>.log`.
+
+Expected cost on the M1 Pro reference host: about 2.8GB peak RSS, one CPU core,
+and roughly 7–8x realtime (about 8 minutes per audio hour). If the audio artifact
+is missing, the run fails with an ASR error; re-ingest the Item instead. To keep
+the old transcript for comparison, copy it before queueing:
+
+```bash
+cp ~/Trove/library/<item_id>/transcript.json \
+  /tmp/trove-transcript-<item_id>.json
+```
+
+If the LLM is not configured, the new transcript is still written and indexed,
+but the `organizing` stage fails; configure the LLM and retry the Item.
 
 ## Backups
 

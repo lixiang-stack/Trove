@@ -13,7 +13,7 @@ uv run trove doctor
 uv run trove serve
 ```
 
-`mlx-whisper` is the optional `asr` extra. `trove setup` downloads the local model (`mlx-community/whisper-large-v3-turbo`, about 1.6GB) on first use. Without the extra, transcription fails with `asr.not_configured` and the `uv sync --extra asr` hint; without the model it fails with `asr.model_missing` and the `trove setup` hint.
+`funasr` is the optional `asr` extra. `trove setup` downloads the local FunASR Paraformer-zh model (about 1.25GB: 953MB ASR, 292MB punctuation, 4MB VAD) on first use. Without the extra, transcription fails with `asr.not_configured` and the `uv sync --extra asr` hint; without the model it fails with `asr.model_missing` and the `trove setup` hint. The ASR runs on CPU; no GPU is required. See [ADR 0013](docs/adr/0013-paraformer-local-asr.md) for the benchmark against the previous `mlx-whisper` setup.
 
 Open <http://127.0.0.1:8765>. `trove serve` also starts a built-in processing worker child process. For two-process deployment (or debugging), run only the API and start the worker separately:
 
@@ -29,6 +29,20 @@ follow [docs/deployment.md](docs/deployment.md). Android build/signing/CA notes 
 in [docs/android.md](docs/android.md). The security regression checklist is in
 [docs/security.md](docs/security.md); dependency licenses are listed in
 [docs/licenses.md](docs/licenses.md).
+
+## Re-run ASR
+
+Existing Items keep their stored transcripts until you queue a new transcribing run. A re-run reuses the existing `audio.m4a`; it does not download or extract audio again.
+
+Single Item: open the Item page and click **重新转写（不重新下载）**. The API equivalent is `POST /api/items/<item_id>/reprocess` with `{"from_stage": "transcribing"}`.
+
+Whole Collection:
+
+```bash
+uv run trove collection reprocess <collection_id> --from-stage transcribing
+```
+
+The run is executed by the worker, so the worker must be running the same code/model. `--from-stage organizing` only refreshes summaries/tags and does not re-transcribe. See [Re-run ASR](docs/deployment.md#re-run-asr) for ID lookup, prerequisites, and caveats.
 
 ## Configuration
 

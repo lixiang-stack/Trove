@@ -169,7 +169,8 @@ def run_asr_benchmark(
     *,
     model: str | None = None,
 ) -> dict[str, Any]:
-    from trove.adapters.asr import MlxWhisperTranscriber
+    # Optional ASR adapter; only load it for the ASR benchmark.
+    from trove.adapters.asr import ParaformerTranscriber
 
     duration = probe_duration(audio_path)
     with tempfile.TemporaryDirectory(prefix="trove-bench-asr-") as directory:
@@ -180,7 +181,7 @@ def run_asr_benchmark(
             should_cancel=lambda: False,
             log=lambda message: None,
         )
-        transcriber = MlxWhisperTranscriber(model or config.asr_model)
+        transcriber = ParaformerTranscriber(model or config.asr_model)
         started_at = datetime.now(UTC).isoformat()
         started = time.perf_counter()
         result = transcriber.transcribe(audio_path, context)
