@@ -40,9 +40,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PATH="/app/.venv/bin:${PATH}" \
     HOME=/home/trove \
-    TROVE_HOME=/data \
-    MODELSCOPE_CACHE=/data/models \
-    TROVE_BIND=0.0.0.0 \
+    MODELSCOPE_CACHE=/home/trove/Trove/models \
     TROVE_BUILD_COMMIT=${TROVE_BUILD_COMMIT} \
     TROVE_BUILD_TIME=${TROVE_BUILD_TIME}
 
@@ -58,8 +56,8 @@ RUN apt-get update \
     && groupadd --gid 10001 trove \
     && useradd --uid 10001 --gid trove --create-home --home-dir /home/trove \
         --shell /usr/sbin/nologin trove \
-    && install -d -o trove -g trove -m 0700 /data /data/models \
-    && install -d -o trove -g trove -m 0700 /home/trove/.config/trove
+    && install -d -o trove -g trove -m 0700 \
+        /home/trove/Trove /home/trove/Trove/models
 
 COPY --from=builder /app/.venv /app/.venv
 COPY docker/entrypoint.sh /usr/local/bin/trove-entrypoint
@@ -68,7 +66,7 @@ RUN chmod 0755 /usr/local/bin/trove-entrypoint \
 
 WORKDIR /app
 USER trove
-VOLUME ["/data"]
+VOLUME ["/home/trove/Trove"]
 EXPOSE 8765
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

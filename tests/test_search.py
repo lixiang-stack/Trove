@@ -300,7 +300,7 @@ def test_index_reads_content_package_and_rebuilds_without_db_text(host):
     assert host.client.get("/api/search", params={"q": "包内书页"}).json()["count"] == 1
 
 
-def test_index_rebuild_is_idempotent_and_preserves_results(host, monkeypatch):
+def test_index_rebuild_is_idempotent_and_preserves_results(host):
     first = seed_item(host, title="Rebuild Alpha")
     second = seed_item(host, title="Rebuild Beta", source_key="seed:rebuild-beta")
     _add_segments(host, first.item.id, "稳定重建记忆")
@@ -316,10 +316,9 @@ def test_index_rebuild_is_idempotent_and_preserves_results(host, monkeypatch):
     assert host.runtime.search_index.rebuild() == 2
     assert host.client.get("/api/search", params={"q": "重建"}).json() == before
 
-    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
     from trove.cli import main
 
-    assert main(["index", "rebuild"]) == 0
+    assert main(["--home", str(host.config.home), "index", "rebuild"]) == 0
     assert host.client.get("/api/search", params={"q": "重建"}).json() == before
 
 
@@ -358,41 +357,40 @@ def test_index_rebuild_does_not_silently_skip_incompatible_packages(host):
         host.runtime.search_index.rebuild()
 
 
-def test_cli_search_and_index_status(host, monkeypatch, capsys):
+def test_cli_search_and_index_status(host, capsys):
     item = seed_item(host, title="CLI Search")
     _add_segments(host, item.item.id, "命令行可以找到的记忆")
     _index(host, item.item.id)
-    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
     from trove.cli import main
 
-    assert main(["search", "记忆"]) == 0
+    home = str(host.config.home)
+    assert main(["--home", home, "search", "记忆"]) == 0
     output = capsys.readouterr().out
     assert "CLI Search" in output
     assert "transcript" in output
 
-    assert main(["search", "记忆", "--json"]) == 0
+    assert main(["--home", home, "search", "记忆", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["count"] == 1
     assert payload["results"][0]["item"]["id"] == item.item.id
     assert payload["results"][0]["evidence"][0]["ref"] == "0:0"
 
-    assert main(["index", "status"]) == 0
+    assert main(["--home", home, "index", "status"]) == 0
     status = capsys.readouterr().out
     assert "CLI Search" in status
     assert "✓" in status
 
-    assert main(["index", "status", "--json"]) == 0
+    assert main(["--home", home, "index", "status", "--json"]) == 0
     status_payload = json.loads(capsys.readouterr().out)
     assert status_payload["items"][0]["stale"] is False
 
 
-def test_cli_index_status_reports_missing_transcript(host, monkeypatch, capsys):
+def test_cli_index_status_reports_missing_transcript(host, capsys):
     item = seed_item(host, title="未索引内容")
     _add_segments(host, item.item.id, "还没有进入 FTS")
-    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
     from trove.cli import main
 
-    assert main(["index", "status", "--json"]) == 0
+    assert main(["--home", str(host.config.home), "index", "status", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
     row = payload["items"][0]

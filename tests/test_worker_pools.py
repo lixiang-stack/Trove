@@ -86,74 +86,94 @@ def test_unknown_stage_fails_with_a_readable_hint(tmp_path):
         resolve_worker_pools(config, stages="downloading,bogus")
 
 
-def test_worker_pools_and_concurrency_load_from_the_environment(tmp_path, monkeypatch):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-    monkeypatch.setenv("TROVE_WORKER_POOLS", "download,asr")
-    monkeypatch.setenv("TROVE_ASR_CONCURRENCY", "2")
+def _write_config(home, text: str) -> None:
+    home.mkdir(parents=True, exist_ok=True)
+    (home / "config.toml").write_text(text, encoding="utf-8")
 
-    config = load_config()
+
+def test_worker_pools_and_concurrency_load_from_config(tmp_path):
+    home = tmp_path / "Trove"
+    _write_config(
+        home,
+        """
+[worker]
+pools = ["download", "asr"]
+
+[worker.concurrency]
+asr = 2
+""",
+    )
+
+    config = load_config(home=home)
 
     assert config.worker_pools == ("download", "asr")
     assert config.worker_concurrency["asr"] == 2
     assert config.worker_concurrency["download"] == 3
 
 
-def test_empty_worker_pools_default_to_all(tmp_path, monkeypatch):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-    monkeypatch.setenv("TROVE_WORKER_POOLS", "")
+def test_empty_worker_pools_default_to_all(tmp_path):
+    home = tmp_path / "Trove"
+    _write_config(home, '[worker]\npools = []\n')
 
-    assert load_config().worker_pools == ("all",)
+    assert load_config(home=home).worker_pools == ("all",)
 
 
-def test_duplicate_worker_pools_are_removed(tmp_path, monkeypatch):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-    monkeypatch.setenv("TROVE_WORKER_POOLS", "download, asr,download")
+def test_duplicate_worker_pools_are_removed(tmp_path):
+    home = tmp_path / "Trove"
+    _write_config(home, '[worker]\npools = ["download", "asr", "download"]\n')
 
-    assert load_config().worker_pools == ("download", "asr")
+    assert load_config(home=home).worker_pools == ("download", "asr")
 
 
 @pytest.mark.parametrize(
-    ("name", "value"),
+    ("text", "message"),
     [
-        ("TROVE_WORKER_POOLS", "bogus"),
-        ("TROVE_WORKER_POOLS", "download,,asr"),
-        ("TROVE_ASR_CONCURRENCY", "0"),
-        ("TROVE_DOWNLOAD_CONCURRENCY", "-1"),
-        ("TROVE_LLM_CONCURRENCY", "two"),
+        ("[worker]\npools = [\"bogus\"]\n", "pools contains unknown pools"),
+        (
+            "[worker]\npools = [\"download\", \"\"]\n",
+            "pools must not contain empty names",
+        ),
+        ("[worker.concurrency]\nasr = 0\n", "must be a positive integer"),
+        ("[worker.concurrency]\ndownload = -1\n", "must be a positive integer"),
+        ("[worker.concurrency]\nllm = \"two\"\n", "must be a positive integer"),
     ],
 )
-def test_invalid_worker_configuration_fails_at_startup(
-    tmp_path, monkeypatch, name, value
-):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-    monkeypatch.setenv(name, value)
+def test_invalid_worker_configuration_fails_at_startup(tmp_path, text, message):
+    home = tmp_path / "Trove"
+    _write_config(home, text)
 
-    with pytest.raises(ConfigError, match=name):
-        load_config()
+    with pytest.raises(ConfigError, match=message):
+        load_config(home=home)
 
 
-def test_worker_cli_rejects_an_unknown_pool(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-
-    code = main(["worker", "--pool", "bogus"])
+def test_worker_cli_rejects_an_unknown_pool(tmp_path, capsys):
+    code = main(["--home", str(tmp_path / "Trove"), "worker", "--pool", "bogus"])
 
     assert code == 2
     assert "Invalid worker pool" in capsys.readouterr().err
 
 
-def test_worker_cli_rejects_zero_concurrency(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-
-    code = main(["worker", "--pool", "asr", "--concurrency", "0"])
+def test_worker_cli_rejects_zero_concurrency(tmp_path, capsys):
+    code = main(
+        ["--home", str(tmp_path / "Trove"), "worker", "--pool", "asr", "--concurrency", "0"]
+    )
 
     assert code == 2
     assert "--concurrency" in capsys.readouterr().err
 
 
-def test_worker_cli_rejects_pool_and_stages_together(tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
-
-    code = main(["worker", "--pool", "asr", "--stages", "transcribing"])
+def test_worker_cli_rejects_pool_and_stages_together(tmp_path, capsys):
+    code = main(
+        [
+            "--home",
+            str(tmp_path / "Trove"),
+            "worker",
+            "--pool",
+            "asr",
+            "--stages",
+            "transcribing",
+        ]
+    )
 
     assert code == 2
     assert "--pool" in capsys.readouterr().err

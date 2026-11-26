@@ -23,10 +23,11 @@ from trove import __version__
 from trove.app import create_app
 from trove.composition import build_runtime
 from trove.config import (
-    PASSWORD_ENV,
-    PASSWORD_FILE_ENV,
+    DEFAULT_HOME,
     ConfigError,
     load_config,
+    prepare_home,
+    resolve_home,
 )
 from trove.db.engine import (
     DatabaseUpgradeError,
@@ -45,6 +46,16 @@ from trove.worker import ensure_migrated, resolve_worker_pools, run_worker
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="trove", description="Trove Host")
     parser.add_argument("--version", action="version", version=f"trove {__version__}")
+    parser.add_argument(
+        "--home",
+        default=None,
+        help="data directory (default ~/Trove; for tests and tooling)",
+    )
+    parser.add_argument(
+        "--no-log-console",
+        action="store_true",
+        help="write logs only to the log file",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     serve = subparsers.add_parser("serve", help="run the API and web shell")
@@ -107,7 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     bench_pipeline.add_argument("url")
     bench_pipeline.add_argument("--json", action="store_true", dest="as_json")
     bench_seed = bench_sub.add_parser(
-        "seed", help="insert repeatable search-benchmark Items into TROVE_HOME"
+        "seed", help="insert repeatable search-benchmark Items into the data directory"
     )
     bench_seed.add_argument("--count", type=int, default=1000)
     bench_seed.add_argument("--json", action="store_true", dest="as_json")
@@ -144,12 +155,20 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--json", action="store_true", dest="as_json")
     subparsers.add_parser("setup", help="download the ASR model and check dependencies")
 
+    config = subparsers.add_parser("config", help="configuration commands")
+    config_sub = config.add_subparsers(dest="config_command", required=True)
+    config_init = config_sub.add_parser(
+        "init", help="create the default config.toml"
+    )
+    config_init.add_argument("--host", default="127.0.0.1")
+    config_init.add_argument("--port", type=int, default=8765)
+
     service = subparsers.add_parser("service", help="install or remove launchd agents")
     service_sub = service.add_subparsers(dest="service_command", required=True)
     for action in ("install", "uninstall"):
         command = service_sub.add_parser(action, help=f"{action} launchd agents")
         command.add_argument("--root", default=None, help="repository root")
-        command.add_argument("--home", default=None, help="TROVE_HOME to use")
+        command.add_argument("--home", default=None, help="data directory to use")
         command.add_argument("--agents-dir", default=None, help="LaunchAgents directory")
         command.add_argument(
             "--pool",
@@ -185,11 +204,15 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+    if args.command == "config":
+        return _config(args)
     try:
-        config = load_config()
+        config = load_config(home=args.home)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
+    if args.no_log_console:
+        config.log_console = False
 
     if args.command == "serve":
         return _serve(config, args)
@@ -204,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
         except ConfigError as exc:
             print(f"Configuration error: {exc}", file=sys.stderr)
             return 2
-        configure_logging(config)
+        configure_logging(config, console=config.log_console)
         runtime = build_runtime(config)
         stop_event = threading.Event()
 
@@ -283,8 +306,14 @@ def _start_worker_child(config) -> subprocess.Popen[str] | None:
     )
     environment = os.environ.copy()
     environment["TROVE_PARENT_PID"] = str(os.getpid())
+    command = [sys.executable, "-m", "trove.cli"]
+    if config.home != resolve_home(DEFAULT_HOME):
+        command += ["--home", str(config.home)]
+    if not config.log_console:
+        command.append("--no-log-console")
+    command.append("worker")
     process = subprocess.Popen(
-        [sys.executable, "-m", "trove.cli", "worker"],
+        command,
         env=environment,
         text=True,
     )
@@ -700,18 +729,17 @@ def _doctor_permissions(config) -> dict[str, str]:
     broad_directories = [
         path for path in directories if path.stat().st_mode & 0o077
     ]
-    broad_files = (
-        [config.config_path]
-        if config.config_path.exists()
-        and config.config_path.stat().st_mode & 0o077
-        else []
-    )
+    broad_files = [
+        path
+        for path in (config.config_path, config.state_path)
+        if path.exists() and path.stat().st_mode & 0o077
+    ]
     if not broad_directories and not broad_files:
         return _doctor_check(
             "permissions",
             "ok",
             f"Data directory: {config.home} (0700); library/cache/logs 0700; "
-            "config 0600",
+            "config/state 0600",
         )
     message = "Permissions are too broad: " + ", ".join(
         str(path) for path in (*broad_directories, *broad_files)
@@ -1028,15 +1056,18 @@ def _command_version(command: list[str]) -> str:
     return first[0].strip() if first else "unknown"
 
 
+def _config(args) -> int:
+    if args.config_command != "init":
+        return 2
+    home = resolve_home(args.home)
+    prepare_home(home, default_host=args.host, default_port=args.port)
+    print(f"Configuration ready at {home / 'config.toml'}")
+    return 0
+
+
 def _auth(config, args) -> int:
     if args.auth_command != "set-password":
         return 2
-    if os.environ.get(PASSWORD_ENV) or os.environ.get(PASSWORD_FILE_ENV):
-        print(
-            f"Warning: {PASSWORD_ENV}/{PASSWORD_FILE_ENV} is set and will "
-            "override this password on the next start.",
-            file=sys.stderr,
-        )
     if args.password_stdin or not sys.stdin.isatty():
         password = sys.stdin.readline().rstrip("\n")
         confirm = password
@@ -1050,8 +1081,8 @@ def _auth(config, args) -> int:
         print("Password cannot be empty.", file=sys.stderr)
         return 1
     config.set_password(password)
-    config.config_path.chmod(0o600)
-    print(f"Password written to {config.config_path} (mode 0600).")
+    config.state_path.chmod(0o600)
+    print(f"Password written to {config.state_path} (mode 0600).")
     return 0
 
 

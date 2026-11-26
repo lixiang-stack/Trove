@@ -109,6 +109,6 @@ def test_secure_cookie_only_under_https(tmp_path):
 
 
 def test_password_hash_not_plaintext(api_host):
-    config_text = api_host.config.config_path.read_text(encoding="utf-8")
-    assert PASSWORD not in config_text
-    assert "argon2id" in config_text
+    state_text = api_host.config.state_path.read_text(encoding="utf-8")
+    assert PASSWORD not in state_text
+    assert "argon2id" in state_text

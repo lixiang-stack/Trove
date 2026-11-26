@@ -79,7 +79,7 @@ def test_seed_library_creates_searchable_items(tmp_path):
     assert len(runtime.library.list_items()) == 6
 
 
-def test_bench_search_cli_uses_the_library(host, tmp_path, monkeypatch, capsys):
+def test_bench_search_cli_uses_the_library(host, tmp_path, capsys):
     from trove.cli import main
 
     from .conftest import seed_item
@@ -88,10 +88,11 @@ def test_bench_search_cli_uses_the_library(host, tmp_path, monkeypatch, capsys):
     host.runtime.search_index.index_item(bundle.item.id)
     queries = tmp_path / "queries.txt"
     queries.write_text("Benchmark\n", encoding="utf-8")
-    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
 
     code = main(
         [
+            "--home",
+            str(host.config.home),
             "bench",
             "search",
             "--queries",

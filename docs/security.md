@@ -50,10 +50,10 @@ not a penetration-test report.
 
 ## Authentication and headers
 
-- [x] Argon2id password hash in `config.toml` (`0600`); session secret generated
-      with `secrets.token_urlsafe` and stored in the same `0600` file.
+- [x] Argon2id password hash and session secret in app-managed `state.toml`
+      (`0600`); the user-editable `config.toml` is also `0600`.
 - [x] Signed HttpOnly, `SameSite=Lax` cookie with a 30-day expiry; `Secure` under
-      HTTPS or when `TROVE_SECURE_COOKIES=1`.
+      HTTPS or when `[server] secure_cookies = true`.
 - [x] Login failures are rate-limited per client IP (`429` + `Retry-After`).
 - [x] Unsafe methods reject cross-site `Origin`/`Sec-Fetch-Site`; no GET mutations.
 - [x] Logs contain request method/path/status but not passwords, cookies, session
@@ -83,9 +83,8 @@ See [android.md](android.md) for build, signing, Caddy, and OEM steps.
 - [x] Starlette is pinned to `>=0.49.1`, which includes the Range DoS fix
       (CVE-2025-62727). `tests/test_security.py` asserts the installed version.
 - [x] Core dependencies stay MIT/BSD/Apache; see [licenses](licenses.md).
-- [x] Data directory `0700`; config `0600`; password and LLM settings including
-      the provider key stored outside the data directory in `~/.config/trove/`
-      (`password` and `llm.toml`, `0600`).
+- [x] Data directory `0700`; `config.toml` and `state.toml` `0600`; the LLM
+      provider key lives in `~/Trove/config.toml` under `[llm] api_key`.
 - [x] launchd agents bind loopback; phones use Tailscale Serve or Caddy HTTPS.
 - [x] Uploads, content packages, and temporary Run workspaces use `0700`/`0600`.
 

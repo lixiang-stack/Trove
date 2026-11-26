@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Seed a throwaway TROVE_HOME for Android UI/acceptance work."""
+"""Seed a throwaway data directory for Android UI/acceptance work."""
 
 # ruff: noqa: E402
 from __future__ import annotations
@@ -235,7 +235,7 @@ def add_epub(
 
 def main() -> int:
     if len(sys.argv) != 2:
-        print("usage: seed_acceptance.py <TROVE_HOME>", file=sys.stderr)
+        print("usage: seed_acceptance.py <data-dir>", file=sys.stderr)
         return 2
     home = Path(sys.argv[1]).expanduser().resolve()
     config = Config(home=home)

@@ -11,28 +11,36 @@ Docker is not required; launchd remains fully supported.
 ## Docker Compose
 
 The base image contains Python, `uv`-installed dependencies, FFmpeg/ffprobe, and
-`yt-dlp`. It runs as the non-root `trove` user with `TROVE_HOME=/data`; the
-`trove-data` named volume holds the database, library, cache, logs, settings, and
-backups.
+`yt-dlp`. It runs as the non-root `trove` user with data directory
+`/home/trove/Trove`; the `trove-data` named volume holds the database, library,
+cache, logs, `config.toml`, `state.toml`, and backups.
 
 ### Quick start
 
 ```bash
-TROVE_PASSWORD='your-password' docker compose up -d --build
+docker compose up -d --build
+docker compose exec api trove auth set-password
 open http://127.0.0.1:8765
 ```
 
-`init` applies migrations before `api` and `worker` start. The API publishes only
-on `127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`; bind
+`init` applies migrations before `api` and `worker` start. On first start the
+entrypoint creates `/home/trove/Trove/config.toml` with `host = "0.0.0.0"` so the
+API is reachable from the published port. The API publishes only on
+`127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`; bind
 another interface only behind a trusted reverse proxy.
 
-All configuration lives in `~/.config/trove` inside the containers, persisted in
-the `trove-config` volume; there is no `.env` file. On first start `TROVE_PASSWORD`
-is written to `~/.config/trove/password` (mode `0600`) and the entrypoint exports
-`TROVE_PASSWORD_FILE`; the app hashes it into `/data/config.toml` only when it
-changes. Later `up` calls reuse the file, so the environment variable is only
-needed when changing the password. Changing it invalidates existing sessions and
-device tokens. Verify inside the container:
+There is no `.env` file and no `trove-config` volume. User configuration lives in
+`/home/trove/Trove/config.toml` on the `trove-data` volume; the app-managed
+`state.toml` holds the password hash and session secret. Set the password
+non-interactively with:
+
+```bash
+printf '%s\n' "$PASSWORD" \
+  | docker compose exec -T api trove auth set-password --password-stdin
+```
+
+Changing the password invalidates existing sessions and device tokens. Verify
+inside the container:
 
 ```bash
 docker compose exec api trove doctor --json
@@ -43,7 +51,7 @@ Services:
 | Service | Command | Purpose |
 | --- | --- | --- |
 | `init` | `trove db upgrade` (+ `trove setup` for ASR images) | one-shot migration/model job |
-| `api` | `trove serve --no-worker --host 0.0.0.0` | HTTP API and web shell |
+| `api` | `trove serve --no-worker` | HTTP API and web shell |
 | `worker` | `trove worker` | default `all` pool |
 | `worker-download` | `trove worker --pool download` | acquisition/extraction pool |
 | `worker-asr` | `trove worker --pool asr` | transcription pool |
@@ -63,8 +71,9 @@ docker compose --profile pools up -d \
 ### ASR
 
 ASR is enabled by default. The first `init` downloads the Paraformer models
-(about 1.25 GB) into `/data/models` on the `trove-data` volume; later starts
-reuse them. `trove doctor` inside the ASR container reports the model as present.
+(about 1.25 GB) into `/home/trove/Trove/models` on the `trove-data` volume;
+later starts reuse them. `trove doctor` inside the ASR container reports the
+model as present.
 
 To build the smaller book-only image without transcription:
 
@@ -73,28 +82,40 @@ TROVE_INSTALL_ASR=false docker compose build
 docker compose up -d
 ```
 
-### LLM configuration
+### Configuration and LLM
 
-The `trove-config` volume is mounted at `~/.config/trove` and starts with an
-`llm.toml` containing `enabled = false`, so the Host runs without organization
-until configured. Copy the host file into the volume, then restart both
-processes:
+User settings live in `/home/trove/Trove/config.toml`; `state.toml` is
+app-managed. To edit the container copy from the host:
 
 ```bash
-install -d -m 700 ~/.config/trove
-${EDITOR:-vi} ~/.config/trove/llm.toml
-docker compose exec -T worker sh -c \
-  'cat > /home/trove/.config/trove/llm.toml' < ~/.config/trove/llm.toml
+docker compose cp api:/home/trove/Trove/config.toml ./trove-config.toml
+${EDITOR:-vi} ./trove-config.toml
+docker compose cp ./trove-config.toml api:/home/trove/Trove/config.toml
 docker compose restart api worker
 ```
 
-To inspect or update the container copy directly:
+LLM organization is disabled by default. Set `[llm] enabled = true` and fill in
+`model`, `base_url`, and `api_key`:
 
-```bash
-docker compose exec worker cat /home/trove/.config/trove/llm.toml
+```toml
+[llm]
+enabled = true
+model = "deepseek-flash"
+base_url = "https://api.deepseek.com/v1"
+api_key = "sk-..."
 ```
 
-To run without organization, set `enabled = false` before copying.
+For a local Ollama server, use a container-reachable address such as
+`http://host.docker.internal:11434/v1` and a non-empty placeholder key.
+
+To inspect the container copy directly:
+
+```bash
+docker compose exec api cat /home/trove/Trove/config.toml
+docker compose exec api cat /home/trove/Trove/state.toml
+```
+
+To run without organization, set `enabled = false` and restart both processes.
 
 ### TLS with Caddy
 
@@ -137,11 +158,12 @@ the target platform.
 
 ### Data, backups, and cleanup
 
-`docker compose down` removes containers but keeps the `trove-data` and
-`trove-config` volumes. `docker compose down -v` permanently deletes both,
-including settings, the password, LLM config, and the library. Back up the
-database with a SQLite online backup while the Host is running; the database path
-inside the container is `/data/trove.db` and the library is `/data/library`.
+`docker compose down` removes containers but keeps the `trove-data` volume.
+`docker compose down -v` permanently deletes it, including settings, `state.toml`,
+the password, LLM config, and the library. Back up the database with a SQLite
+online backup while the Host is running; the database path inside the container
+is `/home/trove/Trove/trove.db` and the library is
+`/home/trove/Trove/library`.
 
 Run the Docker smoke test with:
 
@@ -183,9 +205,9 @@ uv run trove setup          # downloads the FunASR models (~1.25 GB) and checks 
 uv run trove doctor
 ```
 
-To avoid the interactive password step, export `TROVE_PASSWORD` or point
-`TROVE_PASSWORD_FILE` at a secret before the first command; startup hashes it
-into `config.toml` and only rewrites it when the value changes.
+To set the password non-interactively, pipe it to
+`uv run trove auth set-password --password-stdin`. The hash is written to
+`~/Trove/state.toml`; `config.toml` stays user-editable.
 
 `trove setup` and `trove doctor` check FFmpeg/ffprobe, `yt-dlp`, SQLite FTS5, data
 directory permissions, the database revision, the login password, the ASR model,
@@ -202,8 +224,8 @@ and loads them with `launchctl`:
 
 | Agent             | Command                                  | Log                              |
 | ----------------- | ---------------------------------------- | -------------------------------- |
-| `com.trove.api`   | `uv run trove serve --no-worker --host 127.0.0.1` | `~/Trove/logs/com.trove.api.log` |
-| `com.trove.worker`| `uv run trove worker`                    | `~/Trove/logs/com.trove.worker.log` |
+| `com.trove.api`   | `uv run trove --home ~/Trove serve --no-worker` | `~/Trove/logs/com.trove.api.log` |
+| `com.trove.worker`| `uv run trove --home ~/Trove worker`     | `~/Trove/logs/com.trove.worker.log` |
 
 To split resource classes, render named agents instead of the default `all`
 worker:
@@ -218,9 +240,10 @@ command with the same `--pool` values to update them, and pass the same values t
 `trove service uninstall` to remove them.
 
 Both use `RunAtLoad` and `KeepAlive`, so they start at login and restart after a
-crash. `TROVE_HOME` defaults to `~/Trove`; override it with `TROVE_HOME=/path
-scripts/install-launchd.sh`. Use `scripts/install-launchd.sh --dry-run` to render
-and validate the plists without loading them.
+crash. The data directory defaults to `~/Trove`; override it with
+`scripts/install-launchd.sh --home /path`. Use
+`scripts/install-launchd.sh --dry-run` to render and validate the plists without
+loading them.
 
 Verify:
 
@@ -262,17 +285,31 @@ SQLite/FTS5 writes stay single-writer. `--stages` builds a custom pool and canno
 be combined with `--pool`. Unknown pools or stages fail at startup with the valid
 choices.
 
-Set defaults with `TROVE_WORKER_POOLS` (comma-separated, default `all`) and
-`TROVE_DOWNLOAD_CONCURRENCY`, `TROVE_ASR_CONCURRENCY`, `TROVE_LLM_CONCURRENCY`,
-or `TROVE_INDEX_CONCURRENCY`. Empty or non-positive concurrency values fail
-startup. Each pool worker renews a 25-second lease every 5 seconds, and a shared
-reaper thread checks for expired leases every 5 seconds. If a worker dies, its
-task is requeued once the lease expires; only that stage is retried and completed
-earlier stages are kept.
+Set defaults in `~/Trove/config.toml`:
+
+```toml
+[worker]
+pools = ["all"]
+lease_seconds = 25
+heartbeat_seconds = 5
+reaper_interval_seconds = 5
+shutdown_timeout_seconds = 30
+
+[worker.concurrency]
+download = 3
+asr = 1
+llm = 2
+index = 1
+```
+
+`pools` is an array, default `["all"]`. Empty or non-positive concurrency values
+fail startup. Each pool worker renews a 25-second lease every 5 seconds, and a
+shared reaper thread checks for expired leases every 5 seconds. If a worker
+dies, its task is requeued once the lease expires; only that stage is retried and
+completed earlier stages are kept.
 
 On SIGTERM the worker stops claiming new tasks and waits up to
-`TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS` (default 30) for in-flight tasks to
-commit. Tasks still running after the timeout stop renewing their lease; the next
+`shutdown_timeout_seconds` (default 30) for in-flight tasks to commit. Tasks still running after the timeout stop renewing their lease; the next
 worker's reaper requeues them once the lease expires. `/api/health` lists each pool's `concurrency`, `active`
 count, `queued` depth, claimed `stages`, and current `run_id` under
 `worker.pools`. Each worker process writes its own heartbeat file so split pool
@@ -287,21 +324,27 @@ Stage failures follow `domain/retry.py`:
   failures, missing LLM/ASR configuration) fail immediately and do not consume
   a retry.
 - ASR `asr.failed` is not retried automatically by default because the
-  `transcribing` stage allows one attempt. Raise `TROVE_STAGE_MAX_ATTEMPTS` for
-  that stage only when your ASR failures are known to be transient.
+  `transcribing` stage allows one attempt. Raise
+  `[worker.stage_max_attempts] transcribing` only when your ASR failures are
+  known to be transient.
 - A failed or cancelled Run no longer retries automatically.
 - Per-stage attempt limits default to 3 for downloading, extracting, and
-  organizing, 1 for transcribing, and 2 for indexing. Override them with
-  `TROVE_STAGE_MAX_ATTEMPTS`, for example
-  `TROVE_STAGE_MAX_ATTEMPTS="downloading=4,transcribing=2"`.
+  organizing, 1 for transcribing, and 2 for indexing. Override them in
+  `~/Trove/config.toml`:
+
+  ```toml
+  [worker.stage_max_attempts]
+  downloading = 4
+  transcribing = 2
+  ```
 - Exhausting the budget moves the task to `dead`, fails the Run with
   `run.dead`, keeps the last error on the task, and leaves the Item waiting for
   a manual retry. Lease expiry always allows one crash recovery, even for a
   one-attempt stage such as transcribing.
 
-Tune lease timing with `TROVE_WORKER_LEASE_SECONDS`,
-`TROVE_WORKER_HEARTBEAT_SECONDS`, and `TROVE_WORKER_REAPER_INTERVAL_SECONDS`.
-The Host refuses to start when the lease is not longer than the heartbeat.
+Tune lease timing with `[worker] lease_seconds`, `heartbeat_seconds`, and
+`reaper_interval_seconds`. The Host refuses to start when the lease is not longer
+than the heartbeat.
 
 ### External-call cache
 
@@ -368,7 +411,7 @@ Trove. See [android.md](android.md) for the Android steps.
 ### Upgrade, backup, and rollback
 
 `trove db upgrade` is repeatable. Before applying migrations it writes an online
-SQLite backup to `TROVE_HOME/backups/trove-<revision>-<UTC timestamp>.db` with
+SQLite backup to `~/Trove/backups/trove-<revision>-<UTC timestamp>.db` with
 mode `0600`. Backups are created only when the database is non-empty and not
 already at the target revision; the newest five are kept. On failure the CLI
 prints the error and the exact restore command, and the database stays at the old
@@ -412,8 +455,9 @@ Rollback steps:
 
    ```bash
    docker compose run --rm --no-deps --entrypoint sh api -c \
-     'cp /data/backups/trove-0008_run_force-20261126T000000Z.db /data/trove.db && \
-      rm -f /data/trove.db-wal /data/trove.db-shm'
+     'cp /home/trove/Trove/backups/trove-0008_run_force-20261126T000000Z.db \
+        /home/trove/Trove/trove.db && \
+      rm -f /home/trove/Trove/trove.db-wal /home/trove/Trove/trove.db-shm'
    ```
 3. Check out the previous tag/image and reinstall that version:
    `git checkout v<previous>` + `uv sync --locked --extra asr`, or
@@ -480,7 +524,7 @@ existing `host`, `database`, and `worker` objects.
 1. Bump the version in `pyproject.toml` and `src/trove/__init__.py`; write the
    release notes for the tag.
 2. Run `./scripts/check.sh --full` and the migration test from an older revision
-   to head on a temporary `TROVE_HOME`.
+   to head on a temporary data directory passed with `trove --home`.
 3. Run `uv run trove doctor --json` against the staging Host; require `ok: true`.
 4. Build and tag the image with the same version and build metadata:
 
@@ -654,8 +698,8 @@ Use this after installing or upgrading on the real Mac:
 
 - `trove doctor` lists missing tools, model, FTS5, permissions, migration, and
   port problems with the command or documentation link to fix each. For a busy
-  port, stop the other process or choose another `TROVE_PORT`; a running Trove
-  is reported separately and is not a failure.
+  port, stop the other process or change `[server] port` in `~/Trove/config.toml`;
+  a running Trove is reported separately and is not a failure.
 - If the worker restarts repeatedly, inspect
   `~/Trove/logs/com.trove.worker.log` and `~/Trove/logs/trove.log`; tasks whose
   worker died are requeued after their lease expires, and items fail with

@@ -16,7 +16,7 @@ adb="$root/scripts/android/adb.sh"
 ui="$root/scripts/android/ui-dump.py"
 python="$root/.venv/bin/python"
 trove="$root/.venv/bin/trove"
-source_home=${TROVE_HOME:-$HOME/Trove}
+source_home="$HOME/Trove"
 seconds=300
 port=8767
 work=""
@@ -75,6 +75,7 @@ trap cleanup EXIT
 [ "$seconds" -ge 10 ] || fail "--seconds must be >= 10"
 [ -f "$source_home/trove.db" ] || fail "missing $source_home/trove.db"
 [ -f "$source_home/config.toml" ] || fail "missing $source_home/config.toml"
+[ -f "$source_home/state.toml" ] || fail "missing $source_home/state.toml"
 [ -x "$python" ] || fail "missing .venv/bin/python; run uv sync"
 [ -x "$trove" ] || fail "missing .venv/bin/trove; run uv sync"
 command -v sqlite3 >/dev/null || fail "sqlite3 is required"
@@ -87,16 +88,16 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/trove-playback.XXXXXX")
 chmod 700 "$work"
 sqlite3 "$source_home/trove.db" ".backup '$work/trove.db'"
 cp "$source_home/config.toml" "$work/config.toml"
-[ -f "$source_home/.env" ] && cp "$source_home/.env" "$work/.env"
+cp "$source_home/state.toml" "$work/state.toml"
 
-TROVE_HOME="$work" "$python" "$root/scripts/android/seed_playback.py" \
+"$python" "$root/scripts/android/seed_playback.py" --home "$work" \
   --seconds "$seconds" --title "后台播放验收 ${seconds}s $(date +%s)" > "$work/seed.out"
 item_id=$(sed -n '1p' "$work/seed.out")
 title=$(sed -n '2p' "$work/seed.out")
 [ -n "$item_id" ] || fail "failed to seed playback Item"
 
-TROVE_HOME="$work" "$trove" sync reset-epoch >/dev/null
-TROVE_HOME="$work" TROVE_LOG_CONSOLE=0 "$trove" serve \
+"$trove" --home "$work" sync reset-epoch >/dev/null
+"$trove" --home "$work" --no-log-console serve \
   --no-worker --host 127.0.0.1 --port "$port" > "$work/server.log" 2>&1 &
 server_pid=$!
 for _ in $(seq 1 50); do

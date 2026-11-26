@@ -31,21 +31,19 @@ def test_launchd_agents_have_restart_logs_and_home(tmp_path):
         assert payload["Label"] == label
         assert payload["RunAtLoad"] is True
         assert payload["KeepAlive"] is True
-        assert payload["EnvironmentVariables"]["TROVE_HOME"] == str(
-            (tmp_path / "home").resolve()
-        )
+        assert "TROVE_HOME" not in payload["EnvironmentVariables"]
         assert payload["EnvironmentVariables"]["PATH"]
         assert payload["WorkingDirectory"] == str((tmp_path / "repo").resolve())
         assert payload["StandardOutPath"].startswith(
             str((tmp_path / "home").resolve() / "logs")
         )
         assert written[0].stat().st_mode & 0o777 == 0o600
-    assert api["ProgramArguments"][-2:] == ["serve", "--no-worker"] or (
-        "--no-worker" in api["ProgramArguments"]
-    )
+        assert "--home" in payload["ProgramArguments"]
+        assert str((tmp_path / "home").resolve()) in payload["ProgramArguments"]
+    assert api["ProgramArguments"][-2:] == ["serve", "--no-worker"]
     assert "serve" in api["ProgramArguments"]
     assert "worker" in worker["ProgramArguments"]
-    assert "--host" in api["ProgramArguments"]
+    assert "--host" not in api["ProgramArguments"]
 
 
 def test_launchd_agents_can_target_worker_pools(tmp_path):
@@ -87,13 +85,14 @@ def test_service_install_dry_run_can_render_a_pool_agent(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
     agents_dir = tmp_path / "agents"
-    monkeypatch.setenv("TROVE_HOME", str(home))
     monkeypatch.setattr(
         "shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None
     )
 
     code = main(
         [
+            "--home",
+            str(home),
             "service",
             "install",
             "--root",
@@ -121,11 +120,12 @@ def test_service_install_dry_run_renders_plists_and_keeps_data(tmp_path, monkeyp
     original = home / "user-original.m4a"
     original.write_bytes(b"user-owned")
     agents_dir = tmp_path / "agents"
-    monkeypatch.setenv("TROVE_HOME", str(home))
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None)
 
     code = main(
         [
+            "--home",
+            str(home),
             "service",
             "install",
             "--root",
@@ -153,10 +153,11 @@ def test_service_uninstall_dry_run_keeps_data(tmp_path, monkeypatch):
     agents_dir = tmp_path / "agents"
     agents_dir.mkdir()
     (agents_dir / "com.trove.api.plist").write_text("plist", encoding="utf-8")
-    monkeypatch.setenv("TROVE_HOME", str(home))
 
     code = main(
         [
+            "--home",
+            str(home),
             "service",
             "uninstall",
             "--home",
@@ -191,35 +192,38 @@ def test_real_uninstall_removes_plists_but_keeps_home(tmp_path, monkeypatch):
     assert original.exists()
 
 
-def test_doctor_accepts_a_running_trove_port(api_host, monkeypatch, capsys):
+def test_doctor_accepts_a_running_trove_port(api_host, capsys):
     from urllib.parse import urlsplit
 
-    monkeypatch.setenv("TROVE_HOME", str(api_host.config.home))
-    monkeypatch.setenv("TROVE_PORT", str(urlsplit(api_host.base_url).port))
-    code = main(["doctor"])
+    port = urlsplit(api_host.base_url).port
+    config_path = api_host.config.home / "config.toml"
+    config_path.write_text(
+        f'[server]\nhost = "127.0.0.1"\nport = {port}\n', encoding="utf-8"
+    )
+
+    code = main(["--home", str(api_host.config.home), "doctor"])
     output = capsys.readouterr().out
     assert "in use by Trove (running)" in output
     assert "already in use; stop the other process" not in output
     assert code in {0, 1}  # unrelated ASR/model warnings depend on the machine
 
 
-def test_doctor_reports_port_in_use(tmp_path, monkeypatch, capsys):
-    from trove.config import Config
+def test_doctor_reports_port_in_use(tmp_path, capsys):
+    from trove.config import load_config, prepare_home
     from trove.db.engine import upgrade_database
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.bind(("127.0.0.1", 0))
         port = probe.getsockname()[1]
-    config = Config(home=tmp_path / "Trove", port=port)
-    config.ensure_layout()
+    home = tmp_path / "Trove"
+    prepare_home(home, default_port=port)
+    config = load_config(home=home)
     upgrade_database(config)
     config.set_password("test-password")
-    monkeypatch.setenv("TROVE_HOME", str(config.home))
-    monkeypatch.setenv("TROVE_PORT", str(port))
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind(("127.0.0.1", port))
         sock.listen()
-        code = main(["doctor"])
+        code = main(["--home", str(home), "doctor"])
     output = capsys.readouterr().out
     assert code == 1
     assert "already in use" in output

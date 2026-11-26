@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from trove.adapters.openai_chat import OpenAICompatibleChatClient
-from trove.config import Config
+from trove.config import load_config
 from trove.ports import StageContext
 from trove.services.organization import OrganizationWorkflow
 
@@ -20,16 +20,16 @@ def _context(tmp_path) -> StageContext:
 
 
 # The default test run excludes network tests. Run with real model access from
-# ~/.config/trove/llm.toml:
+# ~/Trove/config.toml [llm]:
 #   uv run pytest -q -o addopts="" -m network tests/test_organizer_real.py -rs
 # To run only this test:
 #   uv run pytest -q -o addopts="" -m network \
 #     tests/test_organizer_real.py::test_real_organizer -rs
 @pytest.mark.network
 def test_real_organizer(tmp_path):
-    config = Config(home=tmp_path)
+    config = load_config()
     if not (config.llm.model and config.llm.base_url and config.llm.api_key):
-        pytest.skip("LLM config is missing from ~/.config/trove/llm.toml")
+        pytest.skip("LLM config is missing from ~/Trove/config.toml [llm]")
     with httpx.Client(timeout=config.llm.timeout_seconds) as client:
         organizer = OrganizationWorkflow(
             config.llm, OpenAICompatibleChatClient(config.llm, client)

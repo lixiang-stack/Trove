@@ -25,7 +25,7 @@ echo "Version: $version"
 
 ./scripts/check.sh --full
 
-trove_home=${TROVE_HOME:-$HOME/Trove}
+trove_home="$HOME/Trove"
 if [ -d "$trove_home" ]; then
   uv run trove doctor --json >/dev/null
 else

@@ -158,12 +158,14 @@ def test_collection_reprocess_cli_resets_ai_tags(host, monkeypatch, capsys):
         f"/api/items/{item_ids[0]}/tags", json={"tag": "我自己的标签"}
     )
     assert added.status_code == 200, added.text
-    monkeypatch.setenv("TROVE_HOME", str(host.config.home))
     from trove.cli import main
 
+    home = str(host.config.home)
     assert (
         main(
             [
+                "--home",
+                home,
                 "collection",
                 "reprocess",
                 collection_id,
@@ -178,7 +180,17 @@ def test_collection_reprocess_cli_resets_ai_tags(host, monkeypatch, capsys):
 
     host.worker.stop()
     assert (
-        main(["collection", "reprocess", collection_id, "--reset-ai-tags"]) == 0
+        main(
+            [
+                "--home",
+                home,
+                "collection",
+                "reprocess",
+                collection_id,
+                "--reset-ai-tags",
+            ]
+        )
+        == 0
     )
     output = capsys.readouterr().out
     assert "Deleted" in output and "queued 3 organizing runs" in output
