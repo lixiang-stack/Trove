@@ -10,7 +10,7 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=never
 
-ARG INSTALL_ASR=false
+ARG INSTALL_ASR=true
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*

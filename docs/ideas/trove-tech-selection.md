@@ -259,7 +259,7 @@ queued
 
 ### 3.6 部署与运维
 
-- **数据目录**：`~/Trove/`（`TROVE_HOME` 可覆盖），权限 0700；`config.toml`、`.env`、`trove.db`、`library/`、`cache/`、`logs/`。
+- **数据目录**：`~/Trove/`（`TROVE_HOME` 可覆盖），权限 0700；`config.toml`、`trove.db`、`library/`、`cache/`、`logs/`。
 - **进程**：`uv run trove serve`（API/HTML）与 `uv run trove worker`（处理）两个 launchd LaunchAgent，`RunAtLoad` + `KeepAlive`；升级时先 `trove db upgrade` 再重启。
 - **依赖**：`uv.lock` 锁定 Python；`ffmpeg`/`ffprobe`、`yt-dlp` 用 Homebrew/uv 安装并记录版本；模型首次 `trove setup` 下载。
 - **不使用 Docker**：MLX/Metal 在 macOS 容器里不可用；本地视频路径和 launchd 也更适合原生进程。

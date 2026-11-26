@@ -3,6 +3,7 @@ name: trove
 x-trove-environment: &trove-environment
   TROVE_HOME: /data
   TROVE_BIND: 0.0.0.0
+  TROVE_PASSWORD: "${TROVE_PASSWORD:-}"
   MODELSCOPE_CACHE: /data/models
 
 x-trove-service: &trove-service
@@ -10,6 +11,7 @@ x-trove-service: &trove-service
   environment: *trove-environment
   volumes:
     - trove-data:/data
+    - trove-config:/home/trove/.config/trove
   restart: unless-stopped
 
 services:
@@ -18,7 +20,7 @@ services:
     build:
       context: .
       args:
-        INSTALL_ASR: "${TROVE_INSTALL_ASR:-false}"
+        INSTALL_ASR: "${TROVE_INSTALL_ASR:-true}"
         TROVE_BUILD_COMMIT: "${TROVE_BUILD_COMMIT:-unknown}"
         TROVE_BUILD_TIME: "${TROVE_BUILD_TIME:-unknown}"
     command: ["init"]
@@ -116,5 +118,6 @@ services:
 
 volumes:
   trove-data:
+  trove-config:
   caddy-data:
   caddy-config:

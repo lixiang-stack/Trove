@@ -14,7 +14,7 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
 
     assert dockerfile.count("\nFROM ") >= 2
-    assert "ARG INSTALL_ASR=false" in dockerfile
+    assert "ARG INSTALL_ASR=true" in dockerfile
     assert "uv sync" in dockerfile and "--extra asr" in dockerfile
     assert "USER trove" in dockerfile
     assert "TROVE_HOME=/data" in dockerfile
@@ -40,7 +40,8 @@ def test_compose_publishes_only_loopback_and_keeps_named_data():
     assert "127.0.0.1" in compose
     assert "worker-asr" in compose and "worker-download" in compose
     assert "profiles:" in compose
-    assert "api_key" not in compose and "password" not in compose
+    assert "api_key" not in compose
+    assert "trove-config:" in compose
     assert "stop_grace_period: 45s" in compose
 
 
@@ -56,7 +57,13 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
         (bin_dir / name).chmod(0o755)
     entrypoint = ROOT / "docker" / "entrypoint.sh"
     subprocess.run(["sh", "-n", str(entrypoint)], check=True)
-    environment = {"PATH": f"{bin_dir}:/usr/bin:/bin"}
+    home = tmp_path / "home"
+    home.mkdir()
+    environment = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "HOME": str(home),
+        "TROVE_PASSWORD": "test-password",
+    }
 
     subprocess.run(
         ["/bin/sh", str(entrypoint), "init"],
@@ -75,6 +82,11 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
         "db upgrade",
         "doctor --json",
     ]
+    config_dir = home / ".config" / "trove"
+    assert (config_dir / "password").read_text(encoding="utf-8").strip() == (
+        "test-password"
+    )
+    assert (config_dir / "llm.toml").read_text(encoding="utf-8") == "enabled = false\n"
 
 
 def _compose_config():
@@ -117,6 +129,8 @@ def test_compose_config_declares_the_expected_contract():
         "service_completed_successfully"
     )
     assert "trove-data" in config["volumes"]
-    assert {"/data"} <= {
+    assert {"/data", "/home/trove/.config/trove"} <= {
         volume["target"] for volume in services["api"]["volumes"]
     }
+    assert "TROVE_PASSWORD" in services["api"]["environment"]
+    assert "trove-config" in config["volumes"]
