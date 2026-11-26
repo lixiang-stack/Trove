@@ -1,0 +1,4 @@
+# Example only: replace :80 with your domain or Tailscale hostname for TLS.
+:80 {
+	reverse_proxy api:8765
+}

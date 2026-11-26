@@ -117,6 +117,9 @@ class ProcessingService:
     def recover_active_runs(self) -> int:
         return self._coordinator.recover_active_runs()
 
+    def queue_depth(self, stages: Collection[str]) -> int:
+        return self._coordinator.queue_depth(stages)
+
     def heartbeat(self, run_id: str, worker_id: str) -> None:
         self._coordinator.heartbeat(run_id, worker_id)
 

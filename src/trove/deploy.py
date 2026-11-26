@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from trove.domain.worker_pools import POOL_NAMES
+from trove.domain.worker_pools import ALL_POOL, POOL_NAMES
 
 API_LABEL = "com.trove.api"
 WORKER_LABEL = "com.trove.worker"
@@ -31,11 +31,11 @@ def default_agents_dir() -> Path:
 
 
 def worker_label(pool: str) -> str:
-    return WORKER_LABEL if pool == "all" else f"{WORKER_LABEL}.{pool}"
+    return WORKER_LABEL if pool == ALL_POOL else f"{WORKER_LABEL}.{pool}"
 
 
 def worker_arguments(pool: str) -> list[str]:
-    if pool == "all":
+    if pool == ALL_POOL:
         return ["worker"]
     return ["worker", "--pool", pool]
 
@@ -46,7 +46,7 @@ def build_agents(
     home: Path,
     uv_path: Path,
     agents_dir: Path,
-    worker_pools: Sequence[str] = ("all",),
+    worker_pools: Sequence[str] = (ALL_POOL,),
 ) -> list[LaunchdAgent]:
     unknown_pools = set(worker_pools) - set(POOL_NAMES)
     if unknown_pools:
@@ -94,7 +94,7 @@ def build_agents(
             },
         ),
     ]
-    for pool in dict.fromkeys(worker_pools or ("all",)):
+    for pool in dict.fromkeys(worker_pools or (ALL_POOL,)):
         label = worker_label(pool)
         agents.append(
             LaunchdAgent(
@@ -153,7 +153,7 @@ def install(
     home: Path,
     agents_dir: Path,
     uv_path: Path | None = None,
-    worker_pools: Sequence[str] = ("all",),
+    worker_pools: Sequence[str] = (ALL_POOL,),
     dry_run: bool = False,
 ) -> list[Path]:
     uv_path = uv_path or _which("uv")

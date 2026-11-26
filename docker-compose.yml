@@ -1,0 +1,120 @@
+name: trove
+
+x-trove-environment: &trove-environment
+  TROVE_HOME: /data
+  TROVE_BIND: 0.0.0.0
+  MODELSCOPE_CACHE: /data/models
+
+x-trove-service: &trove-service
+  image: trove:${TROVE_IMAGE_TAG:-local}
+  environment: *trove-environment
+  volumes:
+    - trove-data:/data
+  restart: unless-stopped
+
+services:
+  init:
+    <<: *trove-service
+    build:
+      context: .
+      args:
+        INSTALL_ASR: "${TROVE_INSTALL_ASR:-false}"
+        TROVE_BUILD_COMMIT: "${TROVE_BUILD_COMMIT:-unknown}"
+        TROVE_BUILD_TIME: "${TROVE_BUILD_TIME:-unknown}"
+    command: ["init"]
+    healthcheck:
+      disable: true
+    restart: "no"
+
+  api:
+    <<: *trove-service
+    command: ["serve", "--no-worker", "--host", "0.0.0.0"]
+    ports:
+      - "${TROVE_PUBLISH_ADDRESS:-127.0.0.1}:${TROVE_HOST_PORT:-8765}:8765"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8765/api/health"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 12
+
+  worker:
+    <<: *trove-service
+    command: ["worker"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+
+  # Optional split pools. Stop the default `worker` first, then start a profile:
+  #   docker compose stop worker
+  #   docker compose --profile pools up -d worker-download worker-asr worker-llm worker-index
+  worker-download:
+    <<: *trove-service
+    profiles: ["pools"]
+    command: ["worker", "--pool", "download"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+
+  worker-asr:
+    <<: *trove-service
+    profiles: ["pools"]
+    command: ["worker", "--pool", "asr"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+
+  worker-llm:
+    <<: *trove-service
+    profiles: ["pools"]
+    command: ["worker", "--pool", "llm"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+
+  worker-index:
+    <<: *trove-service
+    profiles: ["pools"]
+    command: ["worker", "--pool", "index"]
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      disable: true
+    stop_grace_period: 45s
+
+  # Optional TLS terminator. Default compose publishes the API on 127.0.0.1 only.
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["caddy"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  trove-data:
+  caddy-data:
+  caddy-config:

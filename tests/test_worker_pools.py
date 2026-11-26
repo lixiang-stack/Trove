@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 import time
 
@@ -18,7 +19,7 @@ from trove.domain.items import (
     STAGE_ORGANIZING,
     STAGE_TRANSCRIBING,
 )
-from trove.worker import WorkerThread, resolve_worker_pools
+from trove.worker import WorkerThread, read_heartbeat, resolve_worker_pools
 
 from .fakes import FakeDownloader, FakeStack, wait_until
 
@@ -158,6 +159,45 @@ def test_worker_cli_rejects_pool_and_stages_together(tmp_path, monkeypatch, caps
     assert "--pool" in capsys.readouterr().err
 
 
+def test_heartbeat_merges_pool_processes(tmp_path):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    now = int(time.time() * 1000)
+    (config.cache_dir / "worker-101.json").write_text(
+        json.dumps(
+            {
+                "state": "busy",
+                "run_id": "run-download",
+                "updated_at": now,
+                "pid": 101,
+                "pools": [
+                    {"name": "download", "concurrency": 3, "active": 1, "run_id": "run-download"}
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (config.cache_dir / "worker-102.json").write_text(
+        json.dumps(
+            {
+                "state": "idle",
+                "run_id": None,
+                "updated_at": now,
+                "pid": 102,
+                "pools": [{"name": "asr", "concurrency": 1, "active": 0, "run_id": None}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    heartbeat = read_heartbeat(config)
+
+    assert heartbeat is not None
+    assert heartbeat["state"] == "busy"
+    assert heartbeat["run_id"] == "run-download"
+    assert {pool["name"] for pool in heartbeat["pools"]} == {"download", "asr"}
+
+
 def _create_item(host, slug: str) -> tuple[str, str]:
     host.login()
     response = host.client.post(
@@ -187,10 +227,13 @@ def test_health_exposes_the_running_worker_pools(api_host):
             lambda: _healthy_worker_pools(api_host), timeout=10
         )
         assert payload["worker"]["state"] == "idle"
+        pools = {pool["name"]: pool for pool in payload["worker"]["pools"]}
         assert {
-            pool["name"]: (pool["concurrency"], pool["active"])
-            for pool in payload["worker"]["pools"]
+            name: (pool["concurrency"], pool["active"])
+            for name, pool in pools.items()
         } == {"download": (3, 0), "asr": (1, 0)}
+        assert pools["download"]["queued"] == 0
+        assert pools["asr"]["stages"] == ["transcribing"]
     finally:
         worker.stop()
 
@@ -280,6 +323,38 @@ def test_a_pool_never_exceeds_its_configured_concurrency(host_factory):
 
 
 @pytest.mark.ffmpeg
+def test_index_writes_are_serialized_across_all_pool_threads(host_factory, monkeypatch):
+    host = host_factory()
+    original = host.runtime.search_index.index_item
+    lock = threading.Lock()
+    active = 0
+    peak = 0
+
+    def tracked(item_id: str) -> None:
+        nonlocal active, peak
+        with lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(0.05)
+            original(item_id)
+        finally:
+            with lock:
+                active -= 1
+
+    monkeypatch.setattr(host.runtime.search_index, "index_item", tracked)
+    pools = resolve_worker_pools(host.config, pools=["all"], concurrency=2)
+    worker = WorkerThread(host.runtime, pools=pools).start()
+    try:
+        items = [_create_item(host, f"index-lock-{index}")[0] for index in range(4)]
+        for item_id in items:
+            assert host.wait_for_item(item_id)["processing_state"] == "completed"
+        assert peak == 1
+    finally:
+        worker.stop()
+
+
+@pytest.mark.ffmpeg
 def test_stop_waits_for_the_running_task_and_claims_nothing_new(host_factory):
     stack = FakeStack()
     stack.downloader.blocked = True
@@ -324,6 +399,7 @@ def test_shutdown_timeout_leaves_the_lease_for_the_reaper(host_factory):
     stack.downloader.blocked = True
     host = host_factory(stack=stack)
     host.config.worker_shutdown_timeout_seconds = 1
+    host.config.worker_heartbeat_seconds = 1
     pools = resolve_worker_pools(host.config, pools=["download"])
     worker = WorkerThread(host.runtime, pools=pools).start()
     try:
@@ -342,6 +418,17 @@ def test_shutdown_timeout_leaves_the_lease_for_the_reaper(host_factory):
                     RunStep.state == "running",
                 )
             ).scalars().one()
+            lease_after_stop = task.lease_until
+        time.sleep(1.3)
+        with host.runtime.sessions() as session:
+            task = session.execute(
+                select(RunStep).where(
+                    RunStep.run_id == run_id,
+                    RunStep.stage == "downloading",
+                    RunStep.state == "running",
+                )
+            ).scalars().one()
+            assert task.lease_until == lease_after_stop
             task.lease_until = 1
             session.commit()
 

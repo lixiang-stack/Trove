@@ -10,12 +10,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from trove.composition import Runtime
-from trove.config import ConfigError
+from trove.config import ConfigError, clamp_pool_concurrency
 from trove.db.engine import current_revision, head_revision, verify_fts5
-from trove.domain.items import STAGE_INDEXING
 from trove.domain.worker_pools import (
+    ALL_POOL,
     ALL_STAGES,
-    INDEX_POOL_CONCURRENCY,
+    INDEX_POOL,
     POOL_NAMES,
     POOL_STAGES,
 )
@@ -23,6 +23,7 @@ from trove.logging_setup import append_run_log
 
 logger = logging.getLogger("trove.worker")
 POLL_SECONDS = 0.5
+MAX_POOL_RETRY_SECONDS = 10.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,11 +56,13 @@ def resolve_worker_pools(
     resolved: list[WorkerPool] = []
     for name in names:
         value = concurrency if concurrency is not None else config.worker_concurrency[name]
-        if value <= 0:
-            raise ConfigError("--concurrency must be a positive integer")
-        if name == "index":
-            value = INDEX_POOL_CONCURRENCY
-        resolved.append(WorkerPool(name=name, stages=POOL_STAGES[name], concurrency=value))
+        resolved.append(
+            WorkerPool(
+                name=name,
+                stages=POOL_STAGES[name],
+                concurrency=clamp_pool_concurrency(name, value),
+            )
+        )
     return resolved
 
 
@@ -67,18 +70,16 @@ def _custom_pool(stages: str, concurrency: int | None) -> WorkerPool:
     names = [item.strip() for item in stages.split(",") if item.strip()]
     if not names:
         raise ConfigError("--stages must list at least one stage")
-    unknown = sorted(set(names) - set(ALL_STAGES) - {"all"})
+    unknown = sorted(set(names) - set(ALL_STAGES) - {ALL_POOL})
     if unknown:
         raise ConfigError(
             f"Invalid stage: {', '.join(unknown)}; "
-            f"choose from: {', '.join(ALL_STAGES)}, all"
+            f"choose from: {', '.join(ALL_STAGES)}, {ALL_POOL}"
         )
-    selected = frozenset(ALL_STAGES) if "all" in names else frozenset(names)
+    selected = frozenset(ALL_STAGES) if ALL_POOL in names else frozenset(names)
     value = concurrency if concurrency is not None else 1
-    if value <= 0:
-        raise ConfigError("--concurrency must be a positive integer")
-    if selected == frozenset({STAGE_INDEXING}):
-        value = INDEX_POOL_CONCURRENCY
+    if selected == POOL_STAGES[INDEX_POOL]:
+        value = clamp_pool_concurrency(INDEX_POOL, value)
     return WorkerPool(name="custom", stages=selected, concurrency=value)
 
 
@@ -100,6 +101,7 @@ def run_worker(
     parent_pid = _parent_pid()
     ensure_migrated(runtime)
     verify_fts5(runtime.engine)
+    runtime.package.assert_supported_manifests()
     _reap_once(runtime)
     reaper_stop = threading.Event()
     reaper_thread = threading.Thread(
@@ -109,6 +111,7 @@ def run_worker(
         daemon=True,
     )
     reaper_thread.start()
+    _prune_stale_heartbeats(runtime)
     heartbeat = _Heartbeat(runtime, specs)
     heartbeat.refresh()
     workers: list[threading.Thread] = []
@@ -141,6 +144,7 @@ def run_worker(
                     "worker thread did not stop before the shutdown timeout; "
                     "its lease will be recovered by the reaper"
                 )
+        heartbeat.stop_leases()
         heartbeat.stop()
 
 
@@ -152,37 +156,51 @@ def _pool_loop(
     heartbeat: _Heartbeat,
 ) -> None:
     worker_id = f"worker-{os.getpid()}-{pool.name}-{index}"
+    retry_delay = POLL_SECONDS
     while not stop_event.is_set():
-        run_id = runtime.processing.claim_next(worker_id, stages=pool.stages)
-        if run_id is None:
-            stop_event.wait(POLL_SECONDS)
-            continue
-        heartbeat.busy(worker_id, pool.name, run_id)
-        heartbeat_stop = threading.Event()
-        heartbeat_thread = threading.Thread(
-            target=_heartbeat_loop,
-            args=(runtime, run_id, worker_id, heartbeat_stop),
-            name=f"trove-heartbeat-{run_id}",
-            daemon=True,
-        )
-        heartbeat_thread.start()
         try:
-            runtime.processing.process(run_id, worker_id)
-        except Exception:  # noqa: BLE001 - the worker must survive one bad run
-            logger.exception(
-                "worker failed while processing run", extra={"run_id": run_id}
+            run_id = runtime.processing.claim_next(worker_id, stages=pool.stages)
+            if run_id is None:
+                stop_event.wait(POLL_SECONDS)
+                retry_delay = POLL_SECONDS
+                continue
+            heartbeat.busy(worker_id, pool.name, run_id)
+            heartbeat_stop = threading.Event()
+            heartbeat.track_lease(heartbeat_stop)
+            heartbeat_thread = threading.Thread(
+                target=_heartbeat_loop,
+                args=(runtime, run_id, worker_id, heartbeat_stop),
+                name=f"trove-heartbeat-{run_id}",
+                daemon=True,
             )
-            append_run_log(
-                runtime.config, run_id, "worker crashed while processing", level="error"
-            )
+            heartbeat_thread.start()
             try:
-                runtime.processing.mark_worker_failure(run_id, worker_id)
+                runtime.processing.process(run_id, worker_id)
             except Exception:  # noqa: BLE001 - the worker must survive one bad run
-                logger.debug("failed to mark run failed", exc_info=True)
-        finally:
-            heartbeat_stop.set()
-            heartbeat_thread.join(timeout=2)
+                logger.exception(
+                    "worker failed while processing run", extra={"run_id": run_id}
+                )
+                append_run_log(
+                    runtime.config,
+                    run_id,
+                    "worker crashed while processing",
+                    level="error",
+                )
+                try:
+                    runtime.processing.mark_worker_failure(run_id, worker_id)
+                except Exception:  # noqa: BLE001 - the worker must survive one bad run
+                    logger.debug("failed to mark run failed", exc_info=True)
+            finally:
+                heartbeat_stop.set()
+                heartbeat.untrack_lease(heartbeat_stop)
+                heartbeat_thread.join(timeout=2)
+                heartbeat.idle(worker_id)
+            retry_delay = POLL_SECONDS
+        except Exception:  # noqa: BLE001 - one bad claim must not kill the pool
+            logger.exception("worker pool loop failed", extra={"pool": pool.name})
             heartbeat.idle(worker_id)
+            stop_event.wait(retry_delay)
+            retry_delay = min(retry_delay * 2, MAX_POOL_RETRY_SECONDS)
 
 
 class _Heartbeat:
@@ -191,6 +209,8 @@ class _Heartbeat:
         self._lock = threading.Lock()
         self._active: dict[str, tuple[str, str]] = {}
         self._concurrency = {pool.name: pool.concurrency for pool in pools}
+        self._stages = {pool.name: sorted(pool.stages) for pool in pools}
+        self._leases: set[threading.Event] = set()
         self._closed = False
 
     def busy(self, worker_id: str, pool_name: str, run_id: str) -> None:
@@ -206,6 +226,19 @@ class _Heartbeat:
     def refresh(self) -> None:
         with self._lock:
             self._write()
+
+    def track_lease(self, stop_event: threading.Event) -> None:
+        with self._lock:
+            self._leases.add(stop_event)
+
+    def untrack_lease(self, stop_event: threading.Event) -> None:
+        with self._lock:
+            self._leases.discard(stop_event)
+
+    def stop_leases(self) -> None:
+        with self._lock:
+            for stop_event in self._leases:
+                stop_event.set()
 
     def stop(self) -> None:
         with self._lock:
@@ -231,6 +264,7 @@ class _Heartbeat:
                     "concurrency": concurrency,
                     "active": len(active),
                     "run_id": active[0] if active else None,
+                    "stages": self._stages[name],
                 }
             )
         resolved_state = state or ("busy" if self._active else "idle")
@@ -278,7 +312,7 @@ def write_heartbeat(
     run_id: str | None = None,
     pools: list[dict[str, Any]] | None = None,
 ) -> None:
-    path = runtime.config.worker_heartbeat_path
+    path = runtime.config.cache_dir / f"worker-{os.getpid()}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "state": state,
@@ -294,13 +328,56 @@ def write_heartbeat(
 
 
 def read_heartbeat(config) -> dict[str, Any] | None:
-    path = config.worker_heartbeat_path
-    if not path.exists():
+    entries = read_heartbeats(config)
+    if not entries:
         return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
+    fresh = [entry for entry in entries if heartbeat_is_fresh(entry)]
+    selected = fresh or entries
+    newest = max(selected, key=_heartbeat_updated_at)
+    busy = next((entry for entry in selected if entry.get("state") == "busy"), None)
+    pid = busy.get("pid", newest.get("pid")) if busy is not None else newest.get("pid")
+    pools: list[dict[str, Any]] = []
+    for entry in selected:
+        pools.extend(entry.get("pools") or [])
+    return {
+        **newest,
+        "pid": pid,
+        "state": "busy" if busy is not None else newest.get("state"),
+        "run_id": busy.get("run_id") if busy is not None else newest.get("run_id"),
+        "pools": pools,
+    }
+
+
+def read_heartbeats(config) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for path in sorted(config.cache_dir.glob("worker*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _heartbeat_updated_at(payload: dict[str, Any]) -> int:
+    updated = payload.get("updated_at")
+    return updated if isinstance(updated, int) else 0
+
+
+def _prune_stale_heartbeats(runtime: Runtime) -> None:
+    cutoff = int(time.time() * 1000) - 7 * 24 * 60 * 60 * 1000
+    for path in runtime.config.cache_dir.glob("worker-*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(payload, dict)
+            and _heartbeat_updated_at(payload) < cutoff
+            and payload.get("pid") != os.getpid()
+        ):
+            path.unlink(missing_ok=True)
 
 
 def _parent_pid() -> int | None:
