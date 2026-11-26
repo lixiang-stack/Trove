@@ -10,10 +10,12 @@ cd "$root"
 
 project=${TROVE_SMOKE_PROJECT:-trove-smoke}
 export TROVE_IMAGE_TAG=${TROVE_IMAGE_TAG:-smoke}
+export TROVE_INSTALL_ASR=${TROVE_INSTALL_ASR:-false}
 export TROVE_PUBLISH_ADDRESS=127.0.0.1
 export TROVE_HOST_PORT=${TROVE_HOST_PORT:-18765}
+export TROVE_PASSWORD="trove-smoke-password"
 base_url="http://127.0.0.1:${TROVE_HOST_PORT}"
-password="trove-smoke-password"
+password="$TROVE_PASSWORD"
 cookie=$(mktemp)
 
 compose=(docker compose -p "$project" -f docker-compose.yml)
@@ -72,16 +74,11 @@ echo "Building and starting Trove (base image, EPUB smoke)..."
 "${compose[@]}" up -d --build
 wait_for_health
 
-# Copy through the Docker API instead of bind mounts so the smoke test also
-# works when the daemon is remote. The fixture lands on the shared data volume.
+# The entrypoint seeds ~/.config/trove from TROVE_PASSWORD and creates a
+# disabled LLM config. Copy the EPUB through the Docker API so the test also
+# works with a remote daemon.
 "${compose[@]}" exec -T api mkdir -p /data/fixtures
 "${compose[@]}" cp tests/fixtures/aesop.epub api:/data/fixtures/aesop.epub
-"${compose[@]}" cp tests/fixtures/llm-disabled.toml \
-  worker:/home/trove/.config/trove/llm.toml
-"${compose[@]}" restart worker >/dev/null
-wait_for_health
-
-printf '%s\n' "$password" | "${compose[@]}" exec -T api trove auth set-password --password-stdin
 login
 
 created=$(curl --fail --silent -b "$cookie" \

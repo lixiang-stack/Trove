@@ -35,14 +35,25 @@ in [docs/android.md](docs/android.md). The security regression checklist is in
 For a reproducible self-hosted install on Linux or macOS:
 
 ```bash
-docker compose up -d --build
-docker compose exec api trove auth set-password
+TROVE_PASSWORD='your-password' docker compose up -d --build
 open http://127.0.0.1:8765
 ```
 
-Data lives in the `trove-data` named volume. The default image has no ASR stack;
-build with `TROVE_INSTALL_ASR=true docker compose build` to transcribe. Split
-worker pools, ASR, TLS, backups, and cleanup are covered in
+Configuration lives in `~/.config/trove/` inside the containers, persisted in
+the `trove-config` volume (`password`, `llm.toml`); no `.env` file is needed.
+Change the password later by starting once with a new `TROVE_PASSWORD`. To enable
+summaries and tags, copy the host LLM config into the volume and restart:
+
+```bash
+docker compose exec -T worker sh -c \
+  'cat > /home/trove/.config/trove/llm.toml' < ~/.config/trove/llm.toml
+docker compose restart api worker
+```
+
+Data lives in the `trove-data` named volume. The default image includes ASR and
+`init` downloads the Paraformer model on first start; set
+`TROVE_INSTALL_ASR=false` for the small book-only image. Split worker pools, TLS,
+backups, and cleanup are covered in
 [docs/deployment.md#docker-compose](docs/deployment.md#docker-compose).
 
 ## Re-run ASR
@@ -61,7 +72,11 @@ The run is executed by the worker, so the worker must be running the same code/m
 
 ## Configuration
 
-Application secrets live in `~/Trove/.env`; Trove creates the file with `0600` permissions on first run. LLM settings live separately in `~/.config/trove/llm.toml`.
+For native installs, configuration lives in `~/.config/trove/`: `password` (used
+by `TROVE_PASSWORD_FILE`, or set `TROVE_PASSWORD`/`TROVE_PASSWORD_FILE` yourself)
+and `llm.toml`. Docker mounts the `trove-config` volume at the same container
+path. The data directory `~/Trove` holds the database, library, logs, and the
+generated `config.toml`.
 
 ### LLM configuration
 
