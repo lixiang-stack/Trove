@@ -1,0 +1,171 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="900" viewBox="0 0 1200 900" role="img" aria-labelledby="flow-title flow-desc" font-family="'PingFang SC','Hiragino Sans GB','Noto Sans CJK SC','Microsoft YaHei',sans-serif">
+  <title id="flow-title">Trove 核心流程</title>
+  <desc id="flow-desc">入库与处理：内容来源经 Add / Inspect 生成 Item 或 Collection，再排队执行下载、抽取、转写、可选整理和索引。消费与检索：浏览器或 Android 通过 API 读取内容和 FTS5 索引，进度写回 Host，Continue 和搜索命中定位到逐字稿或书本章节。重新转写与整理：Item 或 Collection 从指定阶段排队，复用已有音频，重新生成逐字稿、摘要和 Tag，并重建索引。</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-optional" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b5462f"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="900" fill="#ffffff"/>
+  <text x="40" y="46" font-size="24" font-weight="700" fill="#0f172a">Trove 核心流程</text>
+  <text x="40" y="70" font-size="13" fill="#64748b">入库处理、消费检索、重新转写三条主链路</text>
+
+  <g font-size="12" fill="#475569">
+    <line x1="880" y1="42" x2="918" y2="42" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="928" y="46">主链路</text>
+    <line x1="1000" y1="42" x2="1038" y2="42" stroke="#b5462f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-optional)"/>
+    <text x="1048" y="46">可选</text>
+  </g>
+
+  <!-- 1. 入库与处理 -->
+  <rect x="30" y="88" width="1140" height="232" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="54" y="118" font-size="15" font-weight="700" fill="#334155">① 入库与处理</text>
+
+  <rect x="60" y="150" width="180" height="110" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="78" y="180" font-size="16" font-weight="700" fill="#1e3a8a">内容来源</text>
+  <text x="78" y="206" font-size="12.5" fill="#1e3a8a">B 站 / YouTube</text>
+  <text x="78" y="228" font-size="12.5" fill="#1e3a8a">播客 RSS / EPUB</text>
+  <text x="78" y="250" font-size="12.5" fill="#1e3a8a">本地路径 / 上传</text>
+
+  <rect x="270" y="150" width="180" height="110" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="288" y="180" font-size="16" font-weight="700" fill="#1e3a8a">Add / Inspect</text>
+  <text x="288" y="206" font-size="12.5" fill="#1e3a8a">预览元数据</text>
+  <text x="288" y="228" font-size="12.5" fill="#1e3a8a">确认后才入库</text>
+
+  <rect x="480" y="150" width="180" height="110" rx="12" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
+  <text x="498" y="180" font-size="16" font-weight="700" fill="#065f46">Item / Collection</text>
+  <text x="498" y="206" font-size="12.5" fill="#065f46">生成 Processing Run</text>
+  <text x="498" y="228" font-size="12.5" fill="#065f46">按阶段建 StageTask</text>
+
+  <rect x="700" y="140" width="440" height="130" rx="12" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="720" y="168" font-size="14" font-weight="700" fill="#334155">处理阶段</text>
+
+  <g>
+    <rect x="720" y="184" width="72" height="70" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+    <text x="730" y="208" font-size="12.5" font-weight="700" fill="#1e3a8a">下载</text>
+    <text x="730" y="230" font-size="10.5" fill="#1d4ed8">视频 / RSS</text>
+  </g>
+  <g>
+    <rect x="802" y="184" width="72" height="70" rx="8" fill="#f0f9ff" stroke="#38bdf8" stroke-width="1.2"/>
+    <text x="812" y="208" font-size="12.5" font-weight="700" fill="#075985">抽取</text>
+    <text x="812" y="230" font-size="10.5" fill="#0369a1">音频 / 文本</text>
+  </g>
+  <g>
+    <rect x="884" y="184" width="72" height="70" rx="8" fill="#ecfdf5" stroke="#34d399" stroke-width="1.2"/>
+    <text x="894" y="208" font-size="12.5" font-weight="700" fill="#065f46">转写</text>
+    <text x="894" y="230" font-size="10.5" fill="#047857">FunASR</text>
+  </g>
+  <g>
+    <rect x="966" y="184" width="72" height="70" rx="8" fill="#fdf2f8" stroke="#f472b6" stroke-width="1.2" stroke-dasharray="5 3"/>
+    <text x="976" y="208" font-size="12.5" font-weight="700" fill="#9d174d">整理*</text>
+    <text x="976" y="230" font-size="10.5" fill="#9d174d">LLM 可选</text>
+  </g>
+  <g>
+    <rect x="1048" y="184" width="72" height="70" rx="8" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.2"/>
+    <text x="1058" y="208" font-size="12.5" font-weight="700" fill="#5b21b6">索引</text>
+    <text x="1058" y="230" font-size="10.5" fill="#6d28d9">FTS5</text>
+  </g>
+
+  <g stroke="#64748b" stroke-width="1.8" fill="none">
+    <line x1="792" y1="219" x2="802" y2="219" marker-end="url(#arrow)"/>
+    <line x1="874" y1="219" x2="884" y2="219" marker-end="url(#arrow)"/>
+    <line x1="956" y1="219" x2="966" y2="219" marker-end="url(#arrow)"/>
+    <line x1="1038" y1="219" x2="1048" y2="219" marker-end="url(#arrow)"/>
+  </g>
+
+  <g stroke="#64748b" stroke-width="2" fill="none">
+    <line x1="240" y1="205" x2="270" y2="205" marker-end="url(#arrow)"/>
+    <line x1="450" y1="205" x2="480" y2="205" marker-end="url(#arrow)"/>
+    <line x1="660" y1="205" x2="700" y2="205" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="11.5" fill="#475569" text-anchor="middle">
+    <text x="255" y="190">链接</text>
+    <text x="465" y="190">入库</text>
+    <text x="680" y="190">排队</text>
+  </g>
+  <text x="60" y="300" font-size="12" fill="#64748b">产物写入 Content Package 和 FTS5；失败按 30s / 2m / 10m 退避，耗尽进入 dead letter。</text>
+
+  <!-- 2. 消费与检索 -->
+  <rect x="30" y="336" width="1140" height="232" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="54" y="366" font-size="15" font-weight="700" fill="#334155">② 消费与检索</text>
+
+  <rect x="60" y="398" width="180" height="110" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="78" y="428" font-size="16" font-weight="700" fill="#1e3a8a">浏览器 / Android</text>
+  <text x="78" y="454" font-size="12.5" fill="#1e3a8a">播放 / 阅读 / 搜索</text>
+  <text x="78" y="476" font-size="12.5" fill="#1e3a8a">Continue</text>
+
+  <rect x="280" y="398" width="180" height="110" rx="12" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
+  <text x="298" y="428" font-size="16" font-weight="700" fill="#065f46">API</text>
+  <text x="298" y="454" font-size="12.5" fill="#065f46">/api · 认证</text>
+  <text x="298" y="476" font-size="12.5" fill="#065f46">进度写回</text>
+
+  <rect x="500" y="398" width="240" height="110" rx="12" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="518" y="428" font-size="16" font-weight="700" fill="#5b21b6">Content + FTS5</text>
+  <text x="518" y="454" font-size="12.5" fill="#4c1d95">音频 / 逐字稿 / 书</text>
+  <text x="518" y="476" font-size="12.5" fill="#4c1d95">全文索引</text>
+
+  <rect x="780" y="398" width="240" height="110" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="798" y="428" font-size="16" font-weight="700" fill="#1e3a8a">Continue / Search</text>
+  <text x="798" y="454" font-size="12.5" fill="#1e3a8a">断点续播 / 阅读位置</text>
+  <text x="798" y="476" font-size="12.5" fill="#1e3a8a">跳到逐字稿或章节</text>
+
+  <g stroke="#64748b" stroke-width="2" fill="none">
+    <line x1="240" y1="453" x2="280" y2="453" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <line x1="460" y1="453" x2="500" y2="453" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+    <line x1="740" y1="453" x2="780" y2="453" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="11.5" fill="#475569" text-anchor="middle">
+    <text x="260" y="388">HTTP /api</text>
+    <text x="480" y="388">媒体 / 文本</text>
+    <text x="760" y="388">进度 / 搜索</text>
+  </g>
+  <text x="60" y="548" font-size="12" fill="#64748b">播放进度和阅读位置写回 Host；搜索命中直接跳到逐字稿分段或书本章节。</text>
+
+  <!-- 3. 重新转写与整理 -->
+  <rect x="30" y="584" width="1140" height="232" rx="16" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+  <text x="54" y="614" font-size="15" font-weight="700" fill="#334155">③ 重新转写与整理</text>
+
+  <rect x="60" y="670" width="200" height="110" rx="12" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="78" y="700" font-size="16" font-weight="700" fill="#1e3a8a">Item / Collection</text>
+  <text x="78" y="726" font-size="12.5" fill="#1e3a8a">重新转写</text>
+  <text x="78" y="748" font-size="12.5" fill="#1e3a8a">重新整理</text>
+
+  <rect x="300" y="670" width="200" height="110" rx="12" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
+  <text x="318" y="700" font-size="16" font-weight="700" fill="#065f46">Processing Run</text>
+  <text x="318" y="726" font-size="12.5" fill="#065f46">from_stage</text>
+  <text x="318" y="748" font-size="12.5" fill="#065f46">transcribing / organizing</text>
+
+  <rect x="540" y="670" width="220" height="110" rx="12" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="558" y="700" font-size="16" font-weight="700" fill="#9a3412">复用产物</text>
+  <text x="558" y="726" font-size="12.5" fill="#7c2d12">已有 audio.m4a</text>
+  <text x="558" y="748" font-size="12.5" fill="#7c2d12">不重新下载</text>
+
+  <rect x="800" y="670" width="220" height="110" rx="12" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="818" y="700" font-size="16" font-weight="700" fill="#5b21b6">重新生成</text>
+  <text x="818" y="726" font-size="12.5" fill="#4c1d95">逐字稿 / 摘要 / Tag</text>
+  <text x="818" y="748" font-size="12.5" fill="#4c1d95">覆盖旧结果</text>
+
+  <rect x="1060" y="670" width="110" height="110" rx="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="1078" y="700" font-size="16" font-weight="700" fill="#334155">索引</text>
+  <text x="1078" y="726" font-size="12.5" fill="#334155">FTS5</text>
+  <text x="1078" y="748" font-size="12.5" fill="#334155">重建</text>
+
+  <g stroke="#64748b" stroke-width="2" fill="none">
+    <line x1="260" y1="725" x2="300" y2="725" marker-end="url(#arrow)"/>
+    <line x1="500" y1="725" x2="540" y2="725" marker-end="url(#arrow)"/>
+    <line x1="760" y1="725" x2="800" y2="725" marker-end="url(#arrow)"/>
+    <line x1="1020" y1="725" x2="1060" y2="725" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="11.5" fill="#475569" text-anchor="middle">
+    <text x="280" y="654">排队 Run</text>
+    <text x="520" y="654">复用音频</text>
+    <text x="780" y="654">覆盖旧结果</text>
+    <text x="1040" y="654">重建</text>
+  </g>
+  <text x="60" y="800" font-size="12" fill="#64748b">Run 由 worker 执行；worker 必须运行同一份代码和模型。--reset-ai-tags 只删除并重建 AI Tag。</text>
+</svg>
