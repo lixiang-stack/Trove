@@ -15,7 +15,7 @@ ERROR: [youtube] ...: Sign in to confirm you're not a bot.
 Use --cookies-from-browser or --cookies for the authentication.
 ```
 
-Trove 当前通过 `TROVE_YTDLP_COOKIES` 指定一个 Netscape 格式的 cookie 文件，yt-dlp 下载和链接检查都会带 `--cookies`。这个方案能用，但文件是某一时刻的快照：Google 会轮换 cookie，文件过期后必须重新导出。
+Trove 当前通过 `~/Trove/config.toml` 的 `[intake] ytdlp_cookies` 指定一个 Netscape 格式的 cookie 文件，yt-dlp 下载和链接检查都会带 `--cookies`。这个方案能用，但文件是某一时刻的快照：Google 会轮换 cookie，文件过期后必须重新导出。
 
 目标不是“自动填 Google 账号密码”，而是：
 
@@ -28,10 +28,10 @@ Trove 当前通过 `TROVE_YTDLP_COOKIES` 指定一个 Netscape 格式的 cookie 
 
 ## 现状
 
-- `src/trove/config.py` 已有 `ytdlp_cookies`，读取 `TROVE_YTDLP_COOKIES`。
+- `src/trove/config.py` 已有 `ytdlp_cookies`，读取 `~/Trove/config.toml` 的 `[intake] ytdlp_cookies`。
 - `src/trove/adapters/downloader.py` 和 `src/trove/adapters/video_inspect.py` 已有 `--cookies` 分支。
-- 目前没有 `--cookies-from-browser` 配置，也没有 `trove youtube ...` 命令。
-- 本文中的 Trove 命令、环境变量和目录都是提案，尚未实现。
+- 目前没有 `ytdlp_cookies_from_browser` 配置，也没有 `trove youtube ...` 命令。
+- 本文中的 Trove 命令、配置项和目录都是提案，尚未实现。
 
 ---
 
@@ -123,10 +123,11 @@ Chrome 的注意点：
 
 ### Trove 接入（待实现）
 
-建议增加一个配置项，和现有 `--cookies` 文件互斥、浏览器 profile 优先：
+建议增加一个配置项，和现有 `[intake] ytdlp_cookies` 文件互斥、浏览器 profile 优先：
 
-```bash
-TROVE_YTDLP_COOKIES_FROM_BROWSER="firefox:/Users/you/Trove/browser/youtube"  # 示例路径
+```toml
+[intake]
+ytdlp_cookies_from_browser = "firefox:/Users/you/Trove/browser/youtube"  # 示例路径
 ```
 
 在 `downloader.py` 和 `video_inspect.py` 中：
@@ -262,8 +263,9 @@ docker run -d --name cookiecloud --restart unless-stopped \
 
 Trove 继续使用现有配置：
 
-```bash
-export TROVE_YTDLP_COOKIES="$HOME/Trove/youtube-cookies.txt"
+```toml
+[intake]
+ytdlp_cookies = "~/Trove/youtube-cookies.txt"
 ```
 
 ### Trove 接入（待实现）

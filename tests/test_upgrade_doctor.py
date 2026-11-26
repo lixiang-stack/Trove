@@ -19,7 +19,7 @@ from trove import __version__
 from trove.app import create_app
 from trove.cli import main
 from trove.composition import build_runtime
-from trove.config import Config
+from trove.config import Config, load_config, prepare_home
 from trove.content_package import ContentPackage
 from trove.db.engine import (
     _alembic_config,
@@ -42,25 +42,24 @@ def _free_port() -> int:
 
 
 def _configured_home(tmp_path, monkeypatch, *, migrate: bool = True) -> Config:
-    config = Config(home=tmp_path / "Trove", port=_free_port())
-    config.ensure_layout()
+    home = tmp_path / "Trove"
+    prepare_home(home, default_port=_free_port())
+    config = load_config(home=home)
     if migrate:
         upgrade_database(config)
     config.set_password(PASSWORD)
-    monkeypatch.setenv("TROVE_HOME", str(config.home))
-    monkeypatch.setenv("TROVE_PORT", str(config.port))
     return config
 
 
-def _doctor_payload(capsys) -> tuple[int, dict]:
-    code = main(["doctor", "--json"])
+def _doctor_payload(capsys, home) -> tuple[int, dict]:
+    code = main(["--home", str(home), "doctor", "--json"])
     return code, json.loads(capsys.readouterr().out)
 
 
 def test_doctor_json_has_a_stable_schema(tmp_path, monkeypatch, capsys):
-    _configured_home(tmp_path, monkeypatch)
+    config = _configured_home(tmp_path, monkeypatch)
 
-    code, payload = _doctor_payload(capsys)
+    code, payload = _doctor_payload(capsys, config.home)
 
     assert set(payload) == {"ok", "checks", "versions"}
     assert isinstance(payload["ok"], bool)
@@ -97,12 +96,12 @@ def test_doctor_json_has_a_stable_schema(tmp_path, monkeypatch, capsys):
 def test_doctor_json_completes_when_tools_and_model_are_missing(
     tmp_path, monkeypatch, capsys
 ):
-    _configured_home(tmp_path, monkeypatch)
+    config = _configured_home(tmp_path, monkeypatch)
     monkeypatch.setattr("shutil.which", lambda name: None)
     monkeypatch.setattr("trove.cli._ytdlp_version", lambda path: None)
     monkeypatch.setattr("trove.adapters.asr.funasr_installed", lambda: False)
 
-    code, payload = _doctor_payload(capsys)
+    code, payload = _doctor_payload(capsys, config.home)
 
     assert code == 1
     assert payload["ok"] is False
@@ -115,9 +114,9 @@ def test_doctor_json_completes_when_tools_and_model_are_missing(
 
 
 def test_doctor_json_reports_an_unmigrated_database(tmp_path, monkeypatch, capsys):
-    _configured_home(tmp_path, monkeypatch, migrate=False)
+    config = _configured_home(tmp_path, monkeypatch, migrate=False)
 
-    code, payload = _doctor_payload(capsys)
+    code, payload = _doctor_payload(capsys, config.home)
 
     checks = {entry["name"]: entry for entry in payload["checks"]}
     assert code == 1
@@ -129,11 +128,11 @@ def test_doctor_json_reports_an_unmigrated_database(tmp_path, monkeypatch, capsy
 def test_doctor_json_is_valid_jq(tmp_path, monkeypatch):
     if shutil.which("jq") is None:
         pytest.skip("jq is not installed")
-    _configured_home(tmp_path, monkeypatch)
+    config = _configured_home(tmp_path, monkeypatch)
 
     result = subprocess.run(
         ["jq", "-e", ".ok and (.checks | length > 0)"],
-        input=_doctor_payload_stdout(),
+        input=_doctor_payload_stdout(config.home),
         text=True,
         capture_output=True,
         check=False,
@@ -143,10 +142,10 @@ def test_doctor_json_is_valid_jq(tmp_path, monkeypatch):
     assert result.stderr == ""
 
 
-def _doctor_payload_stdout() -> str:
+def _doctor_payload_stdout(home) -> str:
     buffer = StringIO()
     with contextlib.redirect_stdout(buffer):
-        main(["doctor", "--json"])
+        main(["--home", str(home), "doctor", "--json"])
     return buffer.getvalue()
 
 
@@ -170,7 +169,7 @@ def test_db_upgrade_backs_up_and_reports_the_previous_revision(
     config = _configured_home(tmp_path, monkeypatch, migrate=False)
     command.upgrade(_alembic_config(config), "0008_run_force")
 
-    code = main(["db", "upgrade"])
+    code = main(["--home", str(config.home), "db", "upgrade"])
     output = capsys.readouterr().out
 
     assert code == 0
@@ -202,7 +201,7 @@ def test_db_upgrade_failure_keeps_the_backup_and_prints_the_restore_command(
 
     monkeypatch.setattr("trove.db.engine.command.upgrade", fail)
 
-    code = main(["db", "upgrade"])
+    code = main(["--home", str(config.home), "db", "upgrade"])
     error = capsys.readouterr().err
 
     assert code == 1
@@ -250,9 +249,9 @@ def test_old_database_upgrades_to_head_and_doctor_passes(
         ),
     )
 
-    assert main(["db", "upgrade"]) == 0
+    assert main(["--home", str(config.home), "db", "upgrade"]) == 0
     capsys.readouterr()
-    code, payload = _doctor_payload(capsys)
+    code, payload = _doctor_payload(capsys, config.home)
 
     assert code == 0
     assert payload["ok"] is True
@@ -339,7 +338,7 @@ def test_unsupported_manifest_is_reported_by_doctor(tmp_path, monkeypatch, capsy
     _unsupported_manifest(config)
     assert ContentPackage(config).incompatible_manifests()
 
-    code, payload = _doctor_payload(capsys)
+    code, payload = _doctor_payload(capsys, config.home)
 
     checks = {entry["name"]: entry for entry in payload["checks"]}
     assert code == 1

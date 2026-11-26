@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from trove.config import LLMConfig, default_llm_config_path
+from trove.config import CONFIG_FILENAME, DEFAULT_HOME, LLMConfig
 from trove.domain.cache import AiCacheIdentity
 from trove.domain.organization import (
     MAX_EXISTING_TAGS,
@@ -65,8 +65,8 @@ class OrganizationWorkflow:
         if not (llm.model and llm.base_url and llm.api_key):
             raise ProcessingError(
                 "llm.not_configured",
-                "LLM is not configured; set model, base_url, and api_key in "
-                f"{default_llm_config_path()}",
+                "LLM is not configured; set [llm] model, base_url, and api_key in "
+                f"{DEFAULT_HOME / CONFIG_FILENAME}",
             )
         body = (text or "").strip()
         if not body:

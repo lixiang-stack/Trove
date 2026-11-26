@@ -13,9 +13,8 @@ export TROVE_IMAGE_TAG=${TROVE_IMAGE_TAG:-smoke}
 export TROVE_INSTALL_ASR=${TROVE_INSTALL_ASR:-false}
 export TROVE_PUBLISH_ADDRESS=127.0.0.1
 export TROVE_HOST_PORT=${TROVE_HOST_PORT:-18765}
-export TROVE_PASSWORD="trove-smoke-password"
 base_url="http://127.0.0.1:${TROVE_HOST_PORT}"
-password="$TROVE_PASSWORD"
+password="trove-smoke-password"
 cookie=$(mktemp)
 
 compose=(docker compose -p "$project" -f docker-compose.yml)
@@ -73,17 +72,19 @@ verify_item() {
 echo "Building and starting Trove (base image, EPUB smoke)..."
 "${compose[@]}" up -d --build
 wait_for_health
+printf '%s\n' "$password" \
+  | "${compose[@]}" exec -T api trove auth set-password --password-stdin
 
-# The entrypoint seeds ~/.config/trove from TROVE_PASSWORD and creates a
-# disabled LLM config. Copy the EPUB through the Docker API so the test also
-# works with a remote daemon.
-"${compose[@]}" exec -T api mkdir -p /data/fixtures
-"${compose[@]}" cp tests/fixtures/aesop.epub api:/data/fixtures/aesop.epub
+# Copy the EPUB through the Docker API so the test also works with a remote
+# daemon.
+"${compose[@]}" exec -T api mkdir -p /home/trove/Trove/fixtures
+"${compose[@]}" cp tests/fixtures/aesop.epub \
+  api:/home/trove/Trove/fixtures/aesop.epub
 login
 
 created=$(curl --fail --silent -b "$cookie" \
   -H 'content-type: application/json' \
-  -d '{"kind":"path","path":"/data/fixtures/aesop.epub"}' \
+  -d '{"kind":"path","path":"/home/trove/Trove/fixtures/aesop.epub"}' \
   "$base_url/api/items")
 item_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["item"]["id"])' <<<"$created")
 wait_for_item "$item_id"

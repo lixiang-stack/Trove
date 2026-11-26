@@ -17,9 +17,26 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     assert "ARG INSTALL_ASR=true" in dockerfile
     assert "uv sync" in dockerfile and "--extra asr" in dockerfile
     assert "USER trove" in dockerfile
-    assert "TROVE_HOME=/data" in dockerfile
+    assert "TROVE_HOME=" not in dockerfile
+    assert 'VOLUME ["/home/trove/Trove"]' in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "EXPOSE 8765" in dockerfile
+
+
+def test_dockerfile_keeps_build_metadata_out_of_cached_layers():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    # Build metadata changes on every release; keep it after apt and the app
+    # copy so those layers stay cached.
+    assert dockerfile.index("RUN apt-get update") < dockerfile.index(
+        "ARG TROVE_BUILD_COMMIT"
+    )
+    assert dockerfile.index("COPY --from=builder") < dockerfile.index(
+        "ARG TROVE_BUILD_COMMIT"
+    )
+    assert dockerfile.index("ARG TROVE_BUILD_COMMIT") < dockerfile.index(
+        "MODELSCOPE_CACHE"
+    )
 
 
 def test_dockerignore_excludes_local_and_secret_state():
@@ -41,7 +58,8 @@ def test_compose_publishes_only_loopback_and_keeps_named_data():
     assert "worker-asr" in compose and "worker-download" in compose
     assert "profiles:" in compose
     assert "api_key" not in compose
-    assert "trove-config:" in compose
+    assert "trove-config:" not in compose
+    assert "TROVE_PASSWORD" not in compose
     assert "stop_grace_period: 45s" in compose
 
 
@@ -50,7 +68,13 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
     bin_dir.mkdir()
     log = tmp_path / "calls.log"
     (bin_dir / "trove").write_text(
-        f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {log}\n", encoding="utf-8"
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {log}\n"
+        'if [ "$1" = "config" ] && [ "$2" = "init" ]; then\n'
+        '  mkdir -p "$HOME/Trove"\n'
+        '  printf \'[server]\\nhost = "0.0.0.0"\\n\' > "$HOME/Trove/config.toml"\n'
+        "fi\n",
+        encoding="utf-8",
     )
     (bin_dir / "python").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
     for name in ("trove", "python"):
@@ -62,7 +86,6 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
     environment = {
         "PATH": f"{bin_dir}:/usr/bin:/bin",
         "HOME": str(home),
-        "TROVE_PASSWORD": "test-password",
     }
 
     subprocess.run(
@@ -79,14 +102,14 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
     )
 
     assert log.read_text(encoding="utf-8").splitlines() == [
+        "config init --host 0.0.0.0",
         "db upgrade",
         "doctor --json",
     ]
-    config_dir = home / ".config" / "trove"
-    assert (config_dir / "password").read_text(encoding="utf-8").strip() == (
-        "test-password"
+    assert (home / "Trove" / "config.toml").read_text(encoding="utf-8") == (
+        '[server]\nhost = "0.0.0.0"\n'
     )
-    assert (config_dir / "llm.toml").read_text(encoding="utf-8") == "enabled = false\n"
+    assert not (home / ".config" / "trove").exists()
 
 
 def _compose_config():
@@ -129,8 +152,8 @@ def test_compose_config_declares_the_expected_contract():
         "service_completed_successfully"
     )
     assert "trove-data" in config["volumes"]
-    assert {"/data", "/home/trove/.config/trove"} <= {
+    assert "/home/trove/Trove" in {
         volume["target"] for volume in services["api"]["volumes"]
     }
-    assert "TROVE_PASSWORD" in services["api"]["environment"]
-    assert "trove-config" in config["volumes"]
+    assert "TROVE_PASSWORD" not in services["api"]["environment"]
+    assert "trove-config" not in config["volumes"]

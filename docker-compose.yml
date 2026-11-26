@@ -1,17 +1,13 @@
 name: trove
 
 x-trove-environment: &trove-environment
-  TROVE_HOME: /data
-  TROVE_BIND: 0.0.0.0
-  TROVE_PASSWORD: "${TROVE_PASSWORD:-}"
-  MODELSCOPE_CACHE: /data/models
+  MODELSCOPE_CACHE: /home/trove/Trove/models
 
 x-trove-service: &trove-service
   image: trove:${TROVE_IMAGE_TAG:-local}
   environment: *trove-environment
   volumes:
-    - trove-data:/data
-    - trove-config:/home/trove/.config/trove
+    - trove-data:/home/trove/Trove
   restart: unless-stopped
 
 services:
@@ -30,7 +26,7 @@ services:
 
   api:
     <<: *trove-service
-    command: ["serve", "--no-worker", "--host", "0.0.0.0"]
+    command: ["serve", "--no-worker"]
     ports:
       - "${TROVE_PUBLISH_ADDRESS:-127.0.0.1}:${TROVE_HOST_PORT:-8765}:8765"
     depends_on:
@@ -118,6 +114,5 @@ services:
 
 volumes:
   trove-data:
-  trove-config:
   caddy-data:
   caddy-config:

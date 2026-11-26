@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Create a long silent audio Item in a TROVE_HOME for playback acceptance."""
+"""Create a long silent audio Item in a throwaway data directory."""
 
 from __future__ import annotations
 
 import argparse
-import os
 import shutil
 import subprocess
 import sys
@@ -54,16 +53,8 @@ def main() -> int:
     if args.seconds < 1:
         parser.error("--seconds must be positive")
 
-    home = args.home
-    if home is None:
-        env_home = os.environ.get("TROVE_HOME")
-        if not env_home:
-            raise SystemExit("set TROVE_HOME or pass --home")
-        home = Path(env_home)
-    home = home.expanduser().resolve()
-    os.environ["TROVE_HOME"] = str(home)
-    config = load_config()
-    config.ensure_layout()
+    config = load_config(home=args.home)
+    home = config.home
     audio = home / f"playback-{args.seconds}s.m4a"
     if not audio.is_file():
         generate_audio(audio, args.seconds)

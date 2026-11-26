@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -24,9 +23,7 @@ from trove.web.templating import STATIC_DIR
 
 def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
     config.ensure_layout()
-    configure_logging(
-        config, console=os.environ.get("TROVE_LOG_CONSOLE", "1") not in {"0", "false"}
-    )
+    configure_logging(config, console=config.log_console)
     runtime = build_runtime(config, ports)
 
     @asynccontextmanager

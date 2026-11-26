@@ -2,7 +2,7 @@
 # Point the latest debug app at the real local Host over USB.
 #
 # This does not create a temporary Host, copy the database, or seed data.
-# Start the real Host first (TROVE_HOME defaults to ~/Trove):
+# Start the real Host first (data directory defaults to ~/Trove):
 #   uv run trove serve
 set -euo pipefail
 

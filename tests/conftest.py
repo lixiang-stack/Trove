@@ -81,11 +81,15 @@ class Host:
 
 
 @pytest.fixture(autouse=True)
-def _clean_environment(monkeypatch):
-    monkeypatch.delenv("TROVE_HOME", raising=False)
-    monkeypatch.delenv("TROVE_PASSWORD", raising=False)
-    monkeypatch.delenv("TROVE_PASSWORD_FILE", raising=False)
-    monkeypatch.setenv("TROVE_LOG_CONSOLE", "0")
+def _clean_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name in (
+        "TROVE_HOME",
+        "TROVE_PASSWORD",
+        "TROVE_PASSWORD_FILE",
+        "TROVE_LOG_CONSOLE",
+    ):
+        monkeypatch.delenv(name, raising=False)
     yield
 
 
@@ -108,6 +112,7 @@ def host_factory(tmp_path, fake_stack):
     ) -> Host:
         stack = stack or fake_stack
         config = Config(home=tmp_path / home_name)
+        config.log_console = False
         config.ensure_layout()
         if configure_password:
             config.set_password(password)

@@ -28,6 +28,7 @@ def test_layout_permissions_and_idempotence(tmp_path):
         assert directory.is_dir()
         assert directory.stat().st_mode & 0o777 == 0o700
     assert config.config_path.stat().st_mode & 0o777 == 0o600
+    assert config.state_path.stat().st_mode & 0o777 == 0o600
     secret = config.session_secret
     config.ensure_layout()
     assert config.session_secret == secret
@@ -91,9 +92,8 @@ def test_doctor_reports_missing_tools(tmp_path, monkeypatch, capsys):
     config.ensure_layout()
     upgrade_database(config)
     config.set_password(PASSWORD)
-    monkeypatch.setenv("TROVE_HOME", str(config.home))
     monkeypatch.setattr("shutil.which", lambda name: None)
-    code = main(["doctor"])
+    code = main(["--home", str(config.home), "doctor"])
     output = capsys.readouterr().out
     assert code == 1
     assert " brew install ffmpeg" in output
@@ -117,7 +117,6 @@ def test_serve_starts_embedded_worker_by_default(tmp_path, monkeypatch):
     config = Config(home=tmp_path / "Trove")
     config.ensure_layout()
     upgrade_database(config)
-    monkeypatch.setenv("TROVE_HOME", str(config.home))
     started: list[object] = []
 
     def fake_start(config):
@@ -126,10 +125,23 @@ def test_serve_starts_embedded_worker_by_default(tmp_path, monkeypatch):
 
     monkeypatch.setattr("trove.cli._start_worker_child", fake_start)
     monkeypatch.setattr("uvicorn.run", lambda *args, **kwargs: None)
-    assert main(["serve", "--host", "127.0.0.1", "--port", "8765"]) == 0
+    assert (
+        main(
+            [
+                "--home",
+                str(config.home),
+                "serve",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8765",
+            ]
+        )
+        == 0
+    )
     assert started
     started.clear()
-    assert main(["serve", "--no-worker"]) == 0
+    assert main(["--home", str(config.home), "serve", "--no-worker"]) == 0
     assert started == []
 
 

@@ -132,17 +132,17 @@ def test_cookie_session_still_works_and_devices_are_listed(api_host):
     assert "token_hash" not in devices[0]
 
 
-def test_device_cli_lists_and_revokes(api_host, monkeypatch, capsys):
+def test_device_cli_lists_and_revokes(api_host, capsys):
     device = _device_token(api_host)
-    monkeypatch.setenv("TROVE_HOME", str(api_host.config.home))
+    home = str(api_host.config.home)
 
-    assert main(["device", "list", "--json"]) == 0
+    assert main(["--home", home, "device", "list", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["devices"][0]["device_id"] == device["device_id"]
 
-    assert main(["device", "revoke", device["device_id"]]) == 0
+    assert main(["--home", home, "device", "revoke", device["device_id"]]) == 0
     capsys.readouterr()
-    assert main(["device", "list", "--json"]) == 0
+    assert main(["--home", home, "device", "list", "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["devices"][0]["revoked_at"] is not None
 

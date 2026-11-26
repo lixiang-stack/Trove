@@ -39,8 +39,8 @@ if [ "$worker" -eq 0 ]; then
   worker_args="--no-worker"
 fi
 
-TROVE_HOME="$home" TROVE_LOG_CONSOLE=0 \
-  "$root/.venv/bin/trove" serve $worker_args --host 127.0.0.1 --port "$port" \
+"$root/.venv/bin/trove" --home "$home" --no-log-console \
+  serve $worker_args --host 127.0.0.1 --port "$port" \
   >"$home/server.log" 2>&1 &
 echo $! >"$home/server.pid"
 
