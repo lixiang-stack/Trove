@@ -125,7 +125,7 @@ class ProcessingService:
 
     def _worker(self, worker_id: str | None) -> str:
         if worker_id is not None:
-            self._worker_id = worker_id
+            return worker_id
         if self._worker_id is None:
             self._worker_id = f"worker-{uuid.uuid4().hex[:12]}"
         return self._worker_id

@@ -63,6 +63,7 @@ separate protocol. `api/runs.py` is the one remaining handler that reads
 | New JSON endpoint | `web/api/<resource>.py` |
 | Processing stage handler / artifact install | `services/stages/` + `services/artifacts.py`; `services/run_coordinator.py` owns Run and StageTask lifecycle, leases, and reaping |
 | Stage retry policy / backoff / dead letters | `domain/retry.py` + `services/run_coordinator.py` |
+| Worker pools / concurrency / shutdown | `domain/worker_pools.py` + `worker.py` + `config.py`; launchd rendering in `deploy.py` |
 | External-call cache (LLM/ASR) | `domain/cache.py` + `services/stages/organize.py` + `services/stages/transcribe.py`; keys live in `ai.json`/`transcript.json` and `AiResult` |
 | Link classification / inspection | `domain/urls.py` + `domain/links.py` + `services/inspect.py` + `adapters/video_inspect.py` |
 | Collection aggregate / membership | `services/collections.py` + `db/models.py` (Collection, Item.collection_*) |

@@ -56,11 +56,13 @@ def health(request: Request):
             "state": heartbeat.get("state"),
             "run_id": heartbeat.get("run_id"),
             "updated_at": heartbeat.get("updated_at"),
+            "pools": heartbeat.get("pools", []),
         }
     else:
         status["worker"] = {
             "status": "stale",
             "state": heartbeat.get("state"),
             "updated_at": heartbeat.get("updated_at"),
+            "pools": heartbeat.get("pools", []),
         }
     return JSONResponse(status, status_code=overall)
