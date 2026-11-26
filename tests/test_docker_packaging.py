@@ -23,6 +23,22 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     assert "EXPOSE 8765" in dockerfile
 
 
+def test_dockerfile_keeps_build_metadata_out_of_cached_layers():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+
+    # Build metadata changes on every release; keep it after apt and the app
+    # copy so those layers stay cached.
+    assert dockerfile.index("RUN apt-get update") < dockerfile.index(
+        "ARG TROVE_BUILD_COMMIT"
+    )
+    assert dockerfile.index("COPY --from=builder") < dockerfile.index(
+        "ARG TROVE_BUILD_COMMIT"
+    )
+    assert dockerfile.index("ARG TROVE_BUILD_COMMIT") < dockerfile.index(
+        "MODELSCOPE_CACHE"
+    )
+
+
 def test_dockerignore_excludes_local_and_secret_state():
     patterns = {
         line.strip()
