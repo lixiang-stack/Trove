@@ -6,6 +6,9 @@ from sqlalchemy import select
 
 from trove.clock import utc_ms
 from trove.db.models import Run, RunStep
+from trove.metrics import counter_value
+
+from .conftest import seed_item
 
 
 def _create_item(api_host, slug: str) -> tuple[str, str]:
@@ -126,6 +129,7 @@ def test_dependency_blocks_the_next_stage(api_host):
 
 def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
     _, run_id = _create_item(api_host, "lease-expired")
+    retries_before = counter_value("stage_retries_total", stage="downloading")
     assert api_host.runtime.processing.claim_next(worker_id="worker-1") == run_id
     expired = _task(api_host, run_id, state="running")
     with api_host.runtime.sessions() as session:
@@ -133,6 +137,7 @@ def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
         session.commit()
 
     assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
+    assert counter_value("stage_retries_total", stage="downloading") == retries_before + 1
 
     with api_host.runtime.sessions() as session:
         old = session.get(RunStep, expired.id)
@@ -149,7 +154,9 @@ def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
             )
         ).scalars().one()
         assert queued.attempt == 2
-        assert queued.available_at <= utc_ms()
+        assert queued.available_at > utc_ms()
+        queued.available_at = utc_ms() - 1
+        session.commit()
         run = session.get(Run, run_id)
         assert run is not None
         assert run.state == "queued"
@@ -168,6 +175,7 @@ def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
 
 def test_expired_lease_goes_dead_after_max_attempts(api_host):
     _, run_id = _create_item(api_host, "lease-dead")
+    dead_before = counter_value("stage_dead_total", stage="downloading")
     assert api_host.runtime.processing.claim_next(worker_id="worker-1") == run_id
     task = _task(api_host, run_id, state="running")
     with api_host.runtime.sessions() as session:
@@ -177,6 +185,7 @@ def test_expired_lease_goes_dead_after_max_attempts(api_host):
         session.commit()
 
     assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
+    assert counter_value("stage_dead_total", stage="downloading") == dead_before + 1
 
     with api_host.runtime.sessions() as session:
         dead = session.get(RunStep, task.id)
@@ -188,6 +197,60 @@ def test_expired_lease_goes_dead_after_max_attempts(api_host):
         assert run.state == "failed"
         assert run.error_code == "run.dead"
     assert api_host.runtime.processing.claim_next(worker_id="worker-2") is None
+
+
+def test_one_attempt_stage_recovers_once_from_a_crashed_lease(api_host):
+    bundle = seed_item(api_host, title="ASR crash")
+    run_id = "run-asr-crash"
+    with api_host.runtime.sessions() as session:
+        session.add(
+            Run(
+                id=run_id,
+                item_id=bundle.item.id,
+                state="queued",
+                current_stage="transcribing",
+                created_at=utc_ms(),
+            )
+        )
+        session.add(
+            RunStep(
+                run_id=run_id,
+                stage="transcribing",
+                state="running",
+                attempt=1,
+                max_attempts=1,
+                worker_id="crashed-worker",
+                lease_until=1,
+            )
+        )
+        session.commit()
+
+    assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
+    with api_host.runtime.sessions() as session:
+        queued = session.execute(
+            select(RunStep).where(
+                RunStep.run_id == run_id,
+                RunStep.state == "queued",
+            )
+        ).scalars().one()
+        assert queued.attempt == 2
+        queued.state = "running"
+        queued.worker_id = "crashed-worker-2"
+        queued.lease_until = 1
+        session.commit()
+
+    assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
+    with api_host.runtime.sessions() as session:
+        dead = session.execute(
+            select(RunStep).where(
+                RunStep.run_id == run_id,
+                RunStep.state == "dead",
+            )
+        ).scalars().one()
+        assert dead.attempt == 2
+        run = session.get(Run, run_id)
+        assert run is not None
+        assert (run.state, run.error_code) == ("failed", "run.dead")
 
 
 def test_worker_that_lost_its_lease_cannot_complete_the_stage(api_host):

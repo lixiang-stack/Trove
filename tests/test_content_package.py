@@ -64,6 +64,7 @@ def transcript_document() -> TranscriptDocument:
     return TranscriptDocument(
         language="en",
         model="whisper",
+        input_sha256="a" * 64,
         segments=[
             TranscriptSegment(
                 seq=0,
@@ -107,6 +108,7 @@ def ai_document() -> AiDocument:
         tags=["tag"],
         model="deepseek-flash",
         prompt_version="v1",
+        input_sha256="b" * 64,
         input_tokens=10,
         output_tokens=5,
         cost_usd=0.001,
@@ -141,6 +143,34 @@ def test_ai_round_trip(package: ContentPackage) -> None:
     package.write_ai(ITEM_ID, document)
 
     assert package.read_ai(ITEM_ID) == document
+
+
+def test_documents_without_cache_hash_are_still_readable(package: ContentPackage) -> None:
+    package.write_transcript(
+        ITEM_ID,
+        TranscriptDocument(
+            model="legacy",
+            segments=[TranscriptSegment(seq=0, start_ms=0, end_ms=1, text="old")],
+        ),
+    )
+    package.write_ai(
+        ITEM_ID,
+        AiDocument(
+            summary="legacy",
+            tags=[],
+            model="legacy",
+            prompt_version="v1",
+            input_tokens=1,
+            output_tokens=1,
+            cost_usd=0.0,
+            generated_at=1,
+        ),
+    )
+
+    transcript = package.read_transcript(ITEM_ID)
+    ai = package.read_ai(ITEM_ID)
+    assert transcript is not None and transcript.input_sha256 is None
+    assert ai is not None and ai.input_sha256 is None
 
 
 @pytest.mark.parametrize(

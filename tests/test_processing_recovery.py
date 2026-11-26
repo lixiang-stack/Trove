@@ -22,7 +22,7 @@ def _steps(host, item_id: str) -> list[dict]:
 
 @pytest.mark.ffmpeg
 def test_retry_resumes_from_failed_stage(host):
-    host.stack.downloader.fail_code = "download.network"
+    host.stack.downloader.fail_code = "download.login_required"
     item_id, run_id = _add(host, "https://youtu.be/retryfromdownload")
     failed = host.wait_for_item(item_id)
     assert failed["run"]["state"] == "failed"
@@ -116,11 +116,11 @@ def test_cancel_running_stage_stops_and_keeps_audio(host):
 
 @pytest.mark.ffmpeg
 def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
-    host.stack.transcriber.fail_code = "asr.failed"
+    host.stack.organizer.fail_code = "llm.not_configured"
     item_id, run_id = _add(host, "https://youtu.be/restarttest")
     failed = host.wait_for_item(item_id)
     assert failed["run"]["state"] == "failed"
-    host.stack.transcriber.fail_code = None
+    host.stack.organizer.fail_code = None
 
     response = host.client.post(f"/api/items/{item_id}/retry")
     assert response.status_code == 200
@@ -129,7 +129,7 @@ def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
         running = session.execute(
             select(RunStep).where(
                 RunStep.run_id == run_id,
-                RunStep.stage == "transcribing",
+                RunStep.stage == "organizing",
                 RunStep.state == "running",
             )
         ).scalars().one()
@@ -144,7 +144,7 @@ def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
         expired = session.execute(
             select(RunStep).where(
                 RunStep.run_id == run_id,
-                RunStep.stage == "transcribing",
+                RunStep.stage == "organizing",
                 RunStep.state == "failed",
                 RunStep.error_code == "run.lease_expired",
             )
@@ -153,11 +153,13 @@ def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
         queued = session.execute(
             select(RunStep).where(
                 RunStep.run_id == run_id,
-                RunStep.stage == "transcribing",
+                RunStep.stage == "organizing",
                 RunStep.state == "queued",
             )
         ).scalars().one()
         assert queued.attempt == 3
+        queued.available_at = utc_ms() - 1
+        session.commit()
 
     worker = WorkerThread(host.runtime).start()
     try:
@@ -166,10 +168,10 @@ def test_expired_lease_requeues_a_crashed_stage_and_resumes(host):
         worker.stop()
     assert payload["run"]["state"] == "completed"
     steps = _steps(host, item_id)
-    for stage in ("downloading", "extracting_audio"):
+    for stage in ("downloading", "extracting_audio", "transcribing"):
         assert [step["state"] for step in steps if step["stage"] == stage] == ["completed"]
     assert [
-        step["state"] for step in steps if step["stage"] == "transcribing"
+        step["state"] for step in steps if step["stage"] == "organizing"
     ] == ["failed", "failed", "completed"]
     assert len(host.stack.downloader.calls) == 1
     assert host.config.library_dir.joinpath(item_id, "audio.m4a").is_file()

@@ -12,6 +12,7 @@ from trove.adapters.ffmpeg import FfmpegAudioExtractor
 from trove.adapters.safe_http import HttpResponse, SafeHttpError
 from trove.composition import Ports
 from trove.content_package import SourceDocument
+from trove.domain.cache import AiCacheIdentity
 from trove.domain.items import SourceType
 from trove.errors import ProcessingCancelled, ProcessingError
 from trove.ports import (
@@ -162,6 +163,8 @@ class FakeDownloader:
 
 
 class FakeTranscriber:
+    model = "fake-whisper"
+
     def __init__(self, transcript_path: Path | None = None) -> None:
         self.data = json.loads(
             (transcript_path or FIXTURES / "transcript.json").read_text(encoding="utf-8")
@@ -193,7 +196,7 @@ class FakeTranscriber:
                 for segment in self.data["segments"]
             ],
             language=self.data.get("language"),
-            model="fake-whisper",
+            model=self.model,
         )
 
 
@@ -210,6 +213,10 @@ class FakeOrganizer:
         self.input_tokens = 120
         self.output_tokens = 30
         self.cost_usd = 0.0001
+
+    @property
+    def cache_identity(self) -> AiCacheIdentity:
+        return AiCacheIdentity(model=self.model, prompt_version=self.prompt_version)
 
     def organize(
         self,

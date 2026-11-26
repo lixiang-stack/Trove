@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import random
 import shutil
 import traceback
 import uuid
@@ -16,7 +18,6 @@ from trove.config import Config
 from trove.content_package import ContentPackage, SourceDocument
 from trove.db.models import Item, Run, RunStep
 from trove.domain.items import (
-    DEFAULT_MAX_ATTEMPTS,
     REPROCESSABLE_STAGES,
     STAGE_DOWNLOADING,
     STAGE_EXTRACTING_AUDIO,
@@ -30,6 +31,13 @@ from trove.domain.items import (
     prior_stages,
     stages_for,
 )
+from trove.domain.retry import (
+    MIN_LEASE_ATTEMPTS,
+    is_retryable,
+    is_transient_os_error,
+    max_attempts_for,
+    retry_delay_ms,
+)
 from trove.errors import (
     ConflictError,
     NotFoundError,
@@ -39,8 +47,11 @@ from trove.errors import (
     ValidationError,
 )
 from trove.logging_setup import append_run_log
+from trove.metrics import increment
 from trove.ports import DOWNLOAD_MEDIA_FILENAME, SearchIndex, StageContext
 from trove.services.stages.base import StageHandler
+
+logger = logging.getLogger("trove.processing")
 
 INDEX_AFTER_STAGES = frozenset(
     {STAGE_DOWNLOADING, STAGE_TRANSCRIBING, STAGE_EXTRACTING_TEXT, STAGE_ORGANIZING}
@@ -55,6 +66,7 @@ class RunCoordinator:
         stages: dict[str, StageHandler],
         *,
         clock: Callable[[], int] = utc_ms,
+        jitter: Callable[[], float] = random.random,
     ) -> None:
         self.config = config
         self.sessions = sessions
@@ -62,6 +74,7 @@ class RunCoordinator:
         self.search_index = search_index
         self.stages = stages
         self.clock = clock
+        self.jitter = jitter
 
     @property
     def lease_ms(self) -> int:
@@ -147,11 +160,13 @@ class RunCoordinator:
         stage: str | None = None
         attempt = 1
         item_id: str | None = None
+        force = False
 
         with self.sessions() as session:
             run = session.get(Run, run_id)
             if run is None or run.state in TERMINAL_RUN_STATES:
                 return
+            force = bool(run.force)
             task = self._running_task(session, run_id, worker_id)
             if task is None:
                 if run.cancel_requested_at is not None:
@@ -181,7 +196,25 @@ class RunCoordinator:
                 return
             item_id = item.id
 
-        source = self.package.read_source(item_id)
+        try:
+            source = self.package.read_source(item_id)
+        except TroveError as exc:
+            append_run_log(
+                self.config,
+                run_id,
+                f"content package source could not be read: {exc.code}",
+                level="error",
+            )
+            self._fail_run(
+                run_id,
+                task_id,
+                stage,
+                exc.code,
+                exc.message,
+                worker_id=worker_id,
+                clear_current_stage=True,
+            )
+            return
         if source is None:
             append_run_log(
                 self.config,
@@ -209,6 +242,7 @@ class RunCoordinator:
             work_dir=work_dir,
             should_cancel=lambda: self._cancel_requested(run_id),
             log=lambda message: append_run_log(self.config, run_id, message),
+            force=force,
         )
 
         if self._cancel_requested(run_id):
@@ -257,6 +291,7 @@ class RunCoordinator:
             now = self.clock()
             stage = self._next_pending_stage(session, run.id, item.source_type)
             run.state = RunState.QUEUED
+            run.force = False
             run.current_stage = stage
             run.error_code = None
             run.error_message = None
@@ -290,6 +325,14 @@ class RunCoordinator:
                 )
             ).scalars().first()
             if active is not None:
+                if not active.force:
+                    active.force = True
+                    session.commit()
+                    append_run_log(
+                        self.config,
+                        active.id,
+                        f"run forced for {from_stage} reprocess while active",
+                    )
                 return active
             stages = stages_for(item.source_type)
             if from_stage not in stages:
@@ -302,6 +345,7 @@ class RunCoordinator:
                 id=str(uuid.uuid4()),
                 item_id=item_id,
                 state=RunState.QUEUED,
+                force=True,
                 created_at=now,
             )
             session.add(run)
@@ -315,7 +359,7 @@ class RunCoordinator:
                         stage=stage,
                         state=StageTaskState.COMPLETED,
                         attempt=1,
-                        max_attempts=DEFAULT_MAX_ATTEMPTS,
+                        max_attempts=self._max_attempts(stage),
                         started_at=now,
                         finished_at=now,
                     )
@@ -390,6 +434,8 @@ class RunCoordinator:
     def reap_expired(self, now: int | None = None) -> int:
         now = self.clock() if now is None else now
         reaped = 0
+        retried_stages: list[str] = []
+        dead_stages: list[str] = []
         with self.sessions() as session:
             expired = list(
                 session.execute(
@@ -431,7 +477,8 @@ class RunCoordinator:
                         self.config, run.id, f"stage {task.stage} cancelled while reaping"
                     )
                     continue
-                if task.attempt >= task.max_attempts:
+                lease_attempts = max(task.max_attempts, MIN_LEASE_ATTEMPTS)
+                if task.attempt >= lease_attempts:
                     if not self._update_expired_task(
                         session,
                         task,
@@ -439,7 +486,8 @@ class RunCoordinator:
                         state=StageTaskState.DEAD,
                         error_code="run.dead",
                         error_message=(
-                            f"Stage {task.stage} exceeded {task.max_attempts} attempts"
+                            f"Worker lease expired after attempt {task.attempt}; "
+                            f"stage exceeded {lease_attempts} attempts"
                         ),
                     ):
                         continue
@@ -451,18 +499,24 @@ class RunCoordinator:
                             error_code="run.dead",
                             error_message=(
                                 f"Stage {task.stage} exceeded "
-                                f"{task.max_attempts} attempts"
+                                f"{lease_attempts} attempts"
                             ),
                             current_stage=task.stage,
                             finished_at=now,
                         )
                     )
                     reaped += 1
-                    append_run_log(
-                        self.config,
+                    dead_stages.append(task.stage)
+                    self._log_stage_event(
                         run.id,
                         f"stage {task.stage} attempt {task.attempt} dead after lease expiry",
                         level="error",
+                        event="stage_dead",
+                        run_id=run.id,
+                        task_id=task.id,
+                        stage=task.stage,
+                        attempt=task.attempt,
+                        error_code="run.dead",
                     )
                     continue
                 if not self._update_expired_task(
@@ -474,39 +528,31 @@ class RunCoordinator:
                     error_message=f"Worker lease expired after attempt {task.attempt}",
                 ):
                     continue
-                session.add(
-                    RunStep(
-                        run_id=task.run_id,
-                        stage=task.stage,
-                        state=StageTaskState.QUEUED,
-                        attempt=task.attempt + 1,
-                        max_attempts=task.max_attempts,
-                        priority=task.priority,
-                        available_at=now,
-                    )
-                )
-                session.execute(
-                    update(Run)
-                    .where(
-                        Run.id == run.id,
-                        Run.state.not_in(tuple(TERMINAL_RUN_STATES)),
-                        Run.cancel_requested_at.is_(None),
-                    )
-                    .values(
-                        state=RunState.QUEUED,
-                        current_stage=task.stage,
-                        heartbeat_at=None,
-                    )
-                )
+                delay_ms = retry_delay_ms(task.attempt, jitter=self.jitter)
+                if not self._schedule_retry_attempt(
+                    session, task, now=now, delay_ms=delay_ms
+                ):
+                    continue
                 reaped += 1
-                append_run_log(
-                    self.config,
+                retried_stages.append(task.stage)
+                self._log_stage_event(
                     run.id,
                     f"stage {task.stage} attempt {task.attempt} lease expired; "
-                    f"requeued attempt {task.attempt + 1}",
+                    f"requeued attempt {task.attempt + 1} in {delay_ms}ms",
                     level="warning",
+                    event="stage_retry",
+                    run_id=run.id,
+                    task_id=task.id,
+                    stage=task.stage,
+                    attempt=task.attempt,
+                    error_code="run.lease_expired",
+                    delay_ms=delay_ms,
                 )
             session.commit()
+        for stage in retried_stages:
+            increment("stage_retries_total", stage=stage)
+        for stage in dead_stages:
+            increment("stage_dead_total", stage=stage)
         return reaped
 
     @staticmethod
@@ -601,6 +647,7 @@ class RunCoordinator:
                     pending,
                     now=self.clock(),
                     attempt=(latest.attempt + 1) if latest is not None else 1,
+                    max_attempts=latest.max_attempts if latest is not None else None,
                 )
                 run.current_stage = pending
                 repaired += 1
@@ -722,7 +769,7 @@ class RunCoordinator:
             self._try_index(run_id, item_id)
             return False
         except ProcessingError as exc:
-            self._fail_run(
+            self._handle_stage_error(
                 run_id,
                 task_id,
                 stage,
@@ -734,6 +781,38 @@ class RunCoordinator:
             self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
             append_run_log(
                 self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
+            )
+            self._try_index(run_id, item_id)
+            return False
+        except TroveError as exc:
+            self._handle_stage_error(
+                run_id,
+                task_id,
+                stage,
+                exc.code,
+                exc.message,
+                worker_id=worker_id,
+                details=exc.details,
+            )
+            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+            append_run_log(
+                self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
+            )
+            self._try_index(run_id, item_id)
+            return False
+        except OSError as exc:
+            self._handle_stage_error(
+                run_id,
+                task_id,
+                stage,
+                "storage.error",
+                str(exc),
+                worker_id=worker_id,
+                details={"transient": is_transient_os_error(exc)},
+            )
+            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+            append_run_log(
+                self.config, run_id, f"stage {stage} failed: storage.error", level="error"
             )
             self._try_index(run_id, item_id)
             return False
@@ -793,14 +872,16 @@ class RunCoordinator:
         *,
         now: int,
         attempt: int,
-        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+        max_attempts: int | None = None,
     ) -> RunStep:
         task = RunStep(
             run_id=run_id,
             stage=stage,
             state=StageTaskState.QUEUED,
             attempt=attempt,
-            max_attempts=max_attempts,
+            max_attempts=(
+                self._max_attempts(stage) if max_attempts is None else max_attempts
+            ),
             available_at=now,
         )
         session.add(task)
@@ -819,14 +900,20 @@ class RunCoordinator:
             latest.available_at = now
             return latest
         attempt = (latest.attempt + 1) if latest is not None else 1
+        # The column stores the highest allowed attempt number. A manual retry
+        # keeps history and extends it by a fresh per-stage budget.
+        max_attempts = attempt + self._max_attempts(stage) - 1
         return self._enqueue_task(
             session,
             run_id,
             stage,
             now=now,
             attempt=attempt,
-            max_attempts=latest.max_attempts if latest is not None else DEFAULT_MAX_ATTEMPTS,
+            max_attempts=max_attempts,
         )
+
+    def _max_attempts(self, stage: str) -> int:
+        return max_attempts_for(stage, self.config.stage_max_attempts)
 
     def _claim_next_task_for_run(
         self, session: Session, run: Run, worker_id: str, now: int
@@ -1012,27 +1099,16 @@ class RunCoordinator:
         now = self.clock()
         with self.sessions() as session:
             if task_id is not None:
-                result = cast(
-                    CursorResult[Any],
-                    session.execute(
-                        update(RunStep)
-                        .where(
-                            RunStep.id == task_id,
-                            RunStep.state == StageTaskState.RUNNING,
-                            RunStep.worker_id == worker_id,
-                            RunStep.lease_until > now,
-                        )
-                        .values(
-                            state=StageTaskState.FAILED,
-                            error_code=code,
-                            error_message=message,
-                            finished_at=now,
-                            lease_until=None,
-                            worker_id=None,
-                        )
-                    ),
-                )
-                if result.rowcount != 1:
+                task = session.get(RunStep, task_id)
+                if task is None or not self._close_running_task(
+                    session,
+                    task,
+                    now,
+                    state=StageTaskState.FAILED,
+                    code=code,
+                    message=message,
+                    worker_id=worker_id,
+                ):
                     session.rollback()
                     append_run_log(
                         self.config,
@@ -1056,6 +1132,264 @@ class RunCoordinator:
                 f"run failed with {code}: {details}",
                 level="error",
             )
+
+    def _schedule_retry_attempt(
+        self,
+        session: Session,
+        task: RunStep,
+        *,
+        now: int,
+        delay_ms: int,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(Run)
+                .where(
+                    Run.id == task.run_id,
+                    Run.state == RunState.QUEUED,
+                    Run.cancel_requested_at.is_(None),
+                )
+                .values(
+                    current_stage=task.stage,
+                    heartbeat_at=None,
+                    error_code=None,
+                    error_message=None,
+                )
+            ),
+        )
+        if result.rowcount != 1:
+            return False
+        session.add(
+            RunStep(
+                run_id=task.run_id,
+                stage=task.stage,
+                state=StageTaskState.QUEUED,
+                attempt=task.attempt + 1,
+                max_attempts=task.max_attempts,
+                priority=task.priority,
+                available_at=now + delay_ms,
+            )
+        )
+        return True
+
+    def _fail_queued_run(
+        self,
+        session: Session,
+        run_id: str,
+        *,
+        code: str,
+        message: str,
+        stage: str,
+        now: int,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(Run)
+                .where(
+                    Run.id == run_id,
+                    Run.state == RunState.QUEUED,
+                    Run.cancel_requested_at.is_(None),
+                )
+                .values(
+                    state=RunState.FAILED,
+                    error_code=code,
+                    error_message=message,
+                    current_stage=stage,
+                    finished_at=now,
+                )
+            ),
+        )
+        return result.rowcount == 1
+
+    def _log_stage_event(
+        self,
+        run: str,
+        message: str,
+        *,
+        level: str = "info",
+        **fields: Any,
+    ) -> None:
+        append_run_log(self.config, run, message, level=level, extra=fields)
+        logger.log(getattr(logging, level.upper()), message, extra=fields)
+
+    def _handle_stage_error(
+        self,
+        run_id: str,
+        task_id: int,
+        stage: str,
+        code: str,
+        message: str,
+        *,
+        worker_id: str,
+        details: dict[str, Any] | None = None,
+    ) -> bool:
+        now = self.clock()
+        with self.sessions() as session:
+            task = session.get(RunStep, task_id)
+            if (
+                task is None
+                or task.state != StageTaskState.RUNNING
+                or task.worker_id != worker_id
+            ):
+                return False
+            run = session.get(Run, run_id)
+            if run is None:
+                return False
+            if run.cancel_requested_at is not None or run.state in TERMINAL_RUN_STATES:
+                if not self._close_running_task(
+                    session,
+                    task,
+                    now,
+                    state=StageTaskState.CANCELLED,
+                    code="run.cancelled",
+                    message="Cancelled",
+                    worker_id=worker_id,
+                ):
+                    session.rollback()
+                    return False
+                if run.state not in TERMINAL_RUN_STATES:
+                    self._cancel_run_row(session, run, stage, now)
+                session.commit()
+                append_run_log(
+                    self.config,
+                    run_id,
+                    f"stage {stage} failed while cancellation was requested; cancelled",
+                    level="warning",
+                )
+                return False
+            retryable = is_retryable(code, details)
+            if retryable and task.attempt < task.max_attempts:
+                delay_ms = retry_delay_ms(task.attempt, jitter=self.jitter)
+                if not self._close_running_task(
+                    session,
+                    task,
+                    now,
+                    state=StageTaskState.FAILED,
+                    code=code,
+                    message=message,
+                    worker_id=worker_id,
+                ):
+                    session.rollback()
+                    return False
+                if not self._schedule_retry_attempt(
+                    session, task, now=now, delay_ms=delay_ms
+                ):
+                    session.rollback()
+                    return False
+                session.commit()
+                increment("stage_retries_total", stage=stage)
+                self._log_stage_event(
+                    run_id,
+                    f"stage {stage} attempt {task.attempt} failed: {code}; "
+                    f"retrying attempt {task.attempt + 1} in {delay_ms}ms",
+                    level="warning",
+                    event="stage_retry",
+                    run_id=run_id,
+                    task_id=task_id,
+                    stage=stage,
+                    attempt=task.attempt,
+                    error_code=code,
+                    delay_ms=delay_ms,
+                )
+                return True
+            if retryable:
+                if not self._close_running_task(
+                    session,
+                    task,
+                    now,
+                    state=StageTaskState.DEAD,
+                    code=code,
+                    message=message,
+                    worker_id=worker_id,
+                ):
+                    session.rollback()
+                    return False
+                dead_message = (
+                    f"Stage {stage} failed after {task.attempt} attempts "
+                    f"({code}): {message}"
+                )
+                if not self._fail_queued_run(
+                    session,
+                    run_id,
+                    code="run.dead",
+                    message=dead_message,
+                    stage=stage,
+                    now=now,
+                ):
+                    session.rollback()
+                    return False
+                session.commit()
+                increment("stage_dead_total", stage=stage)
+                self._log_stage_event(
+                    run_id,
+                    f"stage {stage} attempt {task.attempt} dead after {code}",
+                    level="error",
+                    event="stage_dead",
+                    run_id=run_id,
+                    task_id=task_id,
+                    stage=stage,
+                    attempt=task.attempt,
+                    error_code=code,
+                )
+                return False
+            if not self._close_running_task(
+                session,
+                task,
+                now,
+                state=StageTaskState.FAILED,
+                code=code,
+                message=message,
+                worker_id=worker_id,
+            ):
+                session.rollback()
+                return False
+            if not self._fail_queued_run(
+                session,
+                run_id,
+                code=code,
+                message=message,
+                stage=stage,
+                now=now,
+            ):
+                session.rollback()
+                return False
+            session.commit()
+            return False
+
+    @staticmethod
+    def _close_running_task(
+        session: Session,
+        task: RunStep,
+        now: int,
+        *,
+        state: StageTaskState,
+        code: str,
+        message: str,
+        worker_id: str,
+    ) -> bool:
+        result = cast(
+            CursorResult[Any],
+            session.execute(
+                update(RunStep)
+                .where(
+                    RunStep.id == task.id,
+                    RunStep.state == StageTaskState.RUNNING,
+                    RunStep.worker_id == worker_id,
+                    RunStep.lease_until > now,
+                )
+                .values(
+                    state=state,
+                    error_code=code,
+                    error_message=message,
+                    finished_at=now,
+                    lease_until=None,
+                    worker_id=None,
+                )
+            ),
+        )
+        return result.rowcount == 1
 
     def _complete_if_all_done(self, session: Session, run: Run) -> None:
         item = session.get(Item, run.item_id)

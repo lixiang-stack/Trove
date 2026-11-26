@@ -4,6 +4,7 @@ import json
 from typing import Any
 
 from trove.config import LLMConfig, default_llm_config_path
+from trove.domain.cache import AiCacheIdentity
 from trove.domain.organization import (
     MAX_EXISTING_TAGS,
     MAX_TAGS_PER_ITEM,
@@ -36,6 +37,14 @@ class OrganizationWorkflow:
     def __init__(self, llm: LLMConfig, chat_client: ChatClient) -> None:
         self.llm = llm
         self.chat_client = chat_client
+
+    @property
+    def cache_identity(self) -> AiCacheIdentity | None:
+        if not self.llm.enabled:
+            return None
+        if not (self.llm.model and self.llm.base_url and self.llm.api_key):
+            return None
+        return AiCacheIdentity(model=self.llm.model, prompt_version=PROMPT_VERSION)
 
     def organize(
         self,

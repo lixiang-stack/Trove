@@ -404,6 +404,25 @@ def test_disabled_llm_returns_an_empty_result(tmp_path):
 
 
 @pytest.mark.ffmpeg
+def test_explicit_reprocess_bypasses_the_ai_cache_even_when_the_input_matches(host):
+    host.login()
+    response = host.client.post(
+        "/api/items", json={"kind": "url", "url": "https://www.youtube.com/watch?v=cacheforce"}
+    )
+    assert response.status_code == 201, response.text
+    item_id = response.json()["item"]["id"]
+    host.wait_for_item(item_id)
+    organizer_calls = len(host.stack.organizer.calls)
+
+    host.runtime.processing.reprocess(item_id, "organizing")
+    payload = host.wait_for_item(item_id)
+
+    assert payload["run"]["state"] == "completed"
+    assert len(host.stack.organizer.calls) == organizer_calls + 1
+    assert any("ai cache bypassed" in line for line in payload["run"]["log_tail"])
+
+
+@pytest.mark.ffmpeg
 def test_reprocess_from_organizing_reruns_only_organizing_and_indexing(host):
     host.login()
     response = host.client.post(

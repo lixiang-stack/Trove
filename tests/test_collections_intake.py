@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import shutil
 
+from sqlalchemy import select
+
+from trove.db.models import Run
 from trove.ports import AudioResult, LinkProbeResult, VideoInfo
 
 from .fakes import FIXTURES, video_collection
@@ -185,6 +188,12 @@ def test_collection_reprocess_cli_resets_ai_tags(host, monkeypatch, capsys):
         assert host.item(item_id)["tags"] == []
     for item_id in item_ids:
         assert host.item(item_id)["run"]["state"] == "queued"
+        with host.runtime.sessions() as session:
+            run = session.execute(
+                select(Run).where(Run.item_id == item_id, Run.state == "queued")
+            ).scalars().first()
+        assert run is not None
+        assert run.force is True
 
 
 def test_existing_episode_is_attached_and_other_collection_conflicts(api_host):

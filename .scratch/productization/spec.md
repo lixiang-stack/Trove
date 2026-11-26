@@ -104,7 +104,8 @@ Python 继续用于 API、领域、服务、适配器和 worker。Go 重写明�
 ## Current State
 
 - 分层与端口：`src/trove/ports.py` 定义 9 个协议；`composition.py` 是组合根；`web/` 是 HTTP 适配器。
-- 处理管线：`services/run_coordinator.py` 维护 `Run` 聚合与可领取的 StageTask（`run_steps`），支持租约、心跳、过期回收和取消；`services/stages/` 按阶段执行。
+- 处理管线：`services/run_coordinator.py` 维护 `Run` 聚合与可领取的 StageTask（`run_steps`），支持租约、心跳、过期回收和取消；重试策略在 `domain/retry.py`，按阶段限制次数、指数退避并写入 `available_at`，耗尽后进入 `dead`；`services/stages/` 按阶段执行。
+- 外部调用缓存：AI 结果用 `(item_id, prompt_version, model, input_sha256)` 匹配，transcript 用 `(audio_sha256, model)` 匹配；自动重试复用已完成结果，显式 reprocess 通过 Run 的 `force` 标记绕过缓存。
 - 适配器：`adapters/downloader.py`（yt-dlp/HTTP）、`adapters/asr.py`（FunASR 子进程）、`adapters/openai_chat.py`（OpenAI 兼容）；整理工作流在 `services/organization.py`、`adapters/search.py`（FTS5）。
 - 内容包：`content_package.py` 负责固定文件名、原子写入、sha256、`manifest.json` 与 `schema_version`；旧包无 manifest 仍可读。
 - 运维：`deploy.py` 只支持 macOS launchd；`web/api/health.py` 覆盖 API/DB/FTS5/worker 心跳。

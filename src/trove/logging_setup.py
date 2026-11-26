@@ -27,6 +27,19 @@ class JsonFormatter(logging.Formatter):
             "run_id",
             "item_id",
             "request_id",
+            "event",
+            "task_id",
+            "stage",
+            "attempt",
+            "error_code",
+            "delay_ms",
+            "cache",
+            "model",
+            "prompt_version",
+            "saved_input_tokens",
+            "saved_output_tokens",
+            "saved_cost_usd",
+            "saved_asr_seconds",
         ):
             value = getattr(record, key, None)
             if value is not None:
@@ -65,12 +78,23 @@ def run_log_path(config: Config, run_id: str) -> Path:
     return config.runs_log_dir / f"{run_id}.log"
 
 
-def append_run_log(config: Config, run_id: str, message: str, level: str = "info") -> None:
+def append_run_log(
+    config: Config,
+    run_id: str,
+    message: str,
+    level: str = "info",
+    *,
+    extra: dict[str, Any] | None = None,
+) -> None:
     path = run_log_path(config, run_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    line = json.dumps(
-        {"time": _now_iso(), "level": level, "message": message}, ensure_ascii=False
-    )
+    payload: dict[str, Any] = {
+        "time": _now_iso(),
+        "level": level,
+        "message": message,
+    }
+    payload.update(extra or {})
+    line = json.dumps(payload, ensure_ascii=False)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line + "\n")
 

@@ -28,13 +28,13 @@ ADRs: [0007](../../../docs/adr/0007-deepseek-organization-limits.md)
 
 ## Acceptance Criteria
 
-- [ ] 同一文本、prompt、model 自动重试时 0 次 LLM 调用，输出与首次一致。
-- [ ] 文本/prompt/model 变化时重新调用。
-- [ ] 同一音频、model 自动重试时 0 次 ASR 调用；显式“重新转写”仍会重跑。
-- [ ] `--reset-ai-tags` 和 `from_stage=organizing` 强制刷新，不受缓存影响。
-- [ ] 缓存命中不增加 `AiResult` 成本；指标能区分 hit/miss。
-- [ ] 旧数据（无 hash）可继续处理，不报错。
-- [ ] 现有组织/处理测试保持绿。
+- [x] 同一文本、prompt、model 自动重试时 0 次 LLM 调用，输出与首次一致。
+- [x] 文本/prompt/model 变化时重新调用。
+- [x] 同一音频、model 自动重试时 0 次 ASR 调用；显式“重新转写”仍会重跑。
+- [x] `--reset-ai-tags` 和 `from_stage=organizing` 强制刷新，不受缓存影响。
+- [x] 缓存命中不增加 `AiResult` 成本；指标能区分 hit/miss。
+- [x] 旧数据（无 hash）可继续处理，不报错。
+- [x] 现有组织/处理测试保持绿。
 
 ## Testing
 
@@ -48,6 +48,41 @@ ADRs: [0007](../../../docs/adr/0007-deepseek-organization-limits.md)
 - 跨 Item 的语义缓存/向量缓存。
 - Prompt A/B 或模型路由。
 - 把缓存放到 Redis/外部服务；单机用 SQLite/内容包即可。
+
+## Implementation
+
+- `AiResult.input_sha256` and `ai.json`'s `input_sha256` carry the LLM cache
+  key with `(item_id, prompt_version, model)`. `OrganizeStage` reads `ai.json`
+  directly and reuses it when the hash, model, and prompt version match; the
+  content package remains the source of truth, so a matching package still hits
+  even if the `ai_results` index row is missing.
+- A cache hit restores `item.summary` and AI tags from `ai.json`, does not call
+  the LLM, does not insert a new `AiResult`, and therefore adds no cost. The
+  per-run log records `ai cache hit` with saved input/output tokens and cost.
+- `transcript.json` records the audio artifact's `input_sha256` and the ASR
+  model. `TranscribeStage` reuses it when both match, records the transcript
+  artifact, and logs saved ASR seconds; a different audio hash, model, or a
+  legacy transcript without a hash is a miss.
+- `Run.force` marks an explicit reprocess for the whole Run. `reprocess` sets it
+  by default and automatic retries keep it, so `--reset-ai-tags` cannot restore
+  old tags from the cache. If a Run is already active, `reprocess` marks that
+  Run forced instead of starting a second one; stages that already finished are
+  not replayed. `retry`, worker recovery, and normal Runs keep it off.
+- `AiResult` and `AiDocument` accept `input_sha256 = NULL`; old rows/files load
+  normally and count as misses. Migration `0009_external_call_cache` adds the
+  history column; the cache lookup itself reads `ai.json`.
+- Unsupported content-package versions are not swallowed as cache misses; the
+  stage fails with `storage.package_version` before calling the LLM/ASR.
+- Cache hit/miss and saved tokens/seconds are logged and counted in
+  `trove.metrics` (`external_cache_hits_total`,
+  `external_cache_misses_total`, saved-token/cost/ASR-second counters); ticket
+  12 exposes the registry through `/metrics`.
+- Tests: `tests/test_stages.py` covers hit, force, package-only hits, changed
+  text/prompt/model, changed audio, legacy files, and cache counters;
+  `tests/test_organization.py` covers non-force reprocess (0 calls) vs explicit
+  reprocess (re-run); `tests/test_retry.py` covers a transient failure followed
+  by an automatic retry hitting the cache; `test_database_schema.py` covers the
+  legacy-row migration.
 
 ## Notes
 

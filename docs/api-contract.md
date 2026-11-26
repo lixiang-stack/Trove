@@ -114,6 +114,20 @@ returns the same `201` body and `Idempotency-Replayed: true`.
 - SSE and webhooks are not part of v1. They may be added later as opt-in
   capabilities without changing polling semantics.
 
+## Retry, Reprocess, and Cache
+
+- `POST /api/items/{item_id}/retry` resumes a failed or cancelled Run. It keeps
+  completed stages and reuses matching LLM/ASR results from automatic retries.
+- `POST /api/items/{item_id}/reprocess` with `from_stage` is an explicit rerun.
+  It bypasses the external-call cache so ASR/LLM work is performed again.
+- `trove collection reprocess --reset-ai-tags` is also an explicit rerun and
+  bypasses the cache.
+- Cached AI results keep their original cost; a cache hit adds no tokens and no
+  new AI cost. Cache keys include the Item, prompt version, model, and input
+  hash for LLM, and the audio hash and model for ASR.
+- Old content packages without cache hashes remain valid and are regenerated on
+  the next run.
+
 ## Status Codes
 
 - `200` successful read or deduplicated create.

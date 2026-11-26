@@ -21,11 +21,14 @@ CHUNK_SIZE = 1024 * 1024
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_SCHEMA_VERSION = 1
 
+AI_FILENAME = "ai.json"
+TRANSCRIPT_FILENAME = "transcript.json"
+
 _FIXED_ARTIFACT_FILENAMES = {
-    "transcript": "transcript.json",
+    "transcript": TRANSCRIPT_FILENAME,
     "book": "book.epub",
     "book_json": "book.json",
-    "ai": "ai.json",
+    "ai": AI_FILENAME,
 }
 _EXTENSION_ARTIFACT_PREFIXES = {"audio": "audio", "cover": "cover"}
 
@@ -61,7 +64,7 @@ _MANIFEST_ARTIFACT_KEYS = frozenset({"kind", "path", "sha256", "size", "mime"})
 _MANIFEST_KEYS = frozenset(
     {"schema_version", "item_id", "created_at", "updated_at", "artifacts"}
 )
-_TRANSCRIPT_KEYS = frozenset({"language", "model", "segments"})
+_TRANSCRIPT_KEYS = frozenset({"language", "model", "input_sha256", "segments"})
 _TRANSCRIPT_SEGMENT_KEYS = frozenset({"seq", "start_ms", "end_ms", "text"})
 _BOOK_KEYS = frozenset({"title", "author", "language", "cover", "chapters"})
 _BOOK_COVER_KEYS = frozenset({"extension", "mime"})
@@ -74,6 +77,7 @@ _AI_KEYS = frozenset(
         "tags",
         "model",
         "prompt_version",
+        "input_sha256",
         "input_tokens",
         "output_tokens",
         "cost_usd",
@@ -335,6 +339,8 @@ class TranscriptSegment:
 class TranscriptDocument:
     language: str | None = None
     model: str | None = None
+    # Hash of the audio artifact that produced this transcript, not the JSON file.
+    input_sha256: str | None = None
     segments: list[TranscriptSegment] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
 
@@ -344,6 +350,7 @@ class TranscriptDocument:
             return cls(
                 language=_optional_str(data, "language"),
                 model=_optional_str(data, "model"),
+                input_sha256=_optional_str(data, "input_sha256"),
                 segments=[
                     TranscriptSegment.from_json(_require_mapping(segment, "segment"))
                     for segment in _require_list(data, "segments")
@@ -359,6 +366,7 @@ class TranscriptDocument:
             {
                 "language": self.language,
                 "model": self.model,
+                "input_sha256": self.input_sha256,
                 "segments": [segment.to_json() for segment in self.segments],
             }
         )
@@ -474,6 +482,7 @@ class AiDocument:
     output_tokens: int
     cost_usd: float | None
     generated_at: int
+    input_sha256: str | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -488,6 +497,7 @@ class AiDocument:
                 output_tokens=_require_int(data, "output_tokens"),
                 cost_usd=_optional_float(data, "cost_usd"),
                 generated_at=_require_int(data, "generated_at"),
+                input_sha256=_optional_str(data, "input_sha256"),
                 extra=_extra_fields(data, _AI_KEYS),
             )
         except (TypeError, ValueError) as exc:
@@ -501,6 +511,7 @@ class AiDocument:
                 "tags": self.tags,
                 "model": self.model,
                 "prompt_version": self.prompt_version,
+                "input_sha256": self.input_sha256,
                 "input_tokens": self.input_tokens,
                 "output_tokens": self.output_tokens,
                 "cost_usd": self.cost_usd,

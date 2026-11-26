@@ -13,8 +13,8 @@
   "database": {
     "status": "ok",
     "migration": {
-      "current": "0007_stage_tasks",
-      "head": "0007_stage_tasks",
+      "current": "0009_external_call_cache",
+      "head": "0009_external_call_cache",
       "up_to_date": true
     },
     "fts5": true

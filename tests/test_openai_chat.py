@@ -92,7 +92,7 @@ def test_rate_limit_is_reported_with_retry_after():
         client.complete([{"role": "user", "content": "hello"}], max_tokens=10)
 
     assert excinfo.value.code == "llm.failed"
-    assert excinfo.value.details == {"retry_after": 7}
+    assert excinfo.value.details == {"status": 429, "retry_after": 7}
 
 
 @pytest.mark.parametrize("status", [500, 503])
@@ -105,7 +105,7 @@ def test_server_errors_map_to_llm_failed(status):
         client.complete([{"role": "user", "content": "hello"}], max_tokens=10)
 
     assert excinfo.value.code == "llm.failed"
-    assert excinfo.value.details is None
+    assert excinfo.value.details == {"status": status}
 
 
 def test_timeouts_map_to_llm_failed():
