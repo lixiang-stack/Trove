@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="940" viewBox="0 0 1200 940" role="img" aria-labelledby="arch-title arch-desc" font-family="'PingFang SC','Hiragino Sans GB','Noto Sans CJK SC','Microsoft YaHei',sans-serif">
+  <title id="arch-title">Trove 产品架构</title>
+  <desc id="arch-desc">浏览器和 Android App 只访问 Host 的 /api。Host 内由 API 与 Web Shell、Worker Pools、SQLite、Content Packages 以及本地工具 yt-dlp、FFmpeg、FunASR 组成；配置后 Worker 可调用外部 OpenAI 兼容 LLM 生成摘要和标签。</desc>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
+    </marker>
+    <marker id="arrow-optional" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#b5462f"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="940" fill="#ffffff"/>
+  <text x="40" y="46" font-size="24" font-weight="700" fill="#0f172a">Trove 产品架构</text>
+  <text x="40" y="70" font-size="13" fill="#64748b">浏览器 / Android 只访问 /api；处理、转写和索引都在 Host 内完成，LLM 可选</text>
+
+  <g font-size="12.5" fill="#475569">
+    <line x1="860" y1="42" x2="898" y2="42" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+    <text x="908" y="46">运行时</text>
+    <line x1="980" y1="42" x2="1018" y2="42" stroke="#b5462f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-optional)"/>
+    <text x="1028" y="46">可选 / 外部</text>
+  </g>
+
+  <rect x="60" y="280" width="980" height="470" rx="18" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="8 6"/>
+  <text x="84" y="310" font-size="14" font-weight="600" fill="#475569">Host · Docker / macOS launchd</text>
+
+  <!-- Clients -->
+  <rect x="100" y="120" width="280" height="120" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="122" y="154" font-size="19" font-weight="700" fill="#1e3a8a">浏览器</text>
+  <text x="122" y="178" font-size="12.5" fill="#1d4ed8">Host Console + Consumer Shell</text>
+  <text x="122" y="204" font-size="12.5" fill="#1e3a8a">Library / Add / Continue / Search</text>
+  <text x="122" y="224" font-size="12.5" fill="#1e3a8a">播放 / 阅读 / 导出</text>
+
+  <rect x="440" y="120" width="280" height="120" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="462" y="154" font-size="19" font-weight="700" fill="#1e3a8a">Android App</text>
+  <text x="462" y="178" font-size="12.5" fill="#1d4ed8">原生客户端</text>
+  <text x="462" y="204" font-size="12.5" fill="#1e3a8a">后台播放 / 离线下载</text>
+  <text x="462" y="224" font-size="12.5" fill="#1e3a8a">阅读 / 增量同步</text>
+
+  <!-- API -->
+  <rect x="100" y="330" width="520" height="170" rx="14" fill="#ecfdf5" stroke="#34d399" stroke-width="1.5"/>
+  <text x="124" y="366" font-size="19" font-weight="700" fill="#065f46">API + Web Shell</text>
+  <text x="124" y="390" font-size="12.5" fill="#047857">FastAPI · HTML + /api</text>
+  <text x="124" y="418" font-size="12.5" fill="#065f46">认证 / 会话 / CSRF</text>
+  <text x="124" y="442" font-size="12.5" fill="#065f46">Library / Add / Search / Export</text>
+  <text x="124" y="466" font-size="12.5" fill="#065f46">媒体与封面 Range 响应</text>
+  <text x="124" y="488" font-size="12.5" fill="#065f46">OpenAPI schema：/api/openapi.json</text>
+
+  <!-- SQLite -->
+  <rect x="680" y="330" width="220" height="170" rx="14" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="702" y="366" font-size="19" font-weight="700" fill="#334155">SQLite</text>
+  <text x="702" y="390" font-size="12.5" fill="#475569">元数据 + 处理状态</text>
+  <text x="702" y="418" font-size="12.5" fill="#334155">Item / Collection</text>
+  <text x="702" y="442" font-size="12.5" fill="#334155">Run / StageTask</text>
+  <text x="702" y="466" font-size="12.5" fill="#334155">消费进度</text>
+  <text x="702" y="488" font-size="12.5" fill="#334155">FTS5 全文索引</text>
+
+  <!-- Content Packages -->
+  <rect x="100" y="540" width="300" height="170" rx="14" fill="#f5f3ff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="122" y="576" font-size="19" font-weight="700" fill="#5b21b6">Content Packages</text>
+  <text x="122" y="600" font-size="12.5" fill="#6d28d9">~/Trove/library/&lt;item-id&gt;</text>
+  <text x="122" y="628" font-size="12.5" fill="#4c1d95">源元数据 / 音频</text>
+  <text x="122" y="652" font-size="12.5" fill="#4c1d95">逐字稿 / 书文本</text>
+  <text x="122" y="676" font-size="12.5" fill="#4c1d95">AI 结果（摘要 / Tag）</text>
+  <text x="122" y="698" font-size="12.5" fill="#4c1d95">可独立导出</text>
+
+  <!-- Worker -->
+  <rect x="430" y="540" width="570" height="170" rx="14" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="454" y="576" font-size="19" font-weight="700" fill="#9a3412">Worker Pools</text>
+  <text x="454" y="600" font-size="12.5" fill="#c2410c">download · asr · llm · index（* 整理可选）</text>
+  <text x="454" y="628" font-size="12.5" fill="#7c2d12">下载 → 抽取 → 转写 → 整理* → 索引</text>
+  <text x="454" y="652" font-size="12.5" fill="#7c2d12">租约 / 心跳 / 重试 / dead letter</text>
+  <text x="454" y="676" font-size="12.5" fill="#7c2d12">幂等缓存复用 LLM / ASR</text>
+  <text x="454" y="698" font-size="12.5" fill="#7c2d12">index 池单写入</text>
+
+  <!-- External sources -->
+  <rect x="100" y="780" width="230" height="130" rx="14" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5"/>
+  <text x="122" y="814" font-size="18" font-weight="700" fill="#1e3a8a">内容来源</text>
+  <text x="122" y="842" font-size="12.5" fill="#1e3a8a">B 站 / YouTube</text>
+  <text x="122" y="866" font-size="12.5" fill="#1e3a8a">播客 RSS / EPUB 直链</text>
+  <text x="122" y="890" font-size="12.5" fill="#1e3a8a">本地路径 / 上传</text>
+
+  <!-- Local tools -->
+  <rect x="360" y="780" width="220" height="130" rx="14" fill="#f0f9ff" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="382" y="814" font-size="17" font-weight="700" fill="#075985">本地工具（Host 内）</text>
+  <text x="382" y="842" font-size="12.5" fill="#0c4a6e">yt-dlp / FFmpeg</text>
+  <text x="382" y="866" font-size="12.5" fill="#0c4a6e">FunASR Paraformer-zh</text>
+  <text x="382" y="890" font-size="12.5" fill="#0c4a6e">CPU 转写</text>
+
+  <!-- Optional LLM -->
+  <rect x="660" y="780" width="220" height="130" rx="14" fill="#fdf2f8" stroke="#f472b6" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="682" y="814" font-size="18" font-weight="700" fill="#9d174d">LLM（可选）</text>
+  <text x="682" y="842" font-size="12.5" fill="#831843">OpenAI 兼容端点</text>
+  <text x="682" y="866" font-size="12.5" fill="#831843">摘要 / Tag</text>
+  <text x="682" y="890" font-size="12.5" fill="#831843">未配置则跳过整理</text>
+
+  <!-- Access note -->
+  <rect x="940" y="780" width="200" height="130" rx="14" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="962" y="814" font-size="16" font-weight="700" fill="#475569">接入方式</text>
+  <text x="962" y="842" font-size="12" fill="#475569">浏览器 / Android</text>
+  <text x="962" y="866" font-size="12" fill="#475569">Caddy / Tailscale</text>
+  <text x="962" y="890" font-size="12" fill="#475569">HTTPS → /api</text>
+
+  <!-- Client to API -->
+  <g stroke="#64748b" stroke-width="2" fill="none">
+    <line x1="240" y1="240" x2="240" y2="330" marker-end="url(#arrow)"/>
+    <line x1="580" y1="240" x2="580" y2="330" marker-end="url(#arrow)"/>
+  </g>
+  <text x="410" y="286" font-size="12" fill="#475569" text-anchor="middle">HTTP /api</text>
+  <text x="410" y="304" font-size="11.5" fill="#64748b" text-anchor="middle">手机建议经 Caddy / Tailscale HTTPS</text>
+
+  <!-- API / SQLite -->
+  <line x1="620" y1="380" x2="680" y2="380" stroke="#64748b" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="650" y="368" font-size="11.5" fill="#475569" text-anchor="middle">读写</text>
+
+  <!-- API / Content -->
+  <line x1="240" y1="500" x2="240" y2="540" stroke="#64748b" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="252" y="520" font-size="11.5" fill="#475569">媒体 / 导出</text>
+
+  <!-- API -> Worker default child -->
+  <line x1="580" y1="500" x2="580" y2="540" stroke="#b5462f" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arrow-optional)"/>
+  <text x="592" y="520" font-size="11.5" fill="#9a3412">trove serve 默认启动</text>
+
+  <!-- Worker / SQLite -->
+  <line x1="780" y1="540" x2="780" y2="500" stroke="#64748b" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="792" y="520" font-size="11.5" fill="#475569">状态 / 任务</text>
+
+  <!-- Worker -> Content -->
+  <line x1="430" y1="620" x2="400" y2="620" stroke="#64748b" stroke-width="2" marker-end="url(#arrow)"/>
+  <text x="415" y="608" font-size="11.5" fill="#475569" text-anchor="middle">写入</text>
+
+  <!-- Sources -> Worker -->
+  <path d="M 210 780 V 760 H 410 V 650 H 430" stroke="#64748b" stroke-width="2" fill="none" marker-end="url(#arrow)"/>
+  <text x="320" y="742" font-size="11.5" fill="#475569" text-anchor="middle">下载 / 抓取</text>
+
+  <!-- Worker <-> Local tools -->
+  <line x1="500" y1="710" x2="500" y2="780" stroke="#64748b" stroke-width="2" marker-start="url(#arrow)" marker-end="url(#arrow)"/>
+  <text x="512" y="744" font-size="11.5" fill="#475569">调用</text>
+
+  <!-- Worker <-> LLM -->
+  <line x1="800" y1="710" x2="800" y2="780" stroke="#b5462f" stroke-width="2" stroke-dasharray="6 4" marker-start="url(#arrow-optional)" marker-end="url(#arrow-optional)"/>
+  <text x="812" y="744" font-size="11.5" fill="#9d174d">可选整理</text>
+</svg>
