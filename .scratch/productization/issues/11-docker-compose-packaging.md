@@ -30,14 +30,14 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 
 ## Acceptance Criteria
 
-- [ ] 干净机器上 `docker compose up -d` 后 `/api/health` 返回 200，worker 心跳 fresh。
-- [ ] 用本地 audio/EPUB fixture 完成一条 Item 处理，数据写入 `trove-data` 卷。
-- [ ] 重启容器后数据、队列、设置保留。
-- [ ] ASR 镜像可构建，`trove doctor` 在容器内通过（模型存在时）。
-- [ ] 非 root 运行；镜像内无 `.env`/token/密钥。
-- [ ] `docker compose down` 不删除命名卷；文档说明如何彻底清理。
-- [ ] launchd 文档和脚本不被破坏。
-- [ ] 镜像大小、构建时间、ARM64/AMD64 支持情况写入文档。
+- [x] 干净机器上 `docker compose up -d` 后 `/api/health` 返回 200，worker 心跳 fresh。
+- [x] 用本地 audio/EPUB fixture 完成一条 Item 处理，数据写入 `trove-data` 卷。
+- [x] 重启容器后数据、队列、设置保留。
+- [x] ASR 镜像可构建，`trove doctor` 在容器内通过（模型存在时）。
+- [x] 非 root 运行；镜像内无 `.env`/token/密钥。
+- [x] `docker compose down` 不删除命名卷；文档说明如何彻底清理。
+- [x] launchd 文档和脚本不被破坏。
+- [x] 镜像大小、构建时间、ARM64/AMD64 支持情况写入文档。
 
 ## Testing
 
@@ -53,6 +53,32 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 - 自动更新服务。
 - 云端对象存储；先本地卷。
 - 把 ASR 模型打进基础镜像（默认不打）。
+
+## Implementation
+
+- `Dockerfile` is a two-stage build: a Python 3.12 builder uses `uv sync
+  --frozen --no-dev` against `uv.lock`, then the runtime copies only `.venv` and
+  installs FFmpeg, `tini`, `curl`, `libgomp1`, and `libsndfile1`. The default
+  `INSTALL_ASR=false` image is about 230 MB; `INSTALL_ASR=true` adds
+  FunASR/modelscope/torch/torchaudio and is about 3.5 GB. The ASR image was built
+  on arm64 Linux, `init` downloaded the models, and `trove doctor --json`
+  reported `ok: true` with only the expected "worker not running" warning.
+- The runtime runs as UID/GID 10001 `trove`, uses `TROVE_HOME=/data`, persists
+  models under `/data/models`, and exposes 8765 with a `/api/health` healthcheck.
+  `docker/entrypoint.sh` dispatches `init`, `serve`, `worker`, `doctor`, and
+  `setup`; `init` migrates and downloads ASR models only in the ASR image.
+- `docker-compose.yml` adds one-shot `init`, `api`, default `worker`, split pool
+  workers under the `pools` profile, and Caddy under `caddy`. Only
+  `127.0.0.1:8765` is published by default; `trove-data` is the named volume.
+  Worker services use a 45-second stop grace period.
+- `scripts/docker-smoke.sh` builds the base image, processes an EPUB using the
+  disabled-LLM fixture, checks worker heartbeat, restarts, runs
+  `docker compose down` without `-v`, and verifies the Item survives. Fixtures
+  are copied through `docker compose cp`, so the script also works with a remote
+  Docker daemon that cannot bind-mount the host worktree.
+- `README.md` and `docs/deployment.md` cover quick start, services/pools, ASR,
+  LLM mounts, Caddy, image tags/sizes/architectures, backups, cleanup, and the
+  smoke test. The launchd path remains intact below the Docker chapter.
 
 ## Notes
 

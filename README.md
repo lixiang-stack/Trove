@@ -30,6 +30,21 @@ in [docs/android.md](docs/android.md). The security regression checklist is in
 [docs/security.md](docs/security.md); dependency licenses are listed in
 [docs/licenses.md](docs/licenses.md).
 
+## Docker
+
+For a reproducible self-hosted install on Linux or macOS:
+
+```bash
+docker compose up -d --build
+docker compose exec api trove auth set-password
+open http://127.0.0.1:8765
+```
+
+Data lives in the `trove-data` named volume. The default image has no ASR stack;
+build with `TROVE_INSTALL_ASR=true docker compose build` to transcribe. Split
+worker pools, ASR, TLS, backups, and cleanup are covered in
+[docs/deployment.md#docker-compose](docs/deployment.md#docker-compose).
+
 ## Re-run ASR
 
 Existing Items keep their stored transcripts until you queue a new transcribing run. A re-run reuses the existing `audio.m4a`; it does not download or extract audio again.

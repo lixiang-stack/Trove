@@ -36,6 +36,7 @@ def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
                 "This SQLite build lacks FTS5. Use the Python 3.12 managed by uv, "
                 "or install SQLite with FTS5."
             )
+        runtime.package.assert_supported_manifests()
         yield
 
     app = FastAPI(

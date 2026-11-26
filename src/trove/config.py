@@ -13,11 +13,7 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from trove.domain.retry import STAGE_MAX_ATTEMPTS
-from trove.domain.worker_pools import (
-    DEFAULT_POOL_CONCURRENCY,
-    INDEX_POOL_CONCURRENCY,
-    POOL_NAMES,
-)
+from trove.domain.worker_pools import ALL_POOL, INDEX_POOL, POOL_NAMES
 
 DEFAULT_HOME = Path("~/Trove")
 CONFIG_FILENAME = "config.toml"
@@ -51,9 +47,23 @@ WORKER_CONCURRENCY_ENV = {
     "download": "TROVE_DOWNLOAD_CONCURRENCY",
     "asr": "TROVE_ASR_CONCURRENCY",
     "llm": "TROVE_LLM_CONCURRENCY",
-    "index": "TROVE_INDEX_CONCURRENCY",
+    INDEX_POOL: "TROVE_INDEX_CONCURRENCY",
 }
 LLM_CONFIG_FILENAME = "llm.toml"
+
+# The default `trove worker` stays a single serial claimer. Per-pool workers
+# use the resource-specific defaults below.
+DEFAULT_POOL_CONCURRENCY: dict[str, int] = {
+    ALL_POOL: 1,
+    "download": 3,
+    "asr": 1,
+    "llm": 2,
+    INDEX_POOL: 1,
+}
+
+
+def clamp_pool_concurrency(pool: str, value: int) -> int:
+    return DEFAULT_POOL_CONCURRENCY[INDEX_POOL] if pool == INDEX_POOL else value
 
 
 def default_llm_config_path() -> Path:
@@ -144,7 +154,7 @@ class Config:
     worker_heartbeat_seconds: int = DEFAULT_WORKER_HEARTBEAT_SECONDS
     worker_reaper_interval_seconds: int = DEFAULT_WORKER_REAPER_INTERVAL_SECONDS
     worker_shutdown_timeout_seconds: int = DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS
-    worker_pools: tuple[str, ...] = ("all",)
+    worker_pools: tuple[str, ...] = (ALL_POOL,)
     worker_concurrency: dict[str, int] = field(
         default_factory=lambda: dict(DEFAULT_POOL_CONCURRENCY)
     )
@@ -181,7 +191,7 @@ class Config:
                 f"{', '.join(sorted(unknown_pools))}; "
                 f"choose from: {', '.join(POOL_NAMES)}"
             )
-        self.worker_pools = tuple(dict.fromkeys(self.worker_pools)) or ("all",)
+        self.worker_pools = tuple(dict.fromkeys(self.worker_pools)) or (ALL_POOL,)
         unknown_concurrency = set(self.worker_concurrency) - set(DEFAULT_POOL_CONCURRENCY)
         if unknown_concurrency:
             raise ConfigError(
@@ -191,10 +201,10 @@ class Config:
             )
         if any(value <= 0 for value in self.worker_concurrency.values()):
             raise ConfigError("Worker concurrency values must be positive")
+        merged = {**DEFAULT_POOL_CONCURRENCY, **self.worker_concurrency}
         self.worker_concurrency = {
-            **DEFAULT_POOL_CONCURRENCY,
-            **self.worker_concurrency,
-            "index": INDEX_POOL_CONCURRENCY,
+            pool: clamp_pool_concurrency(pool, value)
+            for pool, value in merged.items()
         }
 
     # ------------------------------------------------------------------
@@ -231,10 +241,6 @@ class Config:
     @property
     def uploads_dir(self) -> Path:
         return self.cache_dir / "uploads"
-
-    @property
-    def worker_heartbeat_path(self) -> Path:
-        return self.cache_dir / "worker.json"
 
     def ensure_layout(self) -> None:
         directories = (
@@ -403,7 +409,7 @@ def _parse_stage_max_attempts(value: str) -> dict[str, int]:
 
 def _parse_worker_pools(value: str) -> tuple[str, ...]:
     if not value.strip():
-        return ("all",)
+        return (ALL_POOL,)
     names = [item.strip() for item in value.split(",")]
     if any(not name for name in names):
         raise ConfigError(
