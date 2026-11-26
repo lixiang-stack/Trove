@@ -121,7 +121,13 @@ TROVE_IMAGE_TAG="$(uv run trove --version | cut -d' ' -f2)" docker compose build
 ```
 
 `docker-compose.yml` forwards `TROVE_BUILD_COMMIT` and `TROVE_BUILD_TIME` as
-build args; they appear in `/api/health` under `build`. The Dockerfile is
+build args; they appear in `/api/health` under `build`.
+
+Dependency layers are cached independently of README/source changes, so
+switching worktrees and rebuilding only refreshes the final layers as long as
+`pyproject.toml` and `uv.lock` are unchanged. Do not run `docker image prune` if
+you want to keep that cache, and use `docker compose up -d` without `--build`
+when the current image already matches the checkout. The Dockerfile is
 architecture-neutral and builds natively on ARM64 (Apple
 Silicon, arm64 Linux) and AMD64 (x86_64 Linux). Multi-arch manifests are not
 published; build on the target architecture. The default ASR image is about
