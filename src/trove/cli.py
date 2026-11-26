@@ -6,13 +6,16 @@ import http.client
 import importlib.util
 import json
 import os
+import platform
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -21,12 +24,14 @@ from trove.app import create_app
 from trove.composition import build_runtime
 from trove.config import ConfigError, load_config
 from trove.db.engine import (
+    DatabaseUpgradeError,
     current_revision,
     fts5_available,
     head_revision,
     upgrade_database,
 )
 from trove.domain.items import ASR_MODEL_MISSING_HINT, ASR_NOT_INSTALLED_HINT
+from trove.domain.worker_pools import ALL_POOL
 from trove.logging_setup import configure_logging
 from trove.web.urls import locate_url
 from trove.worker import ensure_migrated, resolve_worker_pools, run_worker
@@ -130,7 +135,8 @@ def _build_parser() -> argparse.ArgumentParser:
         help="delete AI tags before queueing the runs",
     )
 
-    subparsers.add_parser("doctor", help="check Host dependencies and layout")
+    doctor = subparsers.add_parser("doctor", help="check Host dependencies and layout")
+    doctor.add_argument("--json", action="store_true", dest="as_json")
     subparsers.add_parser("setup", help="download the ASR model and check dependencies")
 
     service = subparsers.add_parser("service", help="install or remove launchd agents")
@@ -217,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "bench":
         return _bench(config, args)
     if args.command == "doctor":
-        return _doctor(config)
+        return _doctor(config, as_json=args.as_json)
     if args.command == "setup":
         return _setup(config)
     if args.command == "service":
@@ -320,7 +326,21 @@ def _stop_worker_child(process: subprocess.Popen[str]) -> None:
 
 def _db(config) -> int:
     config.ensure_layout()
-    upgrade_database(config)
+    configure_logging(config, console=False)
+    try:
+        backup = upgrade_database(config)
+    except DatabaseUpgradeError as exc:
+        print(str(exc), file=sys.stderr)
+        if exc.backup_path is not None:
+            print(
+                "Restore the pre-upgrade database with:\n"
+                f"  cp {exc.backup_path} {config.db_path}\n"
+                f"  rm -f {config.db_path}-wal {config.db_path}-shm",
+                file=sys.stderr,
+            )
+        return 1
+    if backup is not None:
+        print(f"Database backup: {backup}")
     current = current_revision(_engine(config))
     print(f"Database migrated to {current}")
     return 0
@@ -590,103 +610,292 @@ def _bench(config, args) -> int:
     return 0
 
 
-def _doctor(config) -> int:
-    config.ensure_layout()
-    problems: list[str] = []
-    print(f"Trove {__version__}")
-    print(f"Data directory: {config.home} ({oct(config.home.stat().st_mode & 0o777)})")
+@dataclass(slots=True)
+class _DoctorTools:
+    ffmpeg_path: str | None
+    ffmpeg_version: str | None
+    ffprobe_path: str | None
+    ffprobe_version: str | None
+    ytdlp_version: str | None
 
-    for path in (config.library_dir, config.cache_dir, config.logs_dir):
-        mode = oct(path.stat().st_mode & 0o777)
-        print(f"  {path.name}/ {mode}")
-        if path.stat().st_mode & 0o077:
-            problems.append(f"{path} permissions are too broad; expected 0700")
-    for path in (config.config_path, config.env_path):
-        if not path.exists():
-            problems.append(f"Missing {path}")
-        elif path.stat().st_mode & 0o077:
-            problems.append(f"{path} permissions are too broad; expected 0600")
 
-    engine = _engine(config)
-    if not fts5_available(engine):
-        problems.append("SQLite lacks FTS5 support")
-    else:
-        print("SQLite FTS5: OK")
-    head = head_revision(config)
-    current = current_revision(engine)
-    if current != head:
-        problems.append(f"Database is not migrated (current {current or 'empty'}, target {head})")
-    else:
-        print(f"Database migration: {current}")
+def _doctor_check(
+    name: str, status: str, message: str, fix: str = ""
+) -> dict[str, str]:
+    return {"name": name, "status": status, "message": message, "fix": fix}
 
-    if config.password_configured():
-        print("Password: configured")
-    else:
-        problems.append("Password is not configured; run: uv run trove auth set-password")
 
-    port_problem, port_message = _port_status(config.host, config.port)
-    print(port_message)
-    if port_problem:
-        problems.append(port_message)
-
-    for name, binary, args_ in (
-        ("FFmpeg", "ffmpeg", ["-version"]),
-        ("ffprobe", "ffprobe", ["-version"]),
-    ):
-        path = shutil.which(binary)
-        if path is None:
-            problems.append(f"Missing {name}; install with: brew install ffmpeg")
-            print(f"{name}: missing")
-            continue
-        output = _command_version([path, *args_])
-        print(f"{name}: {output} ({path})")
-
-    ytdlp = shutil.which("yt-dlp")
-    if ytdlp:
-        print(f"yt-dlp: {_command_version([ytdlp, '--version'])} ({ytdlp})")
-    else:
-        ytdlp_result: subprocess.CompletedProcess[str] | None
-        try:
-            ytdlp_result = subprocess.run(
-                [sys.executable, "-m", "yt_dlp", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                check=False,
+def _doctor(config, *, as_json: bool) -> int:
+    checks, versions = _doctor_checks(config)
+    ok = all(entry["status"] != "fail" for entry in checks)
+    if as_json:
+        print(
+            json.dumps(
+                {"ok": ok, "checks": checks, "versions": versions},
+                ensure_ascii=False,
+                indent=2,
             )
-        except (OSError, subprocess.SubprocessError):
-            ytdlp_result = None
-        if ytdlp_result is None or ytdlp_result.returncode != 0:
-            problems.append("yt-dlp is missing; run: uv sync")
-            print("yt-dlp: missing")
-        else:
-            print(f"yt-dlp: {ytdlp_result.stdout.strip()}")
+        )
+        return 0 if ok else 1
 
-    _doctor_asr(config, problems)
-
-    if problems:
+    _print_doctor_checks(config, checks)
+    failures = [entry for entry in checks if entry["status"] == "fail"]
+    if failures:
         print("\nProblems to fix:")
-        for problem in problems:
-            print(f"  - {problem}")
+        for entry in failures:
+            print(f"  - {entry['message']}")
         return 1
     print("\nHost check passed.")
     return 0
 
 
-def _doctor_asr(config, problems: list[str]) -> None:
+def _doctor_checks(config) -> tuple[list[dict[str, str]], dict[str, str | None]]:
+    tools = _doctor_tools()
+    checks = [
+        _doctor_permissions(config),
+        *_doctor_database(config),
+        _doctor_password(config),
+        _doctor_port(config),
+        *_doctor_tool_checks(tools),
+        _doctor_asr(config),
+        _doctor_packages(config),
+        _doctor_worker(config),
+        _doctor_disk(config),
+    ]
+    versions = {
+        "trove": __version__,
+        "python": platform.python_version(),
+        "ffmpeg": tools.ffmpeg_version,
+        "ffprobe": tools.ffprobe_version,
+        "yt_dlp": tools.ytdlp_version,
+        "sqlite": sqlite3.sqlite_version,
+        "asr_model": config.asr_model,
+    }
+    return checks, versions
+
+
+def _doctor_tools() -> _DoctorTools:
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+    return _DoctorTools(
+        ffmpeg_path=ffmpeg_path,
+        ffmpeg_version=(
+            _command_version([ffmpeg_path, "-version"]) if ffmpeg_path else None
+        ),
+        ffprobe_path=ffprobe_path,
+        ffprobe_version=(
+            _command_version([ffprobe_path, "-version"]) if ffprobe_path else None
+        ),
+        ytdlp_version=_ytdlp_version(shutil.which("yt-dlp")),
+    )
+
+
+def _doctor_permissions(config) -> dict[str, str]:
+    directories = (config.home, config.library_dir, config.cache_dir, config.logs_dir)
+    broad_directories = [
+        path for path in directories if path.stat().st_mode & 0o077
+    ]
+    broad_files = [
+        path
+        for path in (config.config_path, config.env_path)
+        if path.exists() and path.stat().st_mode & 0o077
+    ]
+    if not broad_directories and not broad_files:
+        return _doctor_check(
+            "permissions",
+            "ok",
+            f"Data directory: {config.home} (0700); library/cache/logs 0700; "
+            "config and .env 0600",
+        )
+    message = "Permissions are too broad: " + ", ".join(
+        str(path) for path in (*broad_directories, *broad_files)
+    )
+    fixes = []
+    if broad_directories:
+        fixes.append("chmod 700 " + " ".join(str(path) for path in broad_directories))
+    if broad_files:
+        fixes.append("chmod 600 " + " ".join(str(path) for path in broad_files))
+    return _doctor_check("permissions", "fail", message, "; ".join(fixes))
+
+
+def _doctor_database(config) -> list[dict[str, str]]:
+    engine = _engine(config)
+    head = head_revision(config)
+    current = current_revision(engine)
+    if current == head:
+        revision = _doctor_check(
+            "database_revision", "ok", f"Database migration: {current}"
+        )
+    else:
+        revision = _doctor_check(
+            "database_revision",
+            "fail",
+            f"Database is not migrated (current {current or 'empty'}, target {head})",
+            "uv run trove db upgrade",
+        )
+    if fts5_available(engine):
+        fts5 = _doctor_check("fts5", "ok", "SQLite FTS5: OK")
+    else:
+        fts5 = _doctor_check(
+            "fts5", "fail", "SQLite lacks FTS5 support", "uv python install 3.12"
+        )
+    return [revision, fts5]
+
+
+def _doctor_password(config) -> dict[str, str]:
+    if config.password_configured():
+        return _doctor_check("password", "ok", "Password: configured")
+    return _doctor_check(
+        "password",
+        "fail",
+        "Password is not configured; run: uv run trove auth set-password",
+        "uv run trove auth set-password",
+    )
+
+
+def _doctor_port(config) -> dict[str, str]:
+    problem, message = _port_status(config.host, config.port)
+    return _doctor_check(
+        "port",
+        "fail" if problem else "ok",
+        message,
+        "docs/deployment.md#troubleshooting" if problem else "",
+    )
+
+
+def _doctor_tool_checks(tools: _DoctorTools) -> list[dict[str, str]]:
+    checks = []
+    for key, name, path, version in (
+        ("ffmpeg", "FFmpeg", tools.ffmpeg_path, tools.ffmpeg_version),
+        ("ffprobe", "ffprobe", tools.ffprobe_path, tools.ffprobe_version),
+    ):
+        if path is None:
+            checks.append(
+                _doctor_check(
+                    key,
+                    "fail",
+                    f"Missing {name}; install with: brew install ffmpeg",
+                    "brew install ffmpeg",
+                )
+            )
+        else:
+            checks.append(_doctor_check(key, "ok", f"{name}: {version} ({path})"))
+    if tools.ytdlp_version is None:
+        checks.append(
+            _doctor_check(
+                "yt_dlp", "fail", "yt-dlp is missing; run: uv sync", "uv sync"
+            )
+        )
+    else:
+        checks.append(_doctor_check("yt_dlp", "ok", f"yt-dlp: {tools.ytdlp_version}"))
+    return checks
+
+
+def _doctor_asr(config) -> dict[str, str]:
     # Optional ASR adapter; keep unrelated CLI commands free of the ASR stack.
     from trove.adapters.asr import funasr_installed, model_cached
 
     if not funasr_installed():
-        problems.append(ASR_NOT_INSTALLED_HINT)
-        print("funasr: missing")
-        return
-    print("funasr: OK")
-    if model_cached(config.asr_model):
-        print(f"ASR model: {config.asr_model}")
+        return _doctor_check(
+            "asr", "fail", ASR_NOT_INSTALLED_HINT, "uv sync --extra asr"
+        )
+    if not model_cached(config.asr_model):
+        return _doctor_check("asr", "fail", ASR_MODEL_MISSING_HINT, "uv run trove setup")
+    return _doctor_check("asr", "ok", f"funasr: OK; ASR model: {config.asr_model}")
+
+
+def _doctor_packages(config) -> dict[str, str]:
+    from trove.content_package import ContentPackage
+
+    unsupported = ContentPackage(config).incompatible_manifests()
+    if unsupported:
+        return _doctor_check(
+            "content_packages",
+            "fail",
+            "Unsupported content package schema: " + "; ".join(unsupported),
+            "docs/deployment.md#upgrade-backup-and-rollback",
+        )
+    return _doctor_check("content_packages", "ok", "Content packages: supported")
+
+
+def _doctor_worker(config) -> dict[str, str]:
+    from trove.worker import heartbeat_is_fresh, read_heartbeat, read_heartbeats
+
+    heartbeat = read_heartbeat(config)
+    entries = read_heartbeats(config)
+    state = heartbeat.get("state") if heartbeat is not None else None
+    alive = any(
+        heartbeat_is_fresh(entry) and _heartbeat_process_alive(entry)
+        for entry in entries
+    )
+    if heartbeat_is_fresh(heartbeat) and alive:
+        return _doctor_check("worker", "ok", f"Worker heartbeat: fresh (state={state})")
+    if heartbeat_is_fresh(heartbeat):
+        return _doctor_check(
+            "worker",
+            "warn",
+            f"Worker heartbeat: fresh but the process is not running (state={state})",
+            "uv run trove worker",
+        )
+    if heartbeat is not None:
+        return _doctor_check(
+            "worker",
+            "warn",
+            f"Worker heartbeat: stale (state={state})",
+            "uv run trove worker",
+        )
+    return _doctor_check(
+        "worker", "warn", "Worker heartbeat: not running", "uv run trove worker"
+    )
+
+
+def _doctor_disk(config) -> dict[str, str]:
+    free_bytes = shutil.disk_usage(config.home).free
+    free_gb = free_bytes / (1024**3)
+    if free_bytes < 100 * 1024 * 1024:
+        status = "fail"
+    elif free_bytes < 1024 * 1024 * 1024:
+        status = "warn"
     else:
-        problems.append(ASR_MODEL_MISSING_HINT)
-        print("ASR model: missing")
+        status = "ok"
+    return _doctor_check(
+        "disk",
+        status,
+        f"Disk: {free_gb:.1f} GB free",
+        "docs/deployment.md#backups",
+    )
+
+
+def _print_doctor_checks(config, checks: list[dict[str, str]]) -> None:
+    print(f"Trove {__version__}")
+    for entry in checks:
+        if entry["name"] == "permissions":
+            print(
+                f"Data directory: {config.home} "
+                f"({oct(config.home.stat().st_mode & 0o777)})"
+            )
+            for path in (config.library_dir, config.cache_dir, config.logs_dir):
+                print(f"  {path.name}/ {oct(path.stat().st_mode & 0o777)}")
+            continue
+        print(entry["message"])
+
+
+def _ytdlp_version(path: str | None) -> str | None:
+    if path is not None:
+        return _command_version([path, "--version"])
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "yt_dlp", "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
 
 
 def _setup(config) -> int:
@@ -746,7 +955,7 @@ def _service(config, args) -> int:
                 repo_root=root,
                 home=home,
                 agents_dir=agents_dir,
-                worker_pools=args.pool or ("all",),
+                worker_pools=args.pool or (ALL_POOL,),
                 dry_run=args.dry_run,
             )
             verb = "Rendered" if args.dry_run else "Installed"
@@ -767,6 +976,11 @@ def _service(config, args) -> int:
         return 0
     except deploy.DeployError as exc:
         print(f"Deployment error: {exc}", file=sys.stderr)
+        return 1
+    except DatabaseUpgradeError as exc:
+        print(str(exc), file=sys.stderr)
+        if exc.backup_path is not None:
+            print(f"Pre-upgrade backup: {exc.backup_path}", file=sys.stderr)
         return 1
 
 

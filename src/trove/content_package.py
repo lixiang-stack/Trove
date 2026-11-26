@@ -680,6 +680,32 @@ class ContentPackage:
             extra=dict(existing.extra) if existing is not None else {},
         )
 
+    def incompatible_manifests(self) -> list[str]:
+        problems: list[str] = []
+        if not self.config.library_dir.is_dir():
+            return problems
+        for directory in sorted(self.config.library_dir.iterdir()):
+            if not directory.is_dir():
+                continue
+            if not (directory / MANIFEST_FILENAME).is_file():
+                continue
+            try:
+                self.read_manifest(directory.name)
+            except PackageVersionError as exc:
+                problems.append(f"{directory.name}: {exc.message}")
+            except StorageError:
+                continue
+        return problems
+
+    def assert_supported_manifests(self) -> None:
+        problems = self.incompatible_manifests()
+        if problems:
+            raise PackageVersionError(
+                "Unsupported content package schema_version: "
+                + "; ".join(problems)
+                + ". Upgrade Trove before starting, or restore a compatible backup."
+            )
+
     def _ensure_supported_manifest(self, item_id: str) -> None:
         self.read_manifest(item_id)
 
