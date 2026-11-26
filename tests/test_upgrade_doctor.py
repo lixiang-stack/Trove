@@ -8,6 +8,7 @@ import subprocess
 import threading
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from alembic import command
@@ -238,6 +239,16 @@ def test_old_database_upgrades_to_head_and_doctor_passes(
     command.upgrade(_alembic_config(config), "0008_run_force")
     monkeypatch.setattr("trove.adapters.asr.funasr_installed", lambda: True)
     monkeypatch.setattr("trove.adapters.asr.model_cached", lambda model: True)
+    monkeypatch.setattr(
+        "trove.cli._doctor_tools",
+        lambda: SimpleNamespace(
+            ffmpeg_path="/usr/bin/ffmpeg",
+            ffmpeg_version="ffmpeg test",
+            ffprobe_path="/usr/bin/ffprobe",
+            ffprobe_version="ffprobe test",
+            ytdlp_version="yt-dlp test",
+        ),
+    )
 
     assert main(["db", "upgrade"]) == 0
     capsys.readouterr()

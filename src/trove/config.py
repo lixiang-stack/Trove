@@ -17,7 +17,6 @@ from trove.domain.worker_pools import ALL_POOL, INDEX_POOL, POOL_NAMES
 
 DEFAULT_HOME = Path("~/Trove")
 CONFIG_FILENAME = "config.toml"
-ENV_FILENAME = ".env"
 DB_FILENAME = "trove.db"
 
 MB = 1024 * 1024
@@ -42,6 +41,8 @@ DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
 DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
 DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30
 STAGE_MAX_ATTEMPTS_ENV = "TROVE_STAGE_MAX_ATTEMPTS"
+PASSWORD_ENV = "TROVE_PASSWORD"
+PASSWORD_FILE_ENV = "TROVE_PASSWORD_FILE"
 WORKER_POOLS_ENV = "TROVE_WORKER_POOLS"
 WORKER_CONCURRENCY_ENV = {
     "download": "TROVE_DOWNLOAD_CONCURRENCY",
@@ -215,10 +216,6 @@ class Config:
         return self.home / CONFIG_FILENAME
 
     @property
-    def env_path(self) -> Path:
-        return self.home / ENV_FILENAME
-
-    @property
     def db_path(self) -> Path:
         return self.home / DB_FILENAME
 
@@ -260,10 +257,6 @@ class Config:
             self._write_config({"session_secret": secrets.token_urlsafe(32), "session_epoch": 0})
         else:
             self.config_path.chmod(0o600)
-        if not self.env_path.exists():
-            self._write_env("")
-        else:
-            self.env_path.chmod(0o600)
 
     # ------------------------------------------------------------------
     # config.toml
@@ -294,9 +287,6 @@ class Config:
         data = self._read_config()
         data.update(values)
         self._write_config(data)
-
-    def _write_env(self, contents: str) -> None:
-        self._atomic_write(self.env_path, contents, 0o600)
 
     @staticmethod
     def _atomic_write(path: Path, contents: str, mode: int) -> None:
@@ -362,26 +352,6 @@ class Config:
     def invalidate_sessions(self) -> None:
         self._update_config(session_epoch=self.session_epoch + 1)
 
-    # ------------------------------------------------------------------
-    # Environment
-    # ------------------------------------------------------------------
-    def load_dotenv(self) -> None:
-        if not self.env_path.exists():
-            return
-        try:
-            for raw in self.env_path.read_text(encoding="utf-8").splitlines():
-                line = raw.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip("'\"")
-                if key:
-                    os.environ.setdefault(key, value)
-        except OSError:
-            return
-
-
 def _parse_stage_max_attempts(value: str) -> dict[str, int]:
     if not value.strip():
         return {}
@@ -405,6 +375,30 @@ def _parse_stage_max_attempts(value: str) -> dict[str, int]:
             ) from exc
         parsed[stage] = attempts
     return parsed
+
+
+def _environment_password() -> str | None:
+    value = os.environ.get(PASSWORD_ENV)
+    if value:
+        return value
+    path_value = os.environ.get(PASSWORD_FILE_ENV)
+    if not path_value:
+        return None
+    path = Path(path_value).expanduser()
+    try:
+        password = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ConfigError(f"{PASSWORD_FILE_ENV} could not be read: {path}") from exc
+    if not password:
+        raise ConfigError(f"{PASSWORD_FILE_ENV} points to an empty file: {path}")
+    return password
+
+
+def _apply_environment_password(config: Config) -> None:
+    password = _environment_password()
+    if password is None or config.verify_password(password):
+        return
+    config.set_password(password)
 
 
 def _parse_worker_pools(value: str) -> tuple[str, ...]:
@@ -499,5 +493,5 @@ def load_config(home: Path | str | None = None) -> Config:
     if cookies:
         config.ytdlp_cookies = Path(cookies).expanduser().resolve()
     config.ensure_layout()
-    config.load_dotenv()
+    _apply_environment_password(config)
     return config

@@ -18,14 +18,25 @@ backups.
 ### Quick start
 
 ```bash
-docker compose up -d --build
-docker compose exec api trove auth set-password
+TROVE_PASSWORD='your-password' docker compose up -d --build
 open http://127.0.0.1:8765
 ```
 
 `init` applies migrations before `api` and `worker` start. The API publishes only
 on `127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`; bind
 another interface only behind a trusted reverse proxy.
+
+All configuration lives in `~/.config/trove` inside the containers, persisted in
+the `trove-config` volume; there is no `.env` file. On first start `TROVE_PASSWORD`
+is written to `~/.config/trove/password` (mode `0600`) and the entrypoint exports
+`TROVE_PASSWORD_FILE`; the app hashes it into `/data/config.toml` only when it
+changes. Later `up` calls reuse the file, so the environment variable is only
+needed when changing the password. Changing it invalidates existing sessions and
+device tokens. Verify inside the container:
+
+```bash
+docker compose exec api trove doctor --json
+```
 
 Services:
 
@@ -51,36 +62,39 @@ docker compose --profile pools up -d \
 
 ### ASR
 
-The default image skips the ASR stack to keep the image small. Build the ASR
-variant explicitly:
+ASR is enabled by default. The first `init` downloads the Paraformer models
+(about 1.25 GB) into `/data/models` on the `trove-data` volume; later starts
+reuse them. `trove doctor` inside the ASR container reports the model as present.
+
+To build the smaller book-only image without transcription:
 
 ```bash
-TROVE_INSTALL_ASR=true docker compose build
+TROVE_INSTALL_ASR=false docker compose build
 docker compose up -d
 ```
 
-The first `init` downloads the Paraformer models (about 1.25 GB) into
-`/data/models` on the `trove-data` volume. Later starts reuse them. `trove
-doctor` inside the ASR container should report the model as present.
-
 ### LLM configuration
 
-LLM settings live in `~/.config/trove/llm.toml`. Mount the host file read-only
-into both processes with a `docker-compose.override.yml`:
+The `trove-config` volume is mounted at `~/.config/trove` and starts with an
+`llm.toml` containing `enabled = false`, so the Host runs without organization
+until configured. Copy the host file into the volume, then restart both
+processes:
 
-```yaml
-services:
-  api:
-    volumes:
-      - ~/.config/trove/llm.toml:/home/trove/.config/trove/llm.toml:ro
-  worker:
-    volumes:
-      - ~/.config/trove/llm.toml:/home/trove/.config/trove/llm.toml:ro
+```bash
+install -d -m 700 ~/.config/trove
+${EDITOR:-vi} ~/.config/trove/llm.toml
+docker compose exec -T worker sh -c \
+  'cat > /home/trove/.config/trove/llm.toml' < ~/.config/trove/llm.toml
+docker compose restart api worker
 ```
 
-Restart `api` and `worker` after editing the file. Alternatively, mount the same
-file to the split pool workers. To run without organization, mount a file with
-`enabled = false`.
+To inspect or update the container copy directly:
+
+```bash
+docker compose exec worker cat /home/trove/.config/trove/llm.toml
+```
+
+To run without organization, set `enabled = false` before copying.
 
 ### TLS with Caddy
 
@@ -116,18 +130,18 @@ you want to keep that cache, and use `docker compose up -d` without `--build`
 when the current image already matches the checkout. The Dockerfile is
 architecture-neutral and builds natively on ARM64 (Apple
 Silicon, arm64 Linux) and AMD64 (x86_64 Linux). Multi-arch manifests are not
-published; build on the target architecture. The base image is about 230 MB and
-builds in a few minutes on Apple Silicon with a warm `uv` cache; `INSTALL_ASR=true`
-adds the PyTorch/FunASR stack and is about 3.5 GB. Exact sizes depend on the
-PyTorch wheel for the target platform.
+published; build on the target architecture. The default ASR image is about
+3.5 GB because it includes the PyTorch/FunASR stack; `INSTALL_ASR=false` produces
+the roughly 230 MB book-only image. Exact sizes depend on the PyTorch wheel for
+the target platform.
 
 ### Data, backups, and cleanup
 
-`docker compose down` removes containers but keeps the `trove-data` volume.
-`docker compose down -v` permanently deletes the volume, including settings and
-the library. Back up the database with a SQLite online backup while the Host is
-running; the database path inside the container is `/data/trove.db` and the
-library is `/data/library`.
+`docker compose down` removes containers but keeps the `trove-data` and
+`trove-config` volumes. `docker compose down -v` permanently deletes both,
+including settings, the password, LLM config, and the library. Back up the
+database with a SQLite online backup while the Host is running; the database path
+inside the container is `/data/trove.db` and the library is `/data/library`.
 
 Run the Docker smoke test with:
 
@@ -168,6 +182,10 @@ uv run trove auth set-password
 uv run trove setup          # downloads the FunASR models (~1.25 GB) and checks tools
 uv run trove doctor
 ```
+
+To avoid the interactive password step, export `TROVE_PASSWORD` or point
+`TROVE_PASSWORD_FILE` at a secret before the first command; startup hashes it
+into `config.toml` and only rewrites it when the value changes.
 
 `trove setup` and `trove doctor` check FFmpeg/ffprobe, `yt-dlp`, SQLite FTS5, data
 directory permissions, the database revision, the login password, the ASR model,

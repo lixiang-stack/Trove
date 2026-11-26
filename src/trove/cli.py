@@ -22,7 +22,12 @@ from typing import Any
 from trove import __version__
 from trove.app import create_app
 from trove.composition import build_runtime
-from trove.config import ConfigError, load_config
+from trove.config import (
+    PASSWORD_ENV,
+    PASSWORD_FILE_ENV,
+    ConfigError,
+    load_config,
+)
 from trove.db.engine import (
     DatabaseUpgradeError,
     current_revision,
@@ -695,17 +700,18 @@ def _doctor_permissions(config) -> dict[str, str]:
     broad_directories = [
         path for path in directories if path.stat().st_mode & 0o077
     ]
-    broad_files = [
-        path
-        for path in (config.config_path, config.env_path)
-        if path.exists() and path.stat().st_mode & 0o077
-    ]
+    broad_files = (
+        [config.config_path]
+        if config.config_path.exists()
+        and config.config_path.stat().st_mode & 0o077
+        else []
+    )
     if not broad_directories and not broad_files:
         return _doctor_check(
             "permissions",
             "ok",
             f"Data directory: {config.home} (0700); library/cache/logs 0700; "
-            "config and .env 0600",
+            "config 0600",
         )
     message = "Permissions are too broad: " + ", ".join(
         str(path) for path in (*broad_directories, *broad_files)
@@ -1025,6 +1031,12 @@ def _command_version(command: list[str]) -> str:
 def _auth(config, args) -> int:
     if args.auth_command != "set-password":
         return 2
+    if os.environ.get(PASSWORD_ENV) or os.environ.get(PASSWORD_FILE_ENV):
+        print(
+            f"Warning: {PASSWORD_ENV}/{PASSWORD_FILE_ENV} is set and will "
+            "override this password on the next start.",
+            file=sys.stderr,
+        )
     if args.password_stdin or not sys.stdin.isatty():
         password = sys.stdin.readline().rstrip("\n")
         confirm = password

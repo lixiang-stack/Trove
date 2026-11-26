@@ -15,7 +15,7 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 
 - `Dockerfile` 多阶段构建：
   - Python 3.12 slim + `uv`；安装 FFmpeg/ffprobe。
-  - `ARG INSTALL_ASR=false`；为 true 时安装 `funasr/modelscope/torch/torchaudio`，镜像明显更大。
+  - `ARG INSTALL_ASR=true` 默认安装 `funasr/modelscope/torch/torchaudio`；设为 false 时构建不含 ASR 的小镜像。
   - 非 root 用户运行；`TROVE_HOME=/data`；入口支持 `serve`/`worker`/`doctor`/`setup`。
   - 健康检查调用 `/api/health`；暴露 8765。
 - `docker-compose.yml`：
@@ -59,10 +59,18 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 - `Dockerfile` is a two-stage build: a Python 3.12 builder uses `uv sync
   --frozen --no-dev` against `uv.lock`, then the runtime copies only `.venv` and
   installs FFmpeg, `tini`, `curl`, `libgomp1`, and `libsndfile1`. The default
-  `INSTALL_ASR=false` image is about 230 MB; `INSTALL_ASR=true` adds
-  FunASR/modelscope/torch/torchaudio and is about 3.5 GB. The ASR image was built
-  on arm64 Linux, `init` downloaded the models, and `trove doctor --json`
-  reported `ok: true` with only the expected "worker not running" warning.
+  default image includes FunASR/modelscope/torch/torchaudio and is about 3.5 GB;
+  `INSTALL_ASR=false` produces the roughly 230 MB book-only image. The ASR image
+  was built on arm64 Linux, `init` downloaded the models, and
+  `trove doctor --json` reported `ok: true` with only the expected
+  "worker not running" warning.
+- All user configuration lives in `~/.config/trove` inside the containers,
+  persisted in the `trove-config` volume; there is no `.env`. The entrypoint
+  writes `TROVE_PASSWORD` to `~/.config/trove/password` once (mode `0600`),
+  exports `TROVE_PASSWORD_FILE`, and seeds `llm.toml` with `enabled = false`
+  when missing. Startup hashes the password into the data volume only when it
+  differs, and the LLM file can be replaced with
+  `docker compose exec -T worker sh -c 'cat > ...'`.
 - The runtime runs as UID/GID 10001 `trove`, uses `TROVE_HOME=/data`, persists
   models under `/data/models`, and exposes 8765 with a `/api/health` healthcheck.
   `docker/entrypoint.sh` dispatches `init`, `serve`, `worker`, `doctor`, and
@@ -76,9 +84,10 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
   `docker compose down` without `-v`, and verifies the Item survives. Fixtures
   are copied through `docker compose cp`, so the script also works with a remote
   Docker daemon that cannot bind-mount the host worktree.
-- `README.md` and `docs/deployment.md` cover quick start, services/pools, ASR,
-  LLM mounts, Caddy, image tags/sizes/architectures, backups, cleanup, and the
-  smoke test. The launchd path remains intact below the Docker chapter.
+- `README.md` and `docs/deployment.md` cover quick start,
+  `TROVE_PASSWORD` + the `trove-config` volume, services/pools, default ASR,
+  Caddy, image tags/sizes/architectures, backups, cleanup, and the smoke test.
+  The launchd path remains intact below the Docker chapter.
 
 ## Notes
 
