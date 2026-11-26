@@ -16,12 +16,15 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY pyproject.toml uv.lock README.md ./
+COPY pyproject.toml uv.lock ./
 RUN if [ "${INSTALL_ASR}" = "true" ]; then \
         uv sync --frozen --no-dev --no-install-project --extra asr; \
     else \
         uv sync --frozen --no-dev --no-install-project; \
     fi
+# Keep README out of the dependency layer: doc-only changes must not trigger a
+# PyTorch download when rebuilding from another worktree.
+COPY README.md ./
 COPY src ./src
 RUN if [ "${INSTALL_ASR}" = "true" ]; then \
         uv sync --frozen --no-dev --no-editable --extra asr; \
