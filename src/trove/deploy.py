@@ -4,8 +4,11 @@ import os
 import plistlib
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+
+from trove.domain.worker_pools import POOL_NAMES
 
 API_LABEL = "com.trove.api"
 WORKER_LABEL = "com.trove.worker"
@@ -27,13 +30,30 @@ def default_agents_dir() -> Path:
     return DEFAULT_AGENTS_DIR.expanduser()
 
 
+def worker_label(pool: str) -> str:
+    return WORKER_LABEL if pool == "all" else f"{WORKER_LABEL}.{pool}"
+
+
+def worker_arguments(pool: str) -> list[str]:
+    if pool == "all":
+        return ["worker"]
+    return ["worker", "--pool", pool]
+
+
 def build_agents(
     *,
     repo_root: Path,
     home: Path,
     uv_path: Path,
     agents_dir: Path,
+    worker_pools: Sequence[str] = ("all",),
 ) -> list[LaunchdAgent]:
+    unknown_pools = set(worker_pools) - set(POOL_NAMES)
+    if unknown_pools:
+        raise DeployError(
+            f"Unknown worker pool: {', '.join(sorted(unknown_pools))}; "
+            f"choose from: {', '.join(POOL_NAMES)}"
+        )
     repo_root = repo_root.expanduser().resolve()
     home = home.expanduser().resolve()
     logs = home / "logs"
@@ -73,23 +93,27 @@ def build_agents(
                 **common(API_LABEL),
             },
         ),
-        LaunchdAgent(
-            label=WORKER_LABEL,
-            path=agents_dir / f"{WORKER_LABEL}.plist",
-            payload={
-                "Label": WORKER_LABEL,
-                "ProgramArguments": [
-                    str(uv_path),
-                    "run",
-                    "--directory",
-                    str(repo_root),
-                    "trove",
-                    "worker",
-                ],
-                **common(WORKER_LABEL),
-            },
-        ),
     ]
+    for pool in dict.fromkeys(worker_pools or ("all",)):
+        label = worker_label(pool)
+        agents.append(
+            LaunchdAgent(
+                label=label,
+                path=agents_dir / f"{label}.plist",
+                payload={
+                    "Label": label,
+                    "ProgramArguments": [
+                        str(uv_path),
+                        "run",
+                        "--directory",
+                        str(repo_root),
+                        "trove",
+                        *worker_arguments(pool),
+                    ],
+                    **common(label),
+                },
+            )
+        )
     return agents
 
 
@@ -129,6 +153,7 @@ def install(
     home: Path,
     agents_dir: Path,
     uv_path: Path | None = None,
+    worker_pools: Sequence[str] = ("all",),
     dry_run: bool = False,
 ) -> list[Path]:
     uv_path = uv_path or _which("uv")
@@ -137,6 +162,7 @@ def install(
         home=home,
         uv_path=uv_path,
         agents_dir=agents_dir.expanduser().resolve(),
+        worker_pools=worker_pools,
     )
     written = write_agents(agents)
     lint_agents(agents)
@@ -147,10 +173,17 @@ def install(
     return written
 
 
-def uninstall(*, agents_dir: Path, dry_run: bool = False) -> list[Path]:
+def uninstall(
+    *,
+    agents_dir: Path,
+    worker_pools: Sequence[str] | None = None,
+    dry_run: bool = False,
+) -> list[Path]:
     agents_dir = agents_dir.expanduser().resolve()
     removed: list[Path] = []
-    for label in (API_LABEL, WORKER_LABEL):
+    pools = tuple(worker_pools) if worker_pools is not None else POOL_NAMES
+    labels = [API_LABEL, *(worker_label(pool) for pool in pools)]
+    for label in dict.fromkeys(labels):
         path = agents_dir / f"{label}.plist"
         if not path.exists():
             continue

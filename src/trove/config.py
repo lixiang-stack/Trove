@@ -13,6 +13,11 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from trove.domain.retry import STAGE_MAX_ATTEMPTS
+from trove.domain.worker_pools import (
+    DEFAULT_POOL_CONCURRENCY,
+    INDEX_POOL_CONCURRENCY,
+    POOL_NAMES,
+)
 
 DEFAULT_HOME = Path("~/Trove")
 CONFIG_FILENAME = "config.toml"
@@ -39,7 +44,15 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
 DEFAULT_WORKER_LEASE_SECONDS = 25
 DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
 DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
+DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30
 STAGE_MAX_ATTEMPTS_ENV = "TROVE_STAGE_MAX_ATTEMPTS"
+WORKER_POOLS_ENV = "TROVE_WORKER_POOLS"
+WORKER_CONCURRENCY_ENV = {
+    "download": "TROVE_DOWNLOAD_CONCURRENCY",
+    "asr": "TROVE_ASR_CONCURRENCY",
+    "llm": "TROVE_LLM_CONCURRENCY",
+    "index": "TROVE_INDEX_CONCURRENCY",
+}
 LLM_CONFIG_FILENAME = "llm.toml"
 
 
@@ -130,6 +143,11 @@ class Config:
     worker_lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS
     worker_heartbeat_seconds: int = DEFAULT_WORKER_HEARTBEAT_SECONDS
     worker_reaper_interval_seconds: int = DEFAULT_WORKER_REAPER_INTERVAL_SECONDS
+    worker_shutdown_timeout_seconds: int = DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS
+    worker_pools: tuple[str, ...] = ("all",)
+    worker_concurrency: dict[str, int] = field(
+        default_factory=lambda: dict(DEFAULT_POOL_CONCURRENCY)
+    )
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
@@ -154,6 +172,30 @@ class Config:
             )
         if self.worker_reaper_interval_seconds <= 0:
             raise ConfigError("TROVE_WORKER_REAPER_INTERVAL_SECONDS must be positive")
+        if self.worker_shutdown_timeout_seconds <= 0:
+            raise ConfigError("TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS must be positive")
+        unknown_pools = set(self.worker_pools) - set(POOL_NAMES)
+        if unknown_pools:
+            raise ConfigError(
+                f"{WORKER_POOLS_ENV} contains unknown pools: "
+                f"{', '.join(sorted(unknown_pools))}; "
+                f"choose from: {', '.join(POOL_NAMES)}"
+            )
+        self.worker_pools = tuple(dict.fromkeys(self.worker_pools)) or ("all",)
+        unknown_concurrency = set(self.worker_concurrency) - set(DEFAULT_POOL_CONCURRENCY)
+        if unknown_concurrency:
+            raise ConfigError(
+                "Unknown worker concurrency pools: "
+                f"{', '.join(sorted(unknown_concurrency))}; "
+                f"choose from: {', '.join(DEFAULT_POOL_CONCURRENCY)}"
+            )
+        if any(value <= 0 for value in self.worker_concurrency.values()):
+            raise ConfigError("Worker concurrency values must be positive")
+        self.worker_concurrency = {
+            **DEFAULT_POOL_CONCURRENCY,
+            **self.worker_concurrency,
+            "index": INDEX_POOL_CONCURRENCY,
+        }
 
     # ------------------------------------------------------------------
     # Layout
@@ -359,6 +401,34 @@ def _parse_stage_max_attempts(value: str) -> dict[str, int]:
     return parsed
 
 
+def _parse_worker_pools(value: str) -> tuple[str, ...]:
+    if not value.strip():
+        return ("all",)
+    names = [item.strip() for item in value.split(",")]
+    if any(not name for name in names):
+        raise ConfigError(
+            f"{WORKER_POOLS_ENV} must be a comma-separated list of pools, "
+            f"for example 'download,asr'"
+        )
+    return tuple(names)
+
+
+def _parse_worker_concurrency(environment: dict[str, str]) -> dict[str, int]:
+    parsed: dict[str, int] = {}
+    for pool, env_name in WORKER_CONCURRENCY_ENV.items():
+        raw = environment.get(env_name, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ConfigError(f"{env_name} must be a positive integer") from exc
+        if value <= 0:
+            raise ConfigError(f"{env_name} must be a positive integer")
+        parsed[pool] = value
+    return parsed
+
+
 def load_config(home: Path | str | None = None) -> Config:
     if home is not None:
         os.environ["TROVE_HOME"] = str(Path(home).expanduser().resolve())
@@ -408,6 +478,14 @@ def load_config(home: Path | str | None = None) -> Config:
                 str(DEFAULT_WORKER_REAPER_INTERVAL_SECONDS),
             )
         ),
+        worker_shutdown_timeout_seconds=int(
+            os.environ.get(
+                "TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS",
+                str(DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS),
+            )
+        ),
+        worker_pools=_parse_worker_pools(os.environ.get(WORKER_POOLS_ENV, "")),
+        worker_concurrency=_parse_worker_concurrency(dict(os.environ)),
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},
     )

@@ -39,13 +39,25 @@ Install the agents:
 scripts/install-launchd.sh
 ```
 
-The script applies migrations, renders two plists under `~/Library/LaunchAgents`,
+The script applies migrations, renders the plists under `~/Library/LaunchAgents`,
 and loads them with `launchctl`:
 
 | Agent             | Command                                  | Log                              |
 | ----------------- | ---------------------------------------- | -------------------------------- |
 | `com.trove.api`   | `uv run trove serve --no-worker --host 127.0.0.1` | `~/Trove/logs/com.trove.api.log` |
 | `com.trove.worker`| `uv run trove worker`                    | `~/Trove/logs/com.trove.worker.log` |
+
+To split resource classes, render named agents instead of the default `all`
+worker:
+
+```bash
+uv run trove service install --pool all --pool asr
+```
+
+Named agents use `com.trove.worker.<pool>` and run `trove worker --pool <pool>`;
+the `asr` agent is `com.trove.worker.asr` with its own log file. Re-run the
+command with the same `--pool` values to update them, and pass the same values to
+`trove service uninstall` to remove them.
 
 Both use `RunAtLoad` and `KeepAlive`, so they start at login and restart after a
 crash. `TROVE_HOME` defaults to `~/Trove`; override it with `TROVE_HOME=/path
@@ -65,10 +77,43 @@ should make launchd restart it; queued and running Runs recover from SQLite.
 
 ## Worker leases, retries, and dead letters
 
-`trove worker` claims one StageTask at a time. It renews a 25-second lease every
-5 seconds and a reaper thread checks for expired leases every 5 seconds. If a
-worker dies, its task is requeued once the lease expires; only that stage is
-retried and completed earlier stages are kept.
+Workers claim StageTasks by pool. The default `trove worker` runs the `all` pool
+as one serial claimer, so existing installs keep their behavior. Named pools
+separate resource classes:
+
+| Pool       | Stages                                        | Default concurrency |
+| ---------- | --------------------------------------------- | ------------------- |
+| `all`      | every stage                                   | 1                   |
+| `download` | downloading, extracting audio/text            | 3                   |
+| `asr`      | transcribing                                  | 1                   |
+| `llm`      | organizing                                    | 2                   |
+| `index`    | indexing                                      | 1 (always)          |
+
+```bash
+uv run trove worker --pool asr                  # only transcription
+uv run trove worker --pool download --pool asr  # two independent claim loops
+uv run trove worker --pool download --concurrency 4
+uv run trove worker --stages downloading,extracting_audio
+```
+
+Repeat `--pool` to run several pools in one process. `--concurrency` applies to
+each selected pool; the index pool is always a single writer so SQLite/FTS5
+writes stay serialized. `--stages` builds a custom pool and cannot be combined
+with `--pool`. Unknown pools or stages fail at startup with the valid choices.
+
+Set defaults with `TROVE_WORKER_POOLS` (comma-separated, default `all`) and
+`TROVE_DOWNLOAD_CONCURRENCY`, `TROVE_ASR_CONCURRENCY`, `TROVE_LLM_CONCURRENCY`,
+or `TROVE_INDEX_CONCURRENCY`. Empty or non-positive concurrency values fail
+startup. Each pool worker renews a 25-second lease every 5 seconds, and a shared
+reaper thread checks for expired leases every 5 seconds. If a worker dies, its
+task is requeued once the lease expires; only that stage is retried and completed
+earlier stages are kept.
+
+On SIGTERM the worker stops claiming new tasks and waits up to
+`TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS` (default 30) for in-flight tasks to
+commit. Tasks still running after the timeout keep their lease; the next worker's
+reaper requeues them. `/api/health` lists each pool's `concurrency`, `active`
+count, and current `run_id` under `worker.pools`.
 
 Stage failures follow `domain/retry.py`:
 

@@ -29,7 +29,7 @@ from trove.db.engine import (
 from trove.domain.items import ASR_MODEL_MISSING_HINT, ASR_NOT_INSTALLED_HINT
 from trove.logging_setup import configure_logging
 from trove.web.urls import locate_url
-from trove.worker import ensure_migrated, run_worker
+from trove.worker import ensure_migrated, resolve_worker_pools, run_worker
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -47,7 +47,25 @@ def _build_parser() -> argparse.ArgumentParser:
         help="do not start the processing worker child process",
     )
 
-    subparsers.add_parser("worker", help="run the processing worker")
+    worker = subparsers.add_parser("worker", help="run the processing worker")
+    worker.add_argument(
+        "--pool",
+        action="append",
+        default=[],
+        metavar="POOL",
+        help="worker pool to run: all, download, asr, llm, or index (repeatable)",
+    )
+    worker.add_argument(
+        "--stages",
+        default=None,
+        help="comma-separated stages to claim instead of a named pool",
+    )
+    worker.add_argument(
+        "--concurrency",
+        type=int,
+        default=None,
+        help="claiming threads per pool; index pools always run one",
+    )
 
     db = subparsers.add_parser("db", help="database commands")
     db_sub = db.add_subparsers(dest="db_command", required=True)
@@ -122,6 +140,13 @@ def _build_parser() -> argparse.ArgumentParser:
         command.add_argument("--root", default=None, help="repository root")
         command.add_argument("--home", default=None, help="TROVE_HOME to use")
         command.add_argument("--agents-dir", default=None, help="LaunchAgents directory")
+        command.add_argument(
+            "--pool",
+            action="append",
+            default=[],
+            metavar="POOL",
+            help="worker pool agent to render: all, download, asr, llm, or index",
+        )
         command.add_argument("--dry-run", action="store_true")
 
     auth = subparsers.add_parser("auth", help="authentication commands")
@@ -158,6 +183,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         return _serve(config, args)
     if args.command == "worker":
+        try:
+            pools = resolve_worker_pools(
+                config,
+                pools=args.pool,
+                stages=args.stages,
+                concurrency=args.concurrency,
+            )
+        except ConfigError as exc:
+            print(f"Configuration error: {exc}", file=sys.stderr)
+            return 2
         configure_logging(config)
         runtime = build_runtime(config)
         stop_event = threading.Event()
@@ -167,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
 
         signal.signal(signal.SIGINT, stop_worker)
         signal.signal(signal.SIGTERM, stop_worker)
-        run_worker(runtime, stop_event)
+        run_worker(runtime, stop_event, pools=pools)
         return 0
     if args.command == "db":
         return _db(config)
@@ -711,6 +746,7 @@ def _service(config, args) -> int:
                 repo_root=root,
                 home=home,
                 agents_dir=agents_dir,
+                worker_pools=args.pool or ("all",),
                 dry_run=args.dry_run,
             )
             verb = "Rendered" if args.dry_run else "Installed"
@@ -719,7 +755,11 @@ def _service(config, args) -> int:
             if not args.dry_run:
                 print("Start: launchctl kickstart -k gui/$(id -u)/com.trove.api")
             return 0
-        paths = deploy.uninstall(agents_dir=agents_dir, dry_run=args.dry_run)
+        paths = deploy.uninstall(
+            agents_dir=agents_dir,
+            worker_pools=args.pool or None,
+            dry_run=args.dry_run,
+        )
         verb = "Would remove" if args.dry_run else "Removed"
         for path in paths:
             print(f"{verb} {path}")
