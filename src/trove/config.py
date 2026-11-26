@@ -13,10 +13,10 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
 from trove.domain.retry import STAGE_MAX_ATTEMPTS
+from trove.domain.worker_pools import ALL_POOL, INDEX_POOL, POOL_NAMES
 
 DEFAULT_HOME = Path("~/Trove")
 CONFIG_FILENAME = "config.toml"
-ENV_FILENAME = ".env"
 DB_FILENAME = "trove.db"
 
 MB = 1024 * 1024
@@ -39,8 +39,32 @@ DEFAULT_LLM_TIMEOUT_SECONDS = 90.0
 DEFAULT_WORKER_LEASE_SECONDS = 25
 DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
 DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
+DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30
 STAGE_MAX_ATTEMPTS_ENV = "TROVE_STAGE_MAX_ATTEMPTS"
+PASSWORD_ENV = "TROVE_PASSWORD"
+PASSWORD_FILE_ENV = "TROVE_PASSWORD_FILE"
+WORKER_POOLS_ENV = "TROVE_WORKER_POOLS"
+WORKER_CONCURRENCY_ENV = {
+    "download": "TROVE_DOWNLOAD_CONCURRENCY",
+    "asr": "TROVE_ASR_CONCURRENCY",
+    "llm": "TROVE_LLM_CONCURRENCY",
+    INDEX_POOL: "TROVE_INDEX_CONCURRENCY",
+}
 LLM_CONFIG_FILENAME = "llm.toml"
+
+# The default `trove worker` stays a single serial claimer. Per-pool workers
+# use the resource-specific defaults below.
+DEFAULT_POOL_CONCURRENCY: dict[str, int] = {
+    ALL_POOL: 1,
+    "download": 3,
+    "asr": 1,
+    "llm": 2,
+    INDEX_POOL: 1,
+}
+
+
+def clamp_pool_concurrency(pool: str, value: int) -> int:
+    return DEFAULT_POOL_CONCURRENCY[INDEX_POOL] if pool == INDEX_POOL else value
 
 
 def default_llm_config_path() -> Path:
@@ -130,6 +154,11 @@ class Config:
     worker_lease_seconds: int = DEFAULT_WORKER_LEASE_SECONDS
     worker_heartbeat_seconds: int = DEFAULT_WORKER_HEARTBEAT_SECONDS
     worker_reaper_interval_seconds: int = DEFAULT_WORKER_REAPER_INTERVAL_SECONDS
+    worker_shutdown_timeout_seconds: int = DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS
+    worker_pools: tuple[str, ...] = (ALL_POOL,)
+    worker_concurrency: dict[str, int] = field(
+        default_factory=lambda: dict(DEFAULT_POOL_CONCURRENCY)
+    )
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
@@ -154,6 +183,30 @@ class Config:
             )
         if self.worker_reaper_interval_seconds <= 0:
             raise ConfigError("TROVE_WORKER_REAPER_INTERVAL_SECONDS must be positive")
+        if self.worker_shutdown_timeout_seconds <= 0:
+            raise ConfigError("TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS must be positive")
+        unknown_pools = set(self.worker_pools) - set(POOL_NAMES)
+        if unknown_pools:
+            raise ConfigError(
+                f"{WORKER_POOLS_ENV} contains unknown pools: "
+                f"{', '.join(sorted(unknown_pools))}; "
+                f"choose from: {', '.join(POOL_NAMES)}"
+            )
+        self.worker_pools = tuple(dict.fromkeys(self.worker_pools)) or (ALL_POOL,)
+        unknown_concurrency = set(self.worker_concurrency) - set(DEFAULT_POOL_CONCURRENCY)
+        if unknown_concurrency:
+            raise ConfigError(
+                "Unknown worker concurrency pools: "
+                f"{', '.join(sorted(unknown_concurrency))}; "
+                f"choose from: {', '.join(DEFAULT_POOL_CONCURRENCY)}"
+            )
+        if any(value <= 0 for value in self.worker_concurrency.values()):
+            raise ConfigError("Worker concurrency values must be positive")
+        merged = {**DEFAULT_POOL_CONCURRENCY, **self.worker_concurrency}
+        self.worker_concurrency = {
+            pool: clamp_pool_concurrency(pool, value)
+            for pool, value in merged.items()
+        }
 
     # ------------------------------------------------------------------
     # Layout
@@ -161,10 +214,6 @@ class Config:
     @property
     def config_path(self) -> Path:
         return self.home / CONFIG_FILENAME
-
-    @property
-    def env_path(self) -> Path:
-        return self.home / ENV_FILENAME
 
     @property
     def db_path(self) -> Path:
@@ -190,10 +239,6 @@ class Config:
     def uploads_dir(self) -> Path:
         return self.cache_dir / "uploads"
 
-    @property
-    def worker_heartbeat_path(self) -> Path:
-        return self.cache_dir / "worker.json"
-
     def ensure_layout(self) -> None:
         directories = (
             self.home,
@@ -212,10 +257,6 @@ class Config:
             self._write_config({"session_secret": secrets.token_urlsafe(32), "session_epoch": 0})
         else:
             self.config_path.chmod(0o600)
-        if not self.env_path.exists():
-            self._write_env("")
-        else:
-            self.env_path.chmod(0o600)
 
     # ------------------------------------------------------------------
     # config.toml
@@ -246,9 +287,6 @@ class Config:
         data = self._read_config()
         data.update(values)
         self._write_config(data)
-
-    def _write_env(self, contents: str) -> None:
-        self._atomic_write(self.env_path, contents, 0o600)
 
     @staticmethod
     def _atomic_write(path: Path, contents: str, mode: int) -> None:
@@ -314,26 +352,6 @@ class Config:
     def invalidate_sessions(self) -> None:
         self._update_config(session_epoch=self.session_epoch + 1)
 
-    # ------------------------------------------------------------------
-    # Environment
-    # ------------------------------------------------------------------
-    def load_dotenv(self) -> None:
-        if not self.env_path.exists():
-            return
-        try:
-            for raw in self.env_path.read_text(encoding="utf-8").splitlines():
-                line = raw.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip().strip("'\"")
-                if key:
-                    os.environ.setdefault(key, value)
-        except OSError:
-            return
-
-
 def _parse_stage_max_attempts(value: str) -> dict[str, int]:
     if not value.strip():
         return {}
@@ -356,6 +374,58 @@ def _parse_stage_max_attempts(value: str) -> dict[str, int]:
                 f"{STAGE_MAX_ATTEMPTS_ENV} has a non-integer value for {stage}"
             ) from exc
         parsed[stage] = attempts
+    return parsed
+
+
+def _environment_password() -> str | None:
+    value = os.environ.get(PASSWORD_ENV)
+    if value:
+        return value
+    path_value = os.environ.get(PASSWORD_FILE_ENV)
+    if not path_value:
+        return None
+    path = Path(path_value).expanduser()
+    try:
+        password = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        raise ConfigError(f"{PASSWORD_FILE_ENV} could not be read: {path}") from exc
+    if not password:
+        raise ConfigError(f"{PASSWORD_FILE_ENV} points to an empty file: {path}")
+    return password
+
+
+def _apply_environment_password(config: Config) -> None:
+    password = _environment_password()
+    if password is None or config.verify_password(password):
+        return
+    config.set_password(password)
+
+
+def _parse_worker_pools(value: str) -> tuple[str, ...]:
+    if not value.strip():
+        return (ALL_POOL,)
+    names = [item.strip() for item in value.split(",")]
+    if any(not name for name in names):
+        raise ConfigError(
+            f"{WORKER_POOLS_ENV} must be a comma-separated list of pools, "
+            f"for example 'download,asr'"
+        )
+    return tuple(names)
+
+
+def _parse_worker_concurrency(environment: dict[str, str]) -> dict[str, int]:
+    parsed: dict[str, int] = {}
+    for pool, env_name in WORKER_CONCURRENCY_ENV.items():
+        raw = environment.get(env_name, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise ConfigError(f"{env_name} must be a positive integer") from exc
+        if value <= 0:
+            raise ConfigError(f"{env_name} must be a positive integer")
+        parsed[pool] = value
     return parsed
 
 
@@ -408,6 +478,14 @@ def load_config(home: Path | str | None = None) -> Config:
                 str(DEFAULT_WORKER_REAPER_INTERVAL_SECONDS),
             )
         ),
+        worker_shutdown_timeout_seconds=int(
+            os.environ.get(
+                "TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS",
+                str(DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS),
+            )
+        ),
+        worker_pools=_parse_worker_pools(os.environ.get(WORKER_POOLS_ENV, "")),
+        worker_concurrency=_parse_worker_concurrency(dict(os.environ)),
         force_secure_cookies=os.environ.get("TROVE_SECURE_COOKIES", "").lower()
         in {"1", "true", "yes"},
     )
@@ -415,5 +493,5 @@ def load_config(home: Path | str | None = None) -> Config:
     if cookies:
         config.ytdlp_cookies = Path(cookies).expanduser().resolve()
     config.ensure_layout()
-    config.load_dotenv()
+    _apply_environment_password(config)
     return config

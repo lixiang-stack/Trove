@@ -27,14 +27,14 @@ StageTask 让任务可以按阶段领取，但还需要运行形态：下载、A
 
 ## Acceptance Criteria
 
-- [ ] `trove worker --pool download` 只领取下载阶段；`--pool asr` 只领取转写阶段。
-- [ ] 默认 `trove worker` 行为与当前一致（all，串行或默认并发）。
-- [ ] 一个慢 ASR 任务不会阻塞下载池领取新任务（集成测试用 fake slow transcriber）。
-- [ ] `--concurrency` 生效，且 index pool 始终单写者。
-- [ ] SIGTERM 后不丢任务：完成的提交，未完成的释放租约/重新入队。
-- [ ] 非法 pool/并发配置启动失败，错误信息可读。
-- [ ] launchd 和 Compose 示例可启动对应 pool。
-- [ ] 现有 worker/processing 测试全绿。
+- [x] `trove worker --pool download` 只领取下载阶段；`--pool asr` 只领取转写阶段。
+- [x] 默认 `trove worker` 行为与当前一致（all，串行或默认并发）。
+- [x] 一个慢 ASR 任务不会阻塞下载池领取新任务（集成测试用 fake slow transcriber）。
+- [x] `--concurrency` 生效，且 index pool 始终单写者。
+- [x] SIGTERM 后不丢任务：完成的提交，未完成的释放租约/重新入队。
+- [x] 非法 pool/并发配置启动失败，错误信息可读。
+- [x] launchd 和 Compose 示例可启动对应 pool。
+- [x] 现有 worker/processing 测试全绿。
 
 ## Testing
 
@@ -50,6 +50,43 @@ StageTask 让任务可以按阶段领取，但还需要运行形态：下载、A
 - 按用户/租户配额。
 - ASR 模型常驻池/GPU 调度（15）。
 - 独立服务抽取（15–17）。
+
+## Implementation
+
+- `domain/worker_pools.py` is the single pool map: `download` covers
+  downloading + extracting audio/text, `asr` transcribing, `llm` organizing,
+  `index` indexing, and `all` every stage. Default concurrency is 1/3/1/2/1;
+  the index pool is always clamped to one writer.
+- `trove worker` accepts repeatable `--pool`, comma-separated `--stages`, and
+  `--concurrency`. `--pool` and `--stages` are mutually exclusive. Each selected
+  pool starts independent claim loops with a unique worker id; every task still
+  uses its own SQLAlchemy session.
+- `TROVE_WORKER_POOLS` selects the default pools. `TROVE_DOWNLOAD_CONCURRENCY`,
+  `TROVE_ASR_CONCURRENCY`, `TROVE_LLM_CONCURRENCY`, and
+  `TROVE_INDEX_CONCURRENCY` tune them. Unknown pools/stages, empty entries, and
+  non-positive concurrency fail at startup with the valid choices.
+- `RunCoordinator` holds one process-wide index lock around `IndexStage` and the
+  post-stage `_try_index` refresh, so `--pool all --concurrency N` and custom
+  stage sets cannot write FTS5 concurrently either.
+- SIGTERM stops new claims. In-flight tasks finish and commit; after
+  `TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS` (default 30) remaining task heartbeats
+  are stopped and their leases are left for the next reaper, which requeues them
+  as a new attempt.
+- Each worker process writes `cache/worker-<pid>.json`; `read_heartbeat` merges
+  fresh processes into one payload. `/api/health` exposes each pool's `name`,
+  `concurrency`, `active`, `queued` depth, claimed `stages`, and `run_id` under
+  `worker.pools`. Prometheus counters stay in ticket 12.
+- Pool claim loops log and continue after transient DB/heartbeat failures instead
+  of letting the thread exit silently.
+- `deploy.py` renders one worker agent per selected pool, for example
+  `trove service install --pool all --pool asr`; labels are
+  `com.trove.worker` and `com.trove.worker.asr`. Compose examples land with
+  ticket 11.
+- Tests: `tests/test_worker_pools.py` covers stage routing, slow ASR vs
+  downloads, concurrency bounds, serialized index writes under `all`
+  concurrency, graceful stop, shutdown timeout + reaper recovery, merged
+  per-process heartbeats, health queue depth, CLI validation, and env parsing;
+  `tests/test_deployment.py` covers pool launchd agents.
 
 ## Notes
 

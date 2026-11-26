@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
+import time
 import uuid
 from pathlib import Path
 
@@ -15,6 +17,17 @@ from trove.config import Config
 from trove.db.sequences import install_sync_tracking
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent / "migrations"
+BACKUP_DIRNAME = "backups"
+BACKUP_KEEP = 5
+logger = logging.getLogger("trove.db")
+
+
+class DatabaseUpgradeError(RuntimeError):
+    def __init__(
+        self, message: str, *, backup_path: Path | None = None
+    ) -> None:
+        super().__init__(message)
+        self.backup_path = backup_path
 
 
 def create_engine_for(config: Config) -> Engine:
@@ -49,13 +62,71 @@ def _alembic_config(config: Config) -> AlembicConfig:
     return alembic
 
 
-def upgrade_database(config: Config) -> None:
+def upgrade_database(config: Config) -> Path | None:
     config.ensure_layout()
-    command.upgrade(_alembic_config(config), "head")
+    backup = None
+    if config.db_path.exists() and config.db_path.stat().st_size > 0:
+        engine = create_engine_for(config)
+        try:
+            current = current_revision(engine)
+        finally:
+            engine.dispose()
+        if current != head_revision(config):
+            try:
+                backup = backup_database(config, revision=current)
+            except Exception as exc:
+                raise DatabaseUpgradeError(
+                    f"Database backup failed; upgrade aborted: {exc}"
+                ) from exc
+    try:
+        command.upgrade(_alembic_config(config), "head")
+    except Exception as exc:
+        raise DatabaseUpgradeError(
+            f"Database upgrade failed: {exc}", backup_path=backup
+        ) from exc
     for suffix in ("", "-wal", "-shm"):
         path = Path(f"{config.db_path}{suffix}")
         if path.exists():
             path.chmod(0o600)
+    return backup
+
+
+def backup_database(config: Config, *, revision: str | None) -> Path:
+    backup_dir = config.home / BACKUP_DIRNAME
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir.chmod(0o700)
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    label = revision or "unversioned"
+    destination = backup_dir / f"trove-{label}-{stamp}.db"
+    suffix = 1
+    while destination.exists():
+        destination = backup_dir / f"trove-{label}-{stamp}-{suffix}.db"
+        suffix += 1
+    source_connection = sqlite3.connect(config.db_path)
+    target_connection = sqlite3.connect(destination)
+    try:
+        source_connection.backup(target_connection)
+    finally:
+        target_connection.close()
+        source_connection.close()
+    destination.chmod(0o600)
+    _prune_backups(backup_dir)
+    return destination
+
+
+def _prune_backups(backup_dir: Path) -> None:
+    backups = sorted(
+        backup_dir.glob("trove-*.db"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    removed = [str(stale) for stale in backups[BACKUP_KEEP:]]
+    for stale in backups[BACKUP_KEEP:]:
+        stale.unlink(missing_ok=True)
+    if removed:
+        logger.info(
+            "pruned old database backups: %s", ", ".join(removed)
+        )
 
 
 def head_revision(config: Config) -> str | None:

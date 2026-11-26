@@ -27,14 +27,14 @@ Spec: [spec.md](../spec.md)
 
 ## Acceptance Criteria
 
-- [ ] `trove doctor --json` 输出可被 `jq` 解析；schema 在文档中列出。
-- [ ] 缺 FFmpeg/模型/迁移时 JSON 仍完整输出，`ok=false`，退出码非零。
-- [ ] 升级前备份可用；迁移失败可用备份回滚。
-- [ ] 在临时 `TROVE_HOME` 上从上一版本 DB 升级到 head，doctor 通过。
-- [ ] 回滚演练：恢复备份后 worker 能启动，旧内容包可读。
-- [ ] `/api/health` 新增字段不破坏现有 Android/CLI 解析。
-- [ ] 发布检查清单和回滚步骤写入 `docs/deployment.md`。
-- [ ] 现有 deployment/config 测试保持绿。
+- [x] `trove doctor --json` 输出可被 `jq` 解析；schema 在文档中列出。
+- [x] 缺 FFmpeg/模型/迁移时 JSON 仍完整输出，`ok=false`，退出码非零。
+- [x] 升级前备份可用；迁移失败可用备份回滚。
+- [x] 在临时 `TROVE_HOME` 上从上一版本 DB 升级到 head，doctor 通过。
+- [x] 回滚演练：恢复备份后 worker 能启动，旧内容包可读。
+- [x] `/api/health` 新增字段不破坏现有 Android/CLI 解析。
+- [x] 发布检查清单和回滚步骤写入 `docs/deployment.md`。
+- [x] 现有 deployment/config 测试保持绿。
 
 ## Testing
 
@@ -49,6 +49,33 @@ Spec: [spec.md](../spec.md)
 - 云端迁移编排。
 - 修改 Alembic 历史迁移；只加新迁移。
 - 备份加密/远程存储。
+
+## Implementation
+
+- `trove doctor --json` emits `{ok, checks[], versions}`. Checks cover
+  permissions, database revision, FTS5, password, port, FFmpeg/ffprobe,
+  yt-dlp, funasr/model, content-package schema, worker heartbeat, and free disk.
+  Status is `ok`/`warn`/`fail`; `ok` is true when no check fails, and the exit
+  code follows it. Human output and the existing `Problems to fix` text remain.
+- `trove db upgrade` takes an online SQLite backup with `sqlite3.backup` before
+  migrating an existing non-head database, keeps the newest five under
+  `TROVE_HOME/backups/`, and returns the path. On failure it raises
+  `DatabaseUpgradeError`; the CLI prints the restore `cp`/WAL-removal command.
+  New and already-current databases do not create backups.
+- `GET /api/health` adds `build: {version, commit, build_time}`. Commit/build
+  time come from `TROVE_BUILD_COMMIT`/`TROVE_BUILD_TIME` (Docker build args) or
+  the local git commit. `api_version`, `host`, `database`, and `worker` are
+  unchanged; `HealthResponse` gains an optional `build` field.
+- `ContentPackage.incompatible_manifests()` scans library manifests. `serve` and
+  `worker` refuse to start when any `schema_version` is newer than the running
+  code; `doctor` reports the affected Item ids and the upgrade/restore fix.
+- `scripts/release-check.sh` is a read-only gate: clean tree, version alignment,
+  `./scripts/check.sh --full`, and `trove doctor --json`.
+- Tests: `tests/test_upgrade_doctor.py` covers the JSON schema and jq parsing,
+  missing tools/model/migration, backup/revision contents, failed migration +
+  restore command, old revision -> head -> doctor pass, restored-backup worker
+  startup, package readability, build info, manifest startup refusal, and the
+  release script.
 
 ## Notes
 

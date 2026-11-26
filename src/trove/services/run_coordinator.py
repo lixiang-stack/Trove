@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import shutil
+import threading
 import traceback
 import uuid
 from collections.abc import Callable, Collection
@@ -22,6 +23,7 @@ from trove.domain.items import (
     STAGE_DOWNLOADING,
     STAGE_EXTRACTING_AUDIO,
     STAGE_EXTRACTING_TEXT,
+    STAGE_INDEXING,
     STAGE_ORGANIZING,
     STAGE_TRANSCRIBING,
     TERMINAL_RUN_STATES,
@@ -75,6 +77,7 @@ class RunCoordinator:
         self.stages = stages
         self.clock = clock
         self.jitter = jitter
+        self._index_lock = threading.Lock()
 
     @property
     def lease_ms(self) -> int:
@@ -655,6 +658,23 @@ class RunCoordinator:
             session.commit()
         return repaired
 
+    def queue_depth(self, stages: Collection[str]) -> int:
+        if not stages:
+            return 0
+        now = self.clock()
+        with self.sessions() as session:
+            return int(
+                session.execute(
+                    select(func.count())
+                    .select_from(RunStep)
+                    .where(
+                        RunStep.state == StageTaskState.QUEUED,
+                        RunStep.available_at <= now,
+                        RunStep.stage.in_(tuple(stages)),
+                    )
+                ).scalar_one()
+            )
+
     def heartbeat(self, run_id: str, worker_id: str) -> None:
         now = self.clock()
         with self.sessions() as session:
@@ -848,11 +868,16 @@ class RunCoordinator:
             handler = self.stages[stage]
         except KeyError as exc:
             raise ProcessingError("internal.error", f"Unknown stage: {stage}") from exc
+        if stage == STAGE_INDEXING:
+            with self._index_lock:
+                handler.execute(session, item, source, context)
+            return
         handler.execute(session, item, source, context)
 
     def _try_index(self, run_id: str, item_id: str) -> None:
         try:
-            self.search_index.index_item(item_id)
+            with self._index_lock:
+                self.search_index.index_item(item_id)
         except Exception:  # noqa: BLE001 - retrieval must not change the run outcome
             append_run_log(
                 self.config,

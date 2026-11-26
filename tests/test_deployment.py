@@ -3,6 +3,8 @@ from __future__ import annotations
 import plistlib
 import socket
 
+import pytest
+
 from trove import deploy
 from trove.cli import main
 
@@ -44,6 +46,73 @@ def test_launchd_agents_have_restart_logs_and_home(tmp_path):
     assert "serve" in api["ProgramArguments"]
     assert "worker" in worker["ProgramArguments"]
     assert "--host" in api["ProgramArguments"]
+
+
+def test_launchd_agents_can_target_worker_pools(tmp_path):
+    agents = deploy.build_agents(
+        repo_root=tmp_path / "repo",
+        home=tmp_path / "home",
+        uv_path=tmp_path / "bin" / "uv",
+        agents_dir=tmp_path / "agents",
+        worker_pools=("all", "asr", "download"),
+    )
+    written = deploy.write_agents(agents)
+    payloads = {
+        path.name: plistlib.loads(path.read_bytes()) for path in written
+    }
+
+    assert set(payloads) == {
+        "com.trove.api.plist",
+        "com.trove.worker.plist",
+        "com.trove.worker.asr.plist",
+        "com.trove.worker.download.plist",
+    }
+    asr = payloads["com.trove.worker.asr.plist"]
+    assert asr["ProgramArguments"][-2:] == ["--pool", "asr"]
+    assert payloads["com.trove.worker.plist"]["ProgramArguments"][-1] == "worker"
+
+
+def test_launchd_agents_reject_unknown_worker_pools(tmp_path):
+    with pytest.raises(deploy.DeployError, match="Unknown worker pool"):
+        deploy.build_agents(
+            repo_root=tmp_path / "repo",
+            home=tmp_path / "home",
+            uv_path=tmp_path / "bin" / "uv",
+            agents_dir=tmp_path / "agents",
+            worker_pools=("bogus",),
+        )
+
+
+def test_service_install_dry_run_can_render_a_pool_agent(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    agents_dir = tmp_path / "agents"
+    monkeypatch.setenv("TROVE_HOME", str(home))
+    monkeypatch.setattr(
+        "shutil.which", lambda name: "/usr/bin/uv" if name == "uv" else None
+    )
+
+    code = main(
+        [
+            "service",
+            "install",
+            "--root",
+            str(tmp_path / "repo"),
+            "--home",
+            str(home),
+            "--agents-dir",
+            str(agents_dir),
+            "--pool",
+            "asr",
+            "--dry-run",
+        ]
+    )
+
+    assert code == 0
+    payload = plistlib.loads(
+        (agents_dir / "com.trove.worker.asr.plist").read_bytes()
+    )
+    assert payload["ProgramArguments"][-2:] == ["--pool", "asr"]
 
 
 def test_service_install_dry_run_renders_plists_and_keeps_data(tmp_path, monkeypatch):
