@@ -75,6 +75,65 @@ def test_llm_config_rejects_invalid_toml(tmp_path):
         load_llm_config(path)
 
 
+def test_password_can_be_set_from_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv("TROVE_PASSWORD", "env-password")
+
+    config = load_config()
+
+    assert config.verify_password("env-password")
+    assert not config.verify_password("wrong")
+
+
+def test_password_environment_is_idempotent(tmp_path, monkeypatch):
+    home = tmp_path / "Trove"
+    monkeypatch.setenv("TROVE_HOME", str(home))
+    monkeypatch.setenv("TROVE_PASSWORD", "env-password")
+    first = load_config()
+    password_hash = first.password_hash
+    epoch = first.session_epoch
+
+    second = load_config()
+
+    assert second.password_hash == password_hash
+    assert second.session_epoch == epoch
+
+
+def test_changing_the_password_environment_rotates_sessions(tmp_path, monkeypatch):
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv("TROVE_PASSWORD", "first-password")
+    first = load_config()
+    epoch = first.session_epoch
+
+    monkeypatch.setenv("TROVE_PASSWORD", "second-password")
+    second = load_config()
+
+    assert second.verify_password("second-password")
+    assert not second.verify_password("first-password")
+    assert second.session_epoch == epoch + 1
+
+
+def test_password_can_come_from_a_file(tmp_path, monkeypatch):
+    password_file = tmp_path / "password"
+    password_file.write_text("file-password\n", encoding="utf-8")
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv("TROVE_PASSWORD_FILE", str(password_file))
+
+    config = load_config()
+
+    assert config.verify_password("file-password")
+
+
+def test_empty_password_file_fails_at_startup(tmp_path, monkeypatch):
+    password_file = tmp_path / "password"
+    password_file.write_text("", encoding="utf-8")
+    monkeypatch.setenv("TROVE_HOME", str(tmp_path / "Trove"))
+    monkeypatch.setenv("TROVE_PASSWORD_FILE", str(password_file))
+
+    with pytest.raises(ConfigError, match="TROVE_PASSWORD_FILE"):
+        load_config()
+
+
 def test_worker_lease_must_be_longer_than_the_heartbeat(tmp_path):
     with pytest.raises(ConfigError, match="LEASE_SECONDS"):
         Config(

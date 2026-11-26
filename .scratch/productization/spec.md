@@ -107,10 +107,12 @@ Python 继续用于 API、领域、服务、适配器和 worker。Go 重写明�
 - 处理管线：`services/run_coordinator.py` 维护 `Run` 聚合与可领取的 StageTask（`run_steps`），支持租约、心跳、过期回收和取消；重试策略在 `domain/retry.py`，按阶段限制次数、指数退避并写入 `available_at`，耗尽后进入 `dead`；`services/stages/` 按阶段执行。
 - 外部调用缓存：AI 结果用 `(item_id, prompt_version, model, input_sha256)` 匹配，transcript 用 `(audio_sha256, model)` 匹配；自动重试复用已完成结果，显式 reprocess 通过 Run 的 `force` 标记绕过缓存。
 - 适配器：`adapters/downloader.py`（yt-dlp/HTTP）、`adapters/asr.py`（FunASR 子进程）、`adapters/openai_chat.py`（OpenAI 兼容）；整理工作流在 `services/organization.py`、`adapters/search.py`（FTS5）。
-- 内容包：`content_package.py` 负责固定文件名、原子写入、sha256、`manifest.json` 与 `schema_version`；旧包无 manifest 仍可读。
-- 运维：`deploy.py` 只支持 macOS launchd；`web/api/health.py` 覆盖 API/DB/FTS5/worker 心跳。
+- 内容包：`content_package.py` 负责固定文件名、原子写入、sha256、`manifest.json` 与 `schema_version`；旧包无 manifest 仍可读，较新 schema 会让 `serve`/`worker` 拒绝启动。
+- worker 池：`domain/worker_pools.py` 定义 `all/download/asr/llm/index` 阶段映射与默认并发；`trove worker --pool/--stages/--concurrency` 可组合，`TROVE_WORKER_POOLS` 与 `TROVE_*_CONCURRENCY` 提供默认值；心跳汇总各池状态。
+- 交付：Dockerfile（基础/ASR 两种镜像）与 `docker-compose.yml` 提供 API、默认 worker、可选分池 worker、init 和 Caddy；macOS launchd 保留并按 pool 生成 agent。
+- 运维：`trove doctor --json` 输出稳定检查/版本 schema；`trove db upgrade` 迁移前自动备份并打印回滚命令；`/api/health` 带 version/commit/build time；发布检查与回滚步骤在 `docs/deployment.md`。
 - 质量：ruff、mypy、pytest、契约 fixtures、复杂度门禁、CI；40+ 测试文件。
-- 观测：JSON 日志已带 `run_id`/`item_id`/`duration_ms`；无指标和 trace。
+- 观测：JSON 日志已带 `run_id`/`item_id`/`duration_ms`；`trove.metrics` 为进程内计数，Prometheus/trace 仍待 ticket 12。
 
 ## Target Architecture
 

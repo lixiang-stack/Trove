@@ -117,6 +117,9 @@ class ProcessingService:
     def recover_active_runs(self) -> int:
         return self._coordinator.recover_active_runs()
 
+    def queue_depth(self, stages: Collection[str]) -> int:
+        return self._coordinator.queue_depth(stages)
+
     def heartbeat(self, run_id: str, worker_id: str) -> None:
         self._coordinator.heartbeat(run_id, worker_id)
 
@@ -125,7 +128,7 @@ class ProcessingService:
 
     def _worker(self, worker_id: str | None) -> str:
         if worker_id is not None:
-            self._worker_id = worker_id
+            return worker_id
         if self._worker_id is None:
             self._worker_id = f"worker-{uuid.uuid4().hex[:12]}"
         return self._worker_id

@@ -5,14 +5,82 @@ import logging
 import os
 import threading
 import time
+from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from trove.composition import Runtime
+from trove.config import ConfigError, clamp_pool_concurrency
 from trove.db.engine import current_revision, head_revision, verify_fts5
+from trove.domain.worker_pools import (
+    ALL_POOL,
+    ALL_STAGES,
+    INDEX_POOL,
+    POOL_NAMES,
+    POOL_STAGES,
+)
 from trove.logging_setup import append_run_log
 
 logger = logging.getLogger("trove.worker")
 POLL_SECONDS = 0.5
+MAX_POOL_RETRY_SECONDS = 10.0
+
+
+@dataclass(frozen=True, slots=True)
+class WorkerPool:
+    name: str
+    stages: frozenset[str]
+    concurrency: int
+
+
+def resolve_worker_pools(
+    config,
+    *,
+    pools: Sequence[str] = (),
+    stages: str | None = None,
+    concurrency: int | None = None,
+) -> list[WorkerPool]:
+    if pools and stages is not None:
+        raise ConfigError("Use either --pool or --stages, not both")
+    if concurrency is not None and concurrency <= 0:
+        raise ConfigError("--concurrency must be a positive integer")
+    if stages is not None:
+        return [_custom_pool(stages, concurrency)]
+    names = tuple(dict.fromkeys(pools)) or config.worker_pools
+    unknown = [name for name in names if name not in POOL_STAGES]
+    if unknown:
+        raise ConfigError(
+            f"Invalid worker pool: {', '.join(unknown)} is unknown; "
+            f"choose from: {', '.join(POOL_NAMES)}"
+        )
+    resolved: list[WorkerPool] = []
+    for name in names:
+        value = concurrency if concurrency is not None else config.worker_concurrency[name]
+        resolved.append(
+            WorkerPool(
+                name=name,
+                stages=POOL_STAGES[name],
+                concurrency=clamp_pool_concurrency(name, value),
+            )
+        )
+    return resolved
+
+
+def _custom_pool(stages: str, concurrency: int | None) -> WorkerPool:
+    names = [item.strip() for item in stages.split(",") if item.strip()]
+    if not names:
+        raise ConfigError("--stages must list at least one stage")
+    unknown = sorted(set(names) - set(ALL_STAGES) - {ALL_POOL})
+    if unknown:
+        raise ConfigError(
+            f"Invalid stage: {', '.join(unknown)}; "
+            f"choose from: {', '.join(ALL_STAGES)}, {ALL_POOL}"
+        )
+    selected = frozenset(ALL_STAGES) if ALL_POOL in names else frozenset(names)
+    value = concurrency if concurrency is not None else 1
+    if selected == POOL_STAGES[INDEX_POOL]:
+        value = clamp_pool_concurrency(INDEX_POOL, value)
+    return WorkerPool(name="custom", stages=selected, concurrency=value)
 
 
 def ensure_migrated(runtime: Runtime) -> None:
@@ -22,12 +90,18 @@ def ensure_migrated(runtime: Runtime) -> None:
         raise RuntimeError("Database is not migrated; run: uv run trove db upgrade")
 
 
-def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> None:
+def run_worker(
+    runtime: Runtime,
+    stop_event: threading.Event | None = None,
+    *,
+    pools: Sequence[WorkerPool] | None = None,
+) -> None:
     stop_event = stop_event or threading.Event()
+    specs = list(pools) if pools is not None else resolve_worker_pools(runtime.config)
     parent_pid = _parent_pid()
-    worker_id = f"worker-{os.getpid()}-{threading.get_ident()}"
     ensure_migrated(runtime)
     verify_fts5(runtime.engine)
+    runtime.package.assert_supported_manifests()
     _reap_once(runtime)
     reaper_stop = threading.Event()
     reaper_thread = threading.Thread(
@@ -37,19 +111,62 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
         daemon=True,
     )
     reaper_thread.start()
-    write_heartbeat(runtime, state="idle")
+    _prune_stale_heartbeats(runtime)
+    heartbeat = _Heartbeat(runtime, specs)
+    heartbeat.refresh()
+    workers: list[threading.Thread] = []
     try:
-        while not stop_event.is_set():
+        for spec in specs:
+            for index in range(spec.concurrency):
+                thread = threading.Thread(
+                    target=_pool_loop,
+                    args=(runtime, spec, index, stop_event, heartbeat),
+                    name=f"trove-{spec.name}-{index}",
+                    daemon=True,
+                )
+                thread.start()
+                workers.append(thread)
+        interval = min(1.0, max(0.2, float(runtime.config.worker_heartbeat_seconds)))
+        while not stop_event.wait(interval):
             if parent_pid is not None and os.getppid() != parent_pid:
                 logger.info("serve parent exited; stopping embedded worker")
+                stop_event.set()
                 break
-            run_id = runtime.processing.claim_next(worker_id)
+            heartbeat.refresh()
+    finally:
+        reaper_stop.set()
+        reaper_thread.join(timeout=2)
+        deadline = time.monotonic() + runtime.config.worker_shutdown_timeout_seconds
+        for thread in workers:
+            thread.join(max(0.0, deadline - time.monotonic()))
+            if thread.is_alive():
+                logger.warning(
+                    "worker thread did not stop before the shutdown timeout; "
+                    "its lease will be recovered by the reaper"
+                )
+        heartbeat.stop_leases()
+        heartbeat.stop()
+
+
+def _pool_loop(
+    runtime: Runtime,
+    pool: WorkerPool,
+    index: int,
+    stop_event: threading.Event,
+    heartbeat: _Heartbeat,
+) -> None:
+    worker_id = f"worker-{os.getpid()}-{pool.name}-{index}"
+    retry_delay = POLL_SECONDS
+    while not stop_event.is_set():
+        try:
+            run_id = runtime.processing.claim_next(worker_id, stages=pool.stages)
             if run_id is None:
-                write_heartbeat(runtime, state="idle")
                 stop_event.wait(POLL_SECONDS)
+                retry_delay = POLL_SECONDS
                 continue
-            write_heartbeat(runtime, state="busy", run_id=run_id)
+            heartbeat.busy(worker_id, pool.name, run_id)
             heartbeat_stop = threading.Event()
+            heartbeat.track_lease(heartbeat_stop)
             heartbeat_thread = threading.Thread(
                 target=_heartbeat_loop,
                 args=(runtime, run_id, worker_id, heartbeat_stop),
@@ -64,7 +181,10 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
                     "worker failed while processing run", extra={"run_id": run_id}
                 )
                 append_run_log(
-                    runtime.config, run_id, "worker crashed while processing", level="error"
+                    runtime.config,
+                    run_id,
+                    "worker crashed while processing",
+                    level="error",
                 )
                 try:
                     runtime.processing.mark_worker_failure(run_id, worker_id)
@@ -72,12 +192,88 @@ def run_worker(runtime: Runtime, stop_event: threading.Event | None = None) -> N
                     logger.debug("failed to mark run failed", exc_info=True)
             finally:
                 heartbeat_stop.set()
+                heartbeat.untrack_lease(heartbeat_stop)
                 heartbeat_thread.join(timeout=2)
-            write_heartbeat(runtime, state="idle")
-    finally:
-        reaper_stop.set()
-        reaper_thread.join(timeout=2)
-    write_heartbeat(runtime, state="stopped")
+                heartbeat.idle(worker_id)
+            retry_delay = POLL_SECONDS
+        except Exception:  # noqa: BLE001 - one bad claim must not kill the pool
+            logger.exception("worker pool loop failed", extra={"pool": pool.name})
+            heartbeat.idle(worker_id)
+            stop_event.wait(retry_delay)
+            retry_delay = min(retry_delay * 2, MAX_POOL_RETRY_SECONDS)
+
+
+class _Heartbeat:
+    def __init__(self, runtime: Runtime, pools: Sequence[WorkerPool]) -> None:
+        self.runtime = runtime
+        self._lock = threading.Lock()
+        self._active: dict[str, tuple[str, str]] = {}
+        self._concurrency = {pool.name: pool.concurrency for pool in pools}
+        self._stages = {pool.name: sorted(pool.stages) for pool in pools}
+        self._leases: set[threading.Event] = set()
+        self._closed = False
+
+    def busy(self, worker_id: str, pool_name: str, run_id: str) -> None:
+        with self._lock:
+            self._active[worker_id] = (pool_name, run_id)
+            self._write()
+
+    def idle(self, worker_id: str) -> None:
+        with self._lock:
+            if self._active.pop(worker_id, None) is not None:
+                self._write()
+
+    def refresh(self) -> None:
+        with self._lock:
+            self._write()
+
+    def track_lease(self, stop_event: threading.Event) -> None:
+        with self._lock:
+            self._leases.add(stop_event)
+
+    def untrack_lease(self, stop_event: threading.Event) -> None:
+        with self._lock:
+            self._leases.discard(stop_event)
+
+    def stop_leases(self) -> None:
+        with self._lock:
+            for stop_event in self._leases:
+                stop_event.set()
+
+    def stop(self) -> None:
+        with self._lock:
+            self._closed = True
+            self._write(state="stopped")
+
+    def _write(self, *, state: str | None = None) -> None:
+        if self._closed and state != "stopped":
+            return
+        pools = []
+        first_run_id = None
+        for name, concurrency in self._concurrency.items():
+            active = sorted(
+                run_id
+                for pool_name, run_id in self._active.values()
+                if pool_name == name
+            )
+            if active and first_run_id is None:
+                first_run_id = active[0]
+            pools.append(
+                {
+                    "name": name,
+                    "concurrency": concurrency,
+                    "active": len(active),
+                    "run_id": active[0] if active else None,
+                    "stages": self._stages[name],
+                }
+            )
+        resolved_state = state or ("busy" if self._active else "idle")
+        write_heartbeat(
+            self.runtime,
+            state=resolved_state,
+            run_id=first_run_id,
+            pools=pools,
+        )
 
 
 def _reap_once(runtime: Runtime) -> None:
@@ -110,29 +306,78 @@ def _heartbeat_loop(
 
 
 def write_heartbeat(
-    runtime: Runtime, *, state: str, run_id: str | None = None
+    runtime: Runtime,
+    *,
+    state: str,
+    run_id: str | None = None,
+    pools: list[dict[str, Any]] | None = None,
 ) -> None:
-    path = runtime.config.worker_heartbeat_path
+    path = runtime.config.cache_dir / f"worker-{os.getpid()}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
+    payload: dict[str, Any] = {
         "state": state,
         "run_id": run_id,
         "updated_at": int(time.time() * 1000),
         "pid": _pid(),
     }
+    if pools is not None:
+        payload["pools"] = pools
     temporary = path.with_name(path.name + ".tmp")
     temporary.write_text(json.dumps(payload), encoding="utf-8")
     temporary.replace(path)
 
 
 def read_heartbeat(config) -> dict[str, Any] | None:
-    path = config.worker_heartbeat_path
-    if not path.exists():
+    entries = read_heartbeats(config)
+    if not entries:
         return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
+    fresh = [entry for entry in entries if heartbeat_is_fresh(entry)]
+    selected = fresh or entries
+    newest = max(selected, key=_heartbeat_updated_at)
+    busy = next((entry for entry in selected if entry.get("state") == "busy"), None)
+    pid = busy.get("pid", newest.get("pid")) if busy is not None else newest.get("pid")
+    pools: list[dict[str, Any]] = []
+    for entry in selected:
+        pools.extend(entry.get("pools") or [])
+    return {
+        **newest,
+        "pid": pid,
+        "state": "busy" if busy is not None else newest.get("state"),
+        "run_id": busy.get("run_id") if busy is not None else newest.get("run_id"),
+        "pools": pools,
+    }
+
+
+def read_heartbeats(config) -> list[dict[str, Any]]:
+    entries: list[dict[str, Any]] = []
+    for path in sorted(config.cache_dir.glob("worker*.json")):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict):
+            entries.append(payload)
+    return entries
+
+
+def _heartbeat_updated_at(payload: dict[str, Any]) -> int:
+    updated = payload.get("updated_at")
+    return updated if isinstance(updated, int) else 0
+
+
+def _prune_stale_heartbeats(runtime: Runtime) -> None:
+    cutoff = int(time.time() * 1000) - 7 * 24 * 60 * 60 * 1000
+    for path in runtime.config.cache_dir.glob("worker-*.json"):
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(payload, dict)
+            and _heartbeat_updated_at(payload) < cutoff
+            and payload.get("pid") != os.getpid()
+        ):
+            path.unlink(missing_ok=True)
 
 
 def _parent_pid() -> int | None:
@@ -147,15 +392,18 @@ def _pid() -> int:
 
 
 class WorkerThread:
-    def __init__(self, runtime: Runtime) -> None:
+    def __init__(
+        self, runtime: Runtime, *, pools: Sequence[WorkerPool] | None = None
+    ) -> None:
         self.runtime = runtime
+        self.pools = pools
         self.stop_event = threading.Event()
         self.thread = threading.Thread(target=self._run, name="trove-worker", daemon=True)
         self.error: BaseException | None = None
 
     def _run(self) -> None:
         try:
-            run_worker(self.runtime, self.stop_event)
+            run_worker(self.runtime, self.stop_event, pools=self.pools)
         except BaseException as exc:  # noqa: BLE001 - surfaced to tests
             self.error = exc
 

@@ -4,6 +4,10 @@
 # 工具产物
 __pycache__/
 
+# 本地环境与密钥
+.env
+.env.*
+
 # macOS 元数据
 .DS_Store
 

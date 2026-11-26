@@ -440,6 +440,7 @@ class RunDetailResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     api_version: str
+    build: dict[str, Any] = Field(default_factory=dict)
     capabilities: dict[str, bool]
     host: dict[str, Any]
     database: dict[str, Any]

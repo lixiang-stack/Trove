@@ -83,6 +83,8 @@ class Host:
 @pytest.fixture(autouse=True)
 def _clean_environment(monkeypatch):
     monkeypatch.delenv("TROVE_HOME", raising=False)
+    monkeypatch.delenv("TROVE_PASSWORD", raising=False)
+    monkeypatch.delenv("TROVE_PASSWORD_FILE", raising=False)
     monkeypatch.setenv("TROVE_LOG_CONSOLE", "0")
     yield
 

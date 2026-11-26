@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from sqlalchemy import text
 
 from trove.cli import main
@@ -30,7 +28,6 @@ def test_layout_permissions_and_idempotence(tmp_path):
         assert directory.is_dir()
         assert directory.stat().st_mode & 0o777 == 0o700
     assert config.config_path.stat().st_mode & 0o777 == 0o600
-    assert config.env_path.stat().st_mode & 0o777 == 0o600
     secret = config.session_secret
     config.ensure_layout()
     assert config.session_secret == secret
@@ -114,12 +111,6 @@ def test_logs_do_not_contain_secrets(api_host):
     assert PASSWORD not in log_text
     assert api_host.config.session_secret not in log_text
     assert "trove_session" not in log_text
-
-
-def test_env_file_has_restrictive_mode(tmp_path):
-    config = Config(home=tmp_path / "Trove")
-    config.ensure_layout()
-    assert os.stat(config.env_path).st_mode & 0o777 == 0o600
 
 
 def test_serve_starts_embedded_worker_by_default(tmp_path, monkeypatch):
