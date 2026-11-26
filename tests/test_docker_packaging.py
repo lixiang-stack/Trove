@@ -18,6 +18,7 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     assert "uv sync" in dockerfile and "--extra asr" in dockerfile
     assert "USER trove" in dockerfile
     assert "TROVE_HOME=" not in dockerfile
+    assert "build-essential" not in dockerfile
     assert 'VOLUME ["/home/trove/Trove"]' in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "EXPOSE 8765" in dockerfile
