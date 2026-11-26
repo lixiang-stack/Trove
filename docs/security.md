@@ -85,7 +85,8 @@ See [android.md](android.md) for build, signing, Caddy, and OEM steps.
 - [x] Core dependencies stay MIT/BSD/Apache; see [licenses](licenses.md).
 - [x] Data directory `0700`; `config.toml` and `state.toml` `0600`; the LLM
       provider key lives in `~/Trove/config.toml` under `[llm] api_key`.
-- [x] launchd agents bind loopback; phones use Tailscale Serve or Caddy HTTPS.
+- [x] The default `[server] host` is `127.0.0.1`; phones use Tailscale Serve or
+      Caddy HTTPS instead of exposing the Host directly.
 - [x] Uploads, content packages, and temporary Run workspaces use `0700`/`0600`.
 
 Run the security tests with:

@@ -255,6 +255,59 @@ def test_legacy_llm_toml_is_imported_into_config(tmp_path, monkeypatch):
     assert "[llm]" in config.config_path.read_text(encoding="utf-8")
 
 
+def test_legacy_llm_toml_is_imported_when_config_is_missing(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    legacy = default_llm_config_path()
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text(
+        "\n".join(
+            [
+                'model = "first-run-model"',
+                'base_url = "https://first-run.test/v1"',
+                'api_key = "sk-first-run"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    home = tmp_path / "Trove"
+
+    config = load_config(home=home)
+
+    assert config.llm.model == "first-run-model"
+    assert config.llm.base_url == "https://first-run.test/v1"
+    assert config.llm.api_key == "sk-first-run"
+    assert config.llm.enabled is True
+    assert "[llm]" in config.config_path.read_text(encoding="utf-8")
+
+
+def test_legacy_config_without_server_gets_the_default_server(tmp_path):
+    home = tmp_path / "Trove"
+    password_hash = PasswordHasher().hash("legacy-password")
+    _write_config(
+        home,
+        f'password_hash = "{password_hash}"\nsession_secret = "legacy-secret"\n',
+    )
+
+    config = load_config(home=home)
+
+    assert config.host == "127.0.0.1"
+    assert config.port == 8765
+    assert "[server]" in config.config_path.read_text(encoding="utf-8")
+
+
+def test_config_init_adds_server_to_a_legacy_config(tmp_path):
+    home = tmp_path / "Trove"
+    _write_config(home, 'password_hash = "legacy"\n')
+
+    code = main(
+        ["--home", str(home), "config", "init", "--host", "0.0.0.0"]
+    )
+
+    assert code == 0
+    config = load_config(home=home)
+    assert config.host == "0.0.0.0"
+
+
 def test_legacy_llm_config_loader_defaults_to_disabled(tmp_path):
     llm = load_llm_config(tmp_path / "llm.toml")
 

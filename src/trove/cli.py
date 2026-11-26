@@ -204,8 +204,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    if args.command == "config":
-        return _config(args)
+    if args.command in {"config", "service"}:
+        try:
+            return _config(args) if args.command == "config" else _service(args)
+        except ConfigError as exc:
+            print(f"Configuration error: {exc}", file=sys.stderr)
+            return 1
     try:
         config = load_config(home=args.home)
     except ConfigError as exc:
@@ -254,8 +258,6 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(config, as_json=args.as_json)
     if args.command == "setup":
         return _setup(config)
-    if args.command == "service":
-        return _service(config, args)
     if args.command == "auth":
         return _auth(config, args)
     if args.command == "device":
@@ -968,12 +970,12 @@ def _setup(config) -> int:
     return 0
 
 
-def _service(config, args) -> int:
+def _service(args) -> int:
     from trove import deploy
     from trove.config import Config
 
     root = Path(args.root).expanduser().resolve() if args.root else Path.cwd().resolve()
-    home = Path(args.home).expanduser().resolve() if args.home else config.home
+    home = resolve_home(args.home)
     agents_dir = (
         Path(args.agents_dir).expanduser().resolve()
         if args.agents_dir
@@ -982,7 +984,7 @@ def _service(config, args) -> int:
     try:
         if args.service_command == "install":
             if not args.dry_run:
-                target = config if home == config.home else Config(home=home)
+                target = Config(home=home)
                 target.ensure_layout()
                 upgrade_database(target)
             paths = deploy.install(

@@ -81,7 +81,8 @@ class Host:
 
 
 @pytest.fixture(autouse=True)
-def _clean_environment(monkeypatch):
+def _clean_environment(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
     for name in (
         "TROVE_HOME",
         "TROVE_PASSWORD",

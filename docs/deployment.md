@@ -23,7 +23,8 @@ docker compose exec api trove auth set-password
 open http://127.0.0.1:8765
 ```
 
-`init` applies migrations before `api` and `worker` start. On first start the
+If `api` is not running yet, wait for `init` to finish and rerun the `exec`
+command. `init` applies migrations before `api` and `worker` start. On first start the
 entrypoint creates `/home/trove/Trove/config.toml` with `host = "0.0.0.0"` so the
 API is reachable from the published port. The API publishes only on
 `127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`; bind
@@ -31,8 +32,15 @@ another interface only behind a trusted reverse proxy.
 
 There is no `.env` file and no `trove-config` volume. User configuration lives in
 `/home/trove/Trove/config.toml` on the `trove-data` volume; the app-managed
-`state.toml` holds the password hash and session secret. Set the password
-non-interactively with:
+`state.toml` holds the password hash and session secret.
+
+When upgrading from the old `/data` + `trove-config` layout, the `trove-data`
+volume root moves directly to `/home/trove/Trove`; the legacy auth fields in its
+`config.toml` are migrated to `state.toml` on first load. The old `trove-config`
+volume is no longer mounted; merge its `llm.toml` values into `[llm]` in the new
+`config.toml` manually.
+
+Set the password non-interactively with:
 
 ```bash
 printf '%s\n' "$PASSWORD" \
@@ -89,6 +97,7 @@ app-managed. To edit the container copy from the host:
 
 ```bash
 docker compose cp api:/home/trove/Trove/config.toml ./trove-config.toml
+chmod 600 ./trove-config.toml
 ${EDITOR:-vi} ./trove-config.toml
 docker compose cp ./trove-config.toml api:/home/trove/Trove/config.toml
 docker compose restart api worker
@@ -606,8 +615,10 @@ cp ~/Trove/library/<item_id>/transcript.json \
   /tmp/trove-transcript-<item_id>.json
 ```
 
-If the LLM is not configured, the new transcript is still written and indexed,
-but the `organizing` stage fails; configure the LLM and retry the Item.
+If LLM organization is disabled, the new transcript is still written and
+indexed and the `organizing` stage is skipped. If `[llm] enabled = true` but the
+fields are incomplete, the stage fails with `llm.not_configured`; fix the config
+and retry the Item.
 
 ### Backups
 
@@ -619,6 +630,9 @@ sqlite3 ~/Trove/trove.db ".backup '$HOME/Trove-backup/trove-$(date +%F).db'"
 
 # Portable content packages, transcripts, books, and AI results.
 rsync -a --delete ~/Trove/library/ ~/Trove-backup/library/
+
+# User config and app-managed auth state (0600; contains the LLM key and hash).
+rsync -a ~/Trove/config.toml ~/Trove/state.toml ~/Trove-backup/
 
 # One-off zip export through the UI or API.
 curl -OJ -b cookies.txt http://127.0.0.1:8765/api/export

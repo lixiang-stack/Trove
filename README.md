@@ -29,13 +29,14 @@ Trove 是一个自托管的个人长内容库：把 B 站/YouTube 视频、播�
 #### Docker（最短路径）
 
 ```bash
-TROVE_PASSWORD='your-password' docker compose up -d --build
+docker compose up -d --build
+docker compose exec api trove auth set-password
 open http://127.0.0.1:8765
 ```
 
-`init` 服务会先执行数据库迁移；ASR 镜像还会在首次启动时下载约 1.25 GB 的 Paraformer 模型。`api` 默认只发布到 `127.0.0.1:8765`；用 `TROVE_HOST_PORT` 改端口，只在可信反向代理后面才改 `TROVE_PUBLISH_ADDRESS`。
+如果 `api` 还没启动，等 `init` 完成后再执行 `docker compose exec`。`init` 服务会先执行数据库迁移；ASR 镜像还会在首次启动时下载约 1.25 GB 的 Paraformer 模型。首次启动会在 `trove-data` 卷里生成 `/home/trove/Trove/config.toml`，并把 `host` 设为 `0.0.0.0`。`api` 默认只发布到 `127.0.0.1:8765`；用 `TROVE_HOST_PORT` 改端口，只在可信反向代理后面才改 `TROVE_PUBLISH_ADDRESS`。
 
-配置保存在 `trove-config` 卷（容器内 `~/.config/trove/`），数据保存在 `trove-data` 卷。不需要 `.env` 文件。改密码时带上新的 `TROVE_PASSWORD` 再执行一次 `docker compose up -d`。要构建不含 ASR 的小镜像：
+用户配置和数据都在 `trove-data` 卷；密码哈希和 session secret 在应用管理的 `state.toml`，不需要 `.env` 文件。从旧版 `/data` + `trove-config` 布局升级时，`trove-data` 卷根目录会直接变成 `/home/trove/Trove`，旧 `config.toml` 里的密码/session 会自动迁到 `state.toml`；旧 `trove-config` 卷里的 `llm.toml` 不再挂载，需要把 `[llm]` 字段手动合并到新的 `config.toml`。改密码时重新执行 `docker compose exec api trove auth set-password`。要构建不含 ASR 的小镜像：
 
 ```bash
 TROVE_INSTALL_ASR=false docker compose build
@@ -65,7 +66,7 @@ uv run trove serve --no-worker
 uv run trove worker
 ```
 
-数据目录默认 `~/Trove`，用 `TROVE_HOME` 覆盖。密码哈希和 session secret 在 `~/Trove/config.toml`；LLM 配置在 `~/.config/trove/llm.toml`。
+数据目录固定为 `~/Trove`。所有运行配置在 `~/Trove/config.toml`；密码哈希和 session secret 在应用管理的 `~/Trove/state.toml`。测试或工具需要临时目录时，用全局 CLI 参数 `trove --home <path>`。
 
 ### 3. 验证
 
@@ -82,7 +83,7 @@ docker compose exec api trove doctor --json
 
 ### 4. 首次使用
 
-打开 <http://127.0.0.1:8765>，用 `trove auth set-password` 设置的密码登录（Docker 中是 `TROVE_PASSWORD`）。
+打开 <http://127.0.0.1:8765>，用 `trove auth set-password` 设置的密码登录（Docker 中在容器里执行 `docker compose exec api trove auth set-password`）。
 
 1. **Add**：粘贴链接、填本地绝对路径，或上传文件。
 2. **Library**：查看处理状态；正在处理或失败的内容在 Inbox 中，逐字稿和元数据在详情页。
@@ -149,74 +150,106 @@ Debug 包用 `adb reverse` 连接 `http://127.0.0.1:8765`；需要局域网明�
 
 ## 配置
 
+所有运行配置都在 `~/Trove/config.toml`，不再读取 `TROVE_*` 配置环境变量。密码哈希和 session secret 属于应用状态，写在 `~/Trove/state.toml`；两个文件都由 Trove 以 `0600` 管理。Docker Compose 的部署变量（`TROVE_HOST_PORT`、`TROVE_PUBLISH_ADDRESS`、`TROVE_IMAGE_TAG`、`TROVE_INSTALL_ASR`）不属于应用配置，仍由 compose 使用。
+
 ### 目录
 
 | 路径 | 内容 |
 | --- | --- |
-| `~/Trove/` | 数据目录：`trove.db`、`library/`、`logs/`、`cache/`、`backups/` 和生成的 `config.toml`。Docker 中为 `/data`。 |
+| `~/Trove/` | 数据目录：`trove.db`、`library/`、`logs/`、`cache/`、`backups/`、`config.toml`、`state.toml`。Docker 中为 `/home/trove/Trove`。 |
 | `~/Trove/library/<item-id>/` | 内容包：源元数据、音频、逐字稿、书文件和 AI 结果。 |
 | `~/Trove/logs/` | 应用日志（10 MB 轮转，保留 5 份）和 `runs/<run-id>.log`。 |
-| `~/.config/trove/llm.toml` | LLM 配置；Docker 中由 `trove-config` 卷持久化。 |
-| `~/Trove/config.toml` | 密码哈希、session secret 等生成配置，权限 `0600`。 |
+| `~/Trove/config.toml` | 用户配置：server、limits、worker、ASR、LLM。 |
+| `~/Trove/state.toml` | 应用管理：密码哈希、session secret、session epoch；不要手动编辑。 |
 
-### 环境变量
+### config.toml
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `TROVE_HOME` | `~/Trove` | 数据目录。 |
-| `TROVE_BIND` | `127.0.0.1` | API 监听地址；只在可信网络中使用 `--lan` 或改这个值。 |
-| `TROVE_PORT` | `8765` | API 监听端口。 |
-| `TROVE_PASSWORD` | 空 | 设置或修改登录密码；启动时哈希进 `config.toml`。 |
-| `TROVE_PASSWORD_FILE` | 空 | 从文件读取登录密码。 |
-| `TROVE_SECURE_COOKIES` | 空 | 设为 `1`、`true` 或 `yes` 时强制 Secure Cookie。 |
-| `TROVE_YTDLP_COOKIES` | 空 | 传给 yt-dlp 的 cookies 文件路径。 |
-| `TROVE_ASR_MODEL` | `paraformer-zh` | FunASR 模型名。 |
-| `TROVE_MAX_VIDEO_BYTES` | 4 GB | 视频大小上限。 |
-| `TROVE_MAX_AUDIO_BYTES` | 500 MB | 音频大小上限。 |
-| `TROVE_MAX_EPUB_BYTES` | 100 MB | EPUB 大小上限。 |
-| `TROVE_MAX_FEED_BYTES` | 10 MB | RSS/Atom feed 大小上限。 |
-| `TROVE_MAX_PODCAST_BYTES` | 1 GB | 播客音频大小上限。 |
-| `TROVE_MAX_COLLECTION_ITEMS` | 100 | 单个合集的最大集数。 |
-| `TROVE_MAX_COLLECTION_DURATION_SEC` | 360000 | 单个合集的最大总时长（100 小时）。 |
+首次启动会在数据目录生成完整的 `config.toml`；也可以运行 `uv run trove config init` 只创建配置文件。修改后重启 API 和 worker。
 
-Worker 和重试：
+Docker 中编辑数据卷里的配置：
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `TROVE_WORKER_POOLS` | `all` | 逗号分隔的池：`all`、`download`、`asr`、`llm`、`index`。 |
-| `TROVE_DOWNLOAD_CONCURRENCY` | 3 | `download` 池的并发。 |
-| `TROVE_ASR_CONCURRENCY` | 1 | `asr` 池的并发。 |
-| `TROVE_LLM_CONCURRENCY` | 2 | `llm` 池的并发。 |
-| `TROVE_INDEX_CONCURRENCY` | 1 | `index` 池固定单写入。 |
-| `TROVE_STAGE_MAX_ATTEMPTS` | 见下 | 覆盖阶段尝试次数，例如 `downloading=4,transcribing=2`。 |
-| `TROVE_WORKER_LEASE_SECONDS` | 25 | 任务租约；必须大于心跳间隔。 |
-| `TROVE_WORKER_HEARTBEAT_SECONDS` | 5 | 心跳间隔。 |
-| `TROVE_WORKER_REAPER_INTERVAL_SECONDS` | 5 | 回收过期租约的间隔。 |
-| `TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS` | 30 | SIGTERM 后等待任务提交的时间。 |
+```bash
+docker compose cp api:/home/trove/Trove/config.toml ./trove-config.toml
+chmod 600 ./trove-config.toml
+${EDITOR:-vi} ./trove-config.toml
+docker compose cp ./trove-config.toml api:/home/trove/Trove/config.toml
+docker compose restart api worker
+```
 
-阶段默认尝试次数：下载、抽取和整理各 3 次，转写 1 次，索引 2 次。租约过期总会允许一次崩溃恢复。完整的池、退避和 dead letter 规则见 [docs/deployment.md#worker-leases-retries-and-dead-letters](docs/deployment.md#worker-leases-retries-and-dead-letters)。
+示例：
+
+```toml
+[server]
+host = "127.0.0.1"        # Docker 首次启动会写成 0.0.0.0
+port = 8765
+secure_cookies = false
+log_console = true
+
+[limits]
+max_video_bytes = 4294967296
+max_audio_bytes = 524288000
+max_epub_bytes = 104857600
+max_feed_bytes = 10485760
+max_podcast_bytes = 1073741824
+max_collection_items = 100
+max_collection_duration_sec = 360000
+
+[asr]
+model = "paraformer-zh"
+
+[worker]
+pools = ["all"]           # 或 ["download", "asr", ...]
+lease_seconds = 25
+heartbeat_seconds = 5
+reaper_interval_seconds = 5
+shutdown_timeout_seconds = 30
+
+[worker.concurrency]
+download = 3
+asr = 1
+llm = 2
+index = 1                 # index 固定单写入
+
+[worker.stage_max_attempts]
+downloading = 3
+extracting_audio = 3
+extracting_text = 3
+transcribing = 1
+organizing = 3
+indexing = 2
+
+[intake]
+ytdlp_cookies = ""        # 相对路径按 ~/Trove 解析
+
+[llm]
+enabled = false
+# 启用时填写：
+model = ""
+base_url = ""
+api_key = ""
+```
+
+`pools` 是数组；`[worker.concurrency]` 的 `index` 总是被压到 1。阶段默认尝试次数：下载、抽取和整理各 3 次，转写 1 次，索引 2 次。租约必须大于心跳。完整规则见 [docs/deployment.md#worker-leases-retries-and-dead-letters](docs/deployment.md#worker-leases-retries-and-dead-letters)。
 
 ### LLM 配置
 
-Trove 只从 `~/.config/trove/llm.toml` 读取 LLM 设置。`model`、`base_url` 和非空 `api_key` 都必须提供；本地无鉴权服务可以填任意占位值。文件在启动时读取，修改后重启 API 和 worker。
-
-```bash
-install -d -m 700 ~/.config/trove
-${EDITOR:-vi} ~/.config/trove/llm.toml
-chmod 600 ~/.config/trove/llm.toml
-```
+LLM 配置在同一个 `config.toml` 的 `[llm]` 表。新配置模板默认 `enabled = false`，整理阶段会跳过；把 `enabled` 设为 `true` 并填写 `model`、`base_url`、非空 `api_key` 后生效。文件在启动时读取，修改后重启 API 和 worker。
 
 ```toml
+[llm]
+enabled = true
 model = "deepseek-flash"
 base_url = "https://api.deepseek.com/v1"
 api_key = "sk-your-key"
 ```
 
-任何 OpenAI 兼容端点都可以。本机 Ollama：
+任何 OpenAI 兼容端点都可以。Docker 中访问宿主机 Ollama 时，`base_url` 用容器可达地址：
 
 ```toml
+[llm]
+enabled = true
 model = "qwen3.5:4b"
-base_url = "http://localhost:11434/v1"
+base_url = "http://host.docker.internal:11434/v1"
 api_key = "ollama"
 ```
 
@@ -225,7 +258,7 @@ api_key = "ollama"
 | `model` | 必填 | 模型名。 |
 | `base_url` | 必填 | OpenAI 兼容 API 的 base URL。 |
 | `api_key` | 空（必填） | 提供商密钥；本地无鉴权服务也必须填一个非空占位值。 |
-| `enabled` | `true` | 设为 `false` 完全关闭整理。 |
+| `enabled` | `false`（新配置模板） | 设为 `false` 跳过整理。 |
 | `chunk_chars` | 20000 | 每次送进模型的最大字符数。 |
 | `max_calls_per_item` | 16 | 单个 Item 的最大模型调用次数。 |
 | `max_output_tokens_per_call` | 1024 | 单次调用的输出 token 上限。 |
@@ -234,17 +267,9 @@ api_key = "ollama"
 | `output_cost_per_million` | 0.42 | 输出成本估算，每百万 token。 |
 | `timeout_seconds` | 90 | 单次模型请求超时。 |
 
-整理始终请求 `response_format = {"type": "json_object"}` 和 `reasoning_effort = "none"`，让思考型模型直接返回最终 JSON。旧版 `~/.config/trove/llm_api_key` 不再读取，请把内容移到 `api_key`。
+整理始终请求 `response_format = {"type": "json_object"}` 和 `reasoning_effort = "none"`，让思考型模型直接返回最终 JSON。旧版 `~/.config/trove/llm.toml` 会在首次加载时自动导入到 `config.toml`；`llm_api_key` 文件不再读取。
 
-没有完整配置时，处理仍会保留音频和逐字稿，但 `organizing` 阶段会以 `llm.not_configured` 失败；补好配置后在 Item 页重试即可。逐字稿和书文本会分块发送给配置的 LLM，音频和源文件不会离开 Host。
-
-Docker 中把宿主机配置复制进 `trove-config` 卷并重启两个进程：
-
-```bash
-docker compose exec -T worker sh -c \
-  'cat > /home/trove/.config/trove/llm.toml' < ~/.config/trove/llm.toml
-docker compose restart api worker
-```
+没有配置 LLM 时，处理仍会保留音频和逐字稿，`organizing` 阶段跳过。逐字稿和书文本会分块发送给配置的 LLM，音频和源文件不会离开 Host。
 
 ## 运维
 
@@ -269,7 +294,7 @@ launchctl print gui/$(id -u)/com.trove.api
 launchctl print gui/$(id -u)/com.trove.worker
 ```
 
-两个 agent 都会在登录时启动并在崩溃后自动重启。默认 `TROVE_HOME` 是 `~/Trove`；日志在 `~/Trove/logs/com.trove.*.log`。要拆分资源池：
+两个 agent 都会在登录时启动并在崩溃后自动重启。数据目录默认 `~/Trove`；日志在 `~/Trove/logs/com.trove.*.log`。要拆分资源池：
 
 ```bash
 uv run trove service install --pool all --pool asr
@@ -312,6 +337,9 @@ sqlite3 ~/Trove/trove.db ".backup '$HOME/Trove-backup/trove-$(date +%F).db'"
 
 # 内容包、逐字稿、书和 AI 结果。
 rsync -a --delete ~/Trove/library/ ~/Trove-backup/library/
+
+# 用户配置和应用密钥（0600；包含 LLM key 和密码哈希）。
+rsync -a ~/Trove/config.toml ~/Trove/state.toml ~/Trove-backup/
 
 # 通过 UI 或 API 做一次 zip 导出。
 curl -OJ -b cookies.txt http://127.0.0.1:8765/api/export
@@ -364,9 +392,9 @@ uv run trove sync reset-epoch
 | --- | --- |
 | 转写报 `asr.not_configured` | 安装 ASR extra：`uv sync --extra asr`，然后重启 API 和 worker。 |
 | 转写报 `asr.model_missing` | 运行 `uv run trove setup` 下载模型。 |
-| 整理报 `llm.not_configured` | 检查 `~/.config/trove/llm.toml` 的 `model` 和 `base_url`，重启进程后重试 Item。 |
+| 整理报 `llm.not_configured` | 检查 `~/Trove/config.toml` 的 `[llm]`：`enabled = true`，并填好 `model`、`base_url`、`api_key`；重启进程后重试 Item。 |
 | 页面提示处理服务未运行 | 启动 `uv run trove worker`，或用默认的 `uv run trove serve`；Docker 中检查 `worker` 服务。 |
-| 端口被占用 | 用 `TROVE_PORT` 换端口；Docker 中改 `TROVE_HOST_PORT`，并同步客户端地址。 |
+| 端口被占用 | 改 `~/Trove/config.toml` 的 `[server] port`；Docker 中还要同步 `TROVE_HOST_PORT` 和客户端地址。 |
 | 手机打不开 Host | 确认地址和端口；Docker 默认只发布到 loopback，需要 Caddy/Tailscale 或显式改发布地址。 |
 | 搜索没有结果 | 运行 `uv run trove index status` 查看覆盖；必要时 `uv run trove index rebuild`。 |
 | 重新转写提示音频缺失 | 音频产物已不存在，重新入库该 Item。 |

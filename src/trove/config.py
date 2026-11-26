@@ -427,13 +427,18 @@ def prepare_home(
     config_path = home / CONFIG_FILENAME
     state_path = home / STATE_FILENAME
     if not config_path.exists():
+        legacy_llm = default_llm_config_path()
+        legacy_values = _read_toml(legacy_llm) if legacy_llm.exists() else None
         _atomic_write(
             config_path,
-            default_config_text(host=default_host, port=default_port),
+            default_config_text(
+                host=default_host, port=default_port, llm=legacy_values
+            ),
             0o600,
         )
     else:
         _migrate_legacy_config(config_path, state_path)
+        _ensure_server_section(config_path, default_host, default_port)
         config_path.chmod(0o600)
     if not state_path.exists():
         _atomic_write(
@@ -447,7 +452,12 @@ def prepare_home(
         state_path.chmod(0o600)
 
 
-def default_config_text(*, host: str = "127.0.0.1", port: int = 8765) -> str:
+def default_config_text(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    llm: dict[str, Any] | None = None,
+) -> str:
     return f"""# Trove Host configuration. Restart the API and worker after editing.
 # Generated auth state (password hash and session secret) lives in state.toml.
 
@@ -497,19 +507,52 @@ indexing = {STAGE_MAX_ATTEMPTS["indexing"]}
 ytdlp_cookies = ""
 
 [llm]
-# Set enabled = true after filling model, base_url, and api_key.
-enabled = false
-model = ""
-base_url = ""
-api_key = ""
-chunk_chars = {DEFAULT_LLM_CHUNK_CHARS}
-max_calls_per_item = {DEFAULT_LLM_MAX_CALLS_PER_ITEM}
-max_output_tokens_per_call = {DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL}
-max_input_tokens_per_item = {DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM}
-input_cost_per_million = {DEFAULT_LLM_INPUT_COST_PER_MILLION}
-output_cost_per_million = {DEFAULT_LLM_OUTPUT_COST_PER_MILLION}
-timeout_seconds = {DEFAULT_LLM_TIMEOUT_SECONDS}
+{_llm_section_text(llm)}
 """
+
+
+def _llm_section_text(values: dict[str, Any] | None) -> str:
+    current = values or {}
+    enabled = current.get("enabled", values is not None)
+    model = current.get("model", "")
+    base_url = current.get("base_url", "")
+    api_key = current.get("api_key", "")
+    chunk_chars = current.get("chunk_chars", DEFAULT_LLM_CHUNK_CHARS)
+    max_calls_per_item = current.get(
+        "max_calls_per_item", DEFAULT_LLM_MAX_CALLS_PER_ITEM
+    )
+    max_output_tokens_per_call = current.get(
+        "max_output_tokens_per_call", DEFAULT_LLM_MAX_OUTPUT_TOKENS_PER_CALL
+    )
+    max_input_tokens_per_item = current.get(
+        "max_input_tokens_per_item", DEFAULT_LLM_MAX_INPUT_TOKENS_PER_ITEM
+    )
+    input_cost_per_million = current.get(
+        "input_cost_per_million", DEFAULT_LLM_INPUT_COST_PER_MILLION
+    )
+    output_cost_per_million = current.get(
+        "output_cost_per_million", DEFAULT_LLM_OUTPUT_COST_PER_MILLION
+    )
+    timeout_seconds = current.get("timeout_seconds", DEFAULT_LLM_TIMEOUT_SECONDS)
+    lines = []
+    if enabled is False:
+        lines.append("# Set enabled = true after filling model, base_url, and api_key.")
+    lines.extend(
+        [
+            f"enabled = {_toml_value(enabled)}",
+            f"model = {_toml_value(str(model))}",
+            f"base_url = {_toml_value(str(base_url))}",
+            f"api_key = {_toml_value(str(api_key))}",
+            f"chunk_chars = {_toml_value(chunk_chars)}",
+            f"max_calls_per_item = {_toml_value(max_calls_per_item)}",
+            f"max_output_tokens_per_call = {_toml_value(max_output_tokens_per_call)}",
+            f"max_input_tokens_per_item = {_toml_value(max_input_tokens_per_item)}",
+            f"input_cost_per_million = {_toml_value(input_cost_per_million)}",
+            f"output_cost_per_million = {_toml_value(output_cost_per_million)}",
+            f"timeout_seconds = {_toml_value(timeout_seconds)}",
+        ]
+    )
+    return "\n".join(lines)
 
 
 def _llm_from_values(values: dict[str, Any]) -> LLMConfig:
@@ -702,6 +745,21 @@ def _migrate_legacy_config(config_path: Path, state_path: Path) -> None:
         if legacy_llm.exists():
             legacy_values = _read_toml(legacy_llm)
             _append_llm_table(config_path, legacy_values)
+
+
+def _ensure_server_section(config_path: Path, host: str, port: int) -> None:
+    values = _read_toml(config_path)
+    if "server" in values:
+        return
+    text = config_path.read_text(encoding="utf-8")
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += (
+        "\n[server]\n"
+        f"host = {_toml_value(host)}\n"
+        f"port = {port}\n"
+    )
+    _atomic_write(config_path, text, 0o600)
 
 
 def _append_llm_table(config_path: Path, values: dict[str, Any]) -> None:
