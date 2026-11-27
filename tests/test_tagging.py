@@ -84,6 +84,19 @@ def test_patch_tags_replaces_the_item_tag_set(host):
     assert host.client.get("/api/search", params={"q": "old"}).json()["count"] == 0
 
 
+def test_patch_tags_preserves_existing_ai_source(host):
+    bundle = seed_item(host, title="PATCH AI tags", tags=["AI Tag", "Keep"])
+    _mark_ai(host, bundle.item.id, "ai tag")
+    host.login()
+    response = host.client.patch(
+        f"/api/items/{bundle.item.id}", json={"tags": ["AI Tag", "New Tag"]}
+    )
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    sources = {item["name"]: item["source"] for item in payload["tag_items"]}
+    assert sources == {"AI Tag": "ai", "New Tag": "user"}
+
+
 def test_tag_counts_endpoint(host):
     seed_item(host, title="One", tags=["shared", "solo"])
     seed_item(host, title="Two", tags=["shared"])

@@ -284,7 +284,6 @@ class SyncService:
         client_updated_at: int | None,
         device_id: str,
         idempotency_key: str | None = None,
-        mark_all_user: bool = True,
     ) -> dict[str, Any]:
         now = utc_ms()
         client_time, skew = normalize_client_time(client_updated_at, now)
@@ -297,9 +296,7 @@ class SyncService:
             clocks = self._clocks(session, item_id)
             applied = wins(clock, clocks.get(TAGS))
             if applied:
-                self.library.replace_tags_in_session(
-                    session, item, tags, mark_all_user=mark_all_user
-                )
+                self.library.replace_tags_in_session(session, item, tags)
                 item.updated_at = now
                 self._write_clock(session, clocks, item_id, TAGS, clock)
             response = self._mutation_response(
@@ -330,7 +327,6 @@ class SyncService:
             client_updated_at=client_updated_at,
             device_id=device_id,
             idempotency_key=idempotency_key,
-            mark_all_user=True,
         )
 
     def add_tag(
@@ -347,7 +343,6 @@ class SyncService:
             tags=[tag.name for tag in bundle.tags] + [raw],
             client_updated_at=client_updated_at,
             device_id=device_id,
-            mark_all_user=False,
         )
 
     def remove_tag(
@@ -372,7 +367,6 @@ class SyncService:
             tags=remaining,
             client_updated_at=client_updated_at,
             device_id=device_id,
-            mark_all_user=False,
         )
 
     def _validate_locator(self, item_id: str, locator: BookLocator) -> None:

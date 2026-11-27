@@ -461,8 +461,6 @@ class LibraryService:
         session: Session,
         item: Item,
         raw_tags: list[str],
-        *,
-        mark_all_user: bool = True,
     ) -> None:
         normalized_tags: list[tuple[str, str]] = []
         seen: set[str] = set()
@@ -487,11 +485,8 @@ class LibraryService:
                 tag = Tag(name=display, normalized_name=normalized)
                 session.add(tag)
                 session.flush()
-            row = attached.get(tag.id)
-            if row is None:
+            if tag.id not in attached:
                 session.add(ItemTag(item_id=item.id, tag_id=tag.id, source="user"))
-            elif mark_all_user:
-                row.source = "user"
             keep.add(tag.id)
         for tag_id, row in attached.items():
             if tag_id not in keep:
