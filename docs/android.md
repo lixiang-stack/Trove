@@ -12,6 +12,7 @@ not published to the Play Store and does not use Play App Signing.
 | `prodRelease` | never | Signed side-load build |
 
 ```bash
+scripts/android/sdk-properties.sh   # once; writes gitignored android/local.properties
 cd android
 ./gradlew :app:assembleProdDebug
 ./gradlew :app:assembleLanDebug

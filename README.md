@@ -141,7 +141,10 @@ uv run trove collection reprocess <collection_id> --from-stage transcribing
 
 ### Android 客户端
 
+首次构建先写入本机 Android SDK 路径（gitignored），之后直接运行 Gradle：
+
 ```bash
+scripts/android/sdk-properties.sh
 cd android
 ./gradlew :app:assembleProdDebug
 ```
