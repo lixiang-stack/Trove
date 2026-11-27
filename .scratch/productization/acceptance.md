@@ -2,9 +2,11 @@
 
 Status: complete
 Date: 2026-11-27
-Commit: `59be2d050a8cef40b385a65f051c43a47764cc69`（`productization-acceptance` 分支）
+Commit: `59be2d050a8cef40b385a65f051c43a47764cc69`（Pass 3 验收执行点；分支已同步 `main` 的 `ea64b89`）
 Spec: [spec.md](spec.md)
 Issues: [issues/](issues/)
+
+> 同步说明：验收执行后 `main` 合入了 Docker 依赖/源码分层（`bfe9e88`）和 Android SDK 自动配置（`37db00a`）。本分支已 rebase 到 `ea64b89`，并重跑质量门禁；Pass 3 的端到端/SLO 数据仍来自 `59be2d0`，未因这次同步重跑完整验收。
 
 本记录合并三次验收：
 
@@ -210,19 +212,44 @@ Pass 3 未重复执行合集批量下载；`c3e4d65..59be2d0` 的差异是 obser
 
 ## Android
 
+### 自动化门禁
+
 - `scripts/android/check.sh`：`BUILD SUCCESSFUL in 51s`；230 tasks（131 executed，99 from cache）。
 - 覆盖 `:app:assembleProdDebug` + app/core/playback/reader 的 JVM/Compose 单测与 lint。
 - 契约/同步/播放/搜索定向测试：`tests/test_contract_fixtures.py`、`test_sync.py`、`test_playback.py`、`test_search.py` 共 49 passed。
-- 未连接真机；未做 Android 端手工播放/下载验收（Pass 1 记录同样限制）。
+- `scripts/android/device-check.sh`：真机 **Android 16 (API 36)** 上通过，覆盖 bundled SQLite/FTS5 和 platform manifest。
+
+### 真机核心功能（2026-11-27）
+
+设备：Android 16 / API 36 真机；App `0.1.0 (1)`；真实 Docker Host `http://127.0.0.1:8765`（API `0010`）；USB + `adb reverse`。按用户要求未测飞行模式、锁屏和 60 分钟后台。
+
+| # | 场景 | 结果 |
+| --- | --- | --- |
+| 1 | 登录/会话 | PASS（有限）— App 已持有真实 Host token；force-stop/restart 后仍保持会话和 Library。未重复密码登录/退出，避免无密码时锁死设备。 |
+| 2 | Library 同步 | PASS — `1 条内容 · 1 个合集`，合集 10 集；下拉刷新后仍为 `已同步`，数量与真实 Host 一致。 |
+| 3 | 音频播放 | PASS — p01 `15:01`；播放/暂停、`↻15`、倍速 `1.25×` 正常；按 Home 后 MediaSession 仍 `PLAYING`，媒体通知存在；Host 进度同步到 `387.294s / in_progress`。 |
+| 4 | 下载 | PASS（带观察）— p01 下载完成，显示 `已下载 · 离线可用`，本地 `audio.m4a` 7,492,450 B。播放中执行“移除下载”会把 UI 状态恢复为未下载，但文件删除会延迟到播放结束（pending deletion），未在播放中立即释放。 |
+| 5 | Transcript | PASS（只读）— 263 段中文逐字稿正常加载、可滚动；当前产品不支持点击分段 seek，因此未把“点击跳转”作为失败。 |
+| 6 | EPUB 阅读 | PASS — 通过 Add 公共 EPUB URL 入库；20 章，切到第 3 章；退出再进恢复 `3/20`；书内搜索 `code` 返回结果。测试 EPUB 已删除。 |
+| 7 | 搜索 | PASS — 搜索 `Accessible` 命中 1 条，显示标题、Tag、书文本摘录并可打开。中文 IME 输入未脚本化（真机输入法路径未覆盖）。 |
+| 8 | Tag / 进度同步 | PASS — 新增 `acceptance-test` Tag 后 Host 可见；播放进度到 Host `387.294s`。清理时删除测试 Tag、进度重置为 `0/unstarted`。观察：App 编辑 Tag 后 Host 把原有 AI Tag 的 `source` 也标成 `user`，需产品确认语义。 |
+| 9 | Add / 入库 | PASS — Add 识别 EPUB 直链并 201 创建；Host 完成 downloading/extracting_text/organizing；App Library 出现 `Accessible EPUB 3`，可阅读/搜索。 |
+| 10 | Inbox / 失败重试 | 未执行 — 真实 Library 没有 failed Item；为避免污染真实数据，没有创建合成失败项。 |
+| 11 | 合集 | PASS — 合集详情显示 10 集、10/10 处理完成、时长、已听/已下载计数和“下载全部”入口；未执行 10 集批量下载。 |
+| 12 | 设置 / 设备 | PASS — Settings 显示 Host/设备/API/App 版本、同步状态与 cursor、存储 12.4 MB、下载队列、移动网络/充电开关；“已授权设备”列出 3 个 token（含本机）。未执行撤销、退出登录或清除数据。 |
+
+清理：删除测试 EPUB、删除 `acceptance-test` Tag、把 p01 进度恢复为 `0/unstarted`；App 回到 `1 条内容 · 1 个合集`。本次未改生产数据之外的内容。
+
 
 ## 质量门禁
 
 | 命令 | 结果 |
 | --- | --- |
-| `PLAYWRIGHT_BROWSERS_PATH=... ./scripts/check.sh --full` | exit 0；ruff、mypy（121 files）、lint-imports（6 kept/0 broken）、pytest 643 collected（含 29 browser，全部通过）、docs 131 files OK |
+| `PLAYWRIGHT_BROWSERS_PATH=... ./scripts/check.sh --full` | exit 0；ruff、mypy（121 files）、lint-imports（6 kept/0 broken）、pytest 643 collected（含 29 browser，全部通过）、docs 133 files OK |
 | `./scripts/android/check.sh` | exit 0，BUILD SUCCESSFUL |
 | `uv run pytest -q tests/test_contract_fixtures.py tests/test_sync.py tests/test_playback.py tests/test_search.py` | 49 passed |
 | `uv run pytest -q -n 0 -m browser` | 29 passed（设置 `PLAYWRIGHT_BROWSERS_PATH` 后） |
+| 同步 `ea64b89` 后复跑 | `check.sh --full` exit 0；Android check exit 0（2 s，up-to-date）；`scripts/docker-smoke.sh` 通过 |
 
 注：未设置 `PLAYWRIGHT_BROWSERS_PATH` 时，测试 fixture 使用 pytest 临时 HOME，找不到浏览器而 skip；设置后实际执行并通过。
 
@@ -352,7 +379,7 @@ curl -X POST --data 429 http://127.0.0.1:18080/mock/mode   # 429 / 500 / ok
 3. **ASR 超时未真机注入**：硬超时 4 h；kill/lease 覆盖挂起恢复，subprocess timeout 归类由 `test_processing.py::test_command_timeout_is_marked_transient` 覆盖。
 4. **真实 ENOSPC 未注入**：Docker Desktop 命名卷无磁盘配额；用 EACCES 验证 `storage.error` 路径，ENOSPC 归类由 `test_retry.py` 覆盖。若需要，可在 Linux + loop device/tmpfs 上补做。
 5. **合集批量下载未在 Pass 3 重跑**：沿用 Pass 2 `c3e4d65` 证据；后续 diff 为 observability/run 读取重构，不触碰 collection 入队/下载。
-6. **Android 无真机**：仅 JVM/Compose/契约/lint；Pass 1 同样限制。真机播放/下载/阅读需按 `docs/android.md` 另做。
+6. **Android 真机已补测（2026-11-27）**：Android 16 真机上通过 Library 同步、播放/后台/通知、下载、Transcript、EPUB 阅读/书内搜索、搜索、Tag/进度同步、Add、合集和设置/设备检查。未测：飞行模式/离线切换、锁屏和 60 分钟后台、密码登录/退出、Inbox 失败重试（真实库无 failed Item）、中文 IME、批量下载、Caddy/Tailscale HTTPS、release APK。
 7. **launchd 安装使用临时 home/agents，且未重新下载 ASR 模型**：安装时间不含模型下载（SLO 允许）；`doctor` 用共享 `MODELSCOPE_CACHE` 通过。正式机器首次安装仍需 `trove setup` 下载 1.25 GB。
 8. **Docker 安装使用预构建镜像和预置模型缓存**：干净卷/网络已测；镜像构建时间和模型下载未计入。发布验收应按 `TROVE_BUILD_COMMIT/TIME` 重建镜像。
 9. **LLM 使用 mock**：Pass 3 为了可重复和成本，使用确定性 mock；真实 Ollama/DeepSeek 链路见 Pass 1/2。生产 LLM 失败注入（429/5xx）用 mock 覆盖。
@@ -364,3 +391,5 @@ curl -X POST --data 429 http://127.0.0.1:18080/mock/mode   # 429 / 500 / ok
 15. **`language` 为空**：Pass 1 的 transcript 有分段但 `language` 为 null（FunASR 未返回语言），不影响播放/搜索。
 16. **`docker kill` 语义**：Compose 把 `docker kill` 视为手动停止，不一定触发 `restart: unless-stopped`；Pass 1 因此人工切换 worker。Pass 3 改用容器内 `kill -9` 真实进程，RestartCount 增加。
 17. **回滚只验证升级前数据**：回滚恢复 0009 备份后未写入 0010 新数据，因此“0010 新内容包在 0009 下可读”未单独复测；manifest schema 仍为 1，旧包可读由 ADR-0008 与既有测试覆盖。
+18. **Android 编辑 Tag 后 source 变化**：真机给 p01 新增 `acceptance-test` 后，Host 上原有 3 个 AI Tag 的 `source` 也变成 `user`。需确认这是 App 全量提交 Tag 的预期语义，还是应保留 AI 来源；本次不阻塞。
+19. **Android 播放中移除下载延迟删除**：播放中的 Item 执行“移除下载”会立即恢复 UI 未下载状态，但本地文件进入 pending deletion，播放结束后才删除；需确认这与“移除下载”的用户预期一致。

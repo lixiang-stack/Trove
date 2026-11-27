@@ -78,9 +78,9 @@ and user-installed CAs so a Caddy internal CA can be used:
 Tailscale with a public certificate is the recommended path and needs no user CA.
 The app never bypasses certificate validation and does not pin certificates.
 
-## Xiaomi / OEM background limits
+## OEM 后台限制
 
-Settings → Platform opens the system battery-optimization page. On Xiaomi/Redmi
+Settings → Platform opens the system battery-optimization page. On some OEM ROMs
 also allow autostart and set the battery saver policy to “No restrictions”;
 otherwise the system may stop background playback, downloads, or periodic sync.
 This is an OEM behavior, not something the app can override.
