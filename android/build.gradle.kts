@@ -29,7 +29,7 @@ val robolectricRuntimes = robolectricArtifacts.mapIndexed { index, notation ->
 
 val robolectricRepoDir = layout.buildDirectory.dir("robolectric-repo")
 
-val prepareRobolectricDeps by tasks.registering {
+val prepareRobolectricDeps = tasks.register("prepareRobolectricDeps") {
     inputs.files(robolectricRuntimes)
     outputs.dir(robolectricRepoDir)
     doLast {
