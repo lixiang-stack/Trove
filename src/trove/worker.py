@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
 import threading
 import time
 from collections.abc import Sequence
@@ -155,7 +156,7 @@ def _pool_loop(
     stop_event: threading.Event,
     heartbeat: _Heartbeat,
 ) -> None:
-    worker_id = f"worker-{os.getpid()}-{pool.name}-{index}"
+    worker_id = f"worker-{worker_scope()}-{pool.name}-{index}"
     retry_delay = POLL_SECONDS
     while not stop_event.is_set():
         try:
@@ -312,13 +313,14 @@ def write_heartbeat(
     run_id: str | None = None,
     pools: list[dict[str, Any]] | None = None,
 ) -> None:
-    path = runtime.config.cache_dir / f"worker-{os.getpid()}.json"
+    path = runtime.config.cache_dir / f"worker-{worker_scope()}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     payload: dict[str, Any] = {
         "state": state,
         "run_id": run_id,
         "updated_at": int(time.time() * 1000),
         "pid": _pid(),
+        "hostname": worker_hostname(),
     }
     if pools is not None:
         payload["pools"] = pools
@@ -385,6 +387,17 @@ def _parent_pid() -> int | None:
     if not value or not value.isdigit():
         return None
     return int(value)
+
+
+def worker_hostname() -> str:
+    return socket.gethostname() or "unknown"
+
+
+def worker_scope() -> str:
+    # PID alone is not unique across containers sharing a data volume. Include
+    # the container hostname and keep the scope short enough for worker_id.
+    host = worker_hostname().split(".", 1)[0][:16] or "unknown"
+    return f"{host}-{_pid()}"
 
 
 def _pid() -> int:

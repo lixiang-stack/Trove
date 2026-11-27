@@ -1,6 +1,6 @@
 # 13 — 升级/回滚、doctor --json 与发布检查
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P3
 Blocked by: 11
@@ -82,3 +82,7 @@ Spec: [spec.md](../spec.md)
 - 备份默认放 `TROVE_HOME/backups/`，保留最近 N 份；不要静默删除用户数据。
 - `doctor --json` 的 `fix` 字段只放可执行命令/文档链接，不放交互式提示。
 - 发布检查脚本只读，不自动改系统；避免和 launchd/Docker 权限纠缠。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收通过（doctor/health/在线备份）。完整 rollback 演练未重复，由 `tests/test_upgrade_doctor.py` 覆盖。见 [acceptance.md](../acceptance.md)。

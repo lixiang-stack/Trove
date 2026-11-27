@@ -110,12 +110,48 @@ def test_entrypoint_dispatches_init_and_trove_commands(tmp_path):
     assert log.read_text(encoding="utf-8").splitlines() == [
         "config init --host 0.0.0.0",
         "db upgrade",
+        "config init --host 0.0.0.0",
         "doctor --json",
     ]
     assert (home / "Trove" / "config.toml").read_text(encoding="utf-8") == (
         '[server]\nhost = "0.0.0.0"\n'
     )
     assert not (home / ".config" / "trove").exists()
+
+
+def test_entrypoint_defaults_legacy_config_to_container_host(tmp_path):
+    trove = shutil.which("trove")
+    if trove is None:
+        pytest.skip("trove console script is not installed")
+
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    (bin_dir / "trove").symlink_to(trove)
+    (bin_dir / "python").write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+    (bin_dir / "python").chmod(0o755)
+
+    home = tmp_path / "home"
+    data = home / "Trove"
+    data.mkdir(parents=True)
+    (data / "config.toml").write_text(
+        'password_hash = "legacy-hash"\n'
+        'session_secret = "legacy-secret"\n'
+        "session_epoch = 0\n",
+        encoding="utf-8",
+    )
+
+    subprocess.run(
+        ["/bin/sh", str(ROOT / "docker" / "entrypoint.sh"), "init"],
+        env={"PATH": f"{bin_dir}:/usr/bin:/bin", "HOME": str(home)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    config = (data / "config.toml").read_text(encoding="utf-8")
+    assert 'host = "0.0.0.0"' in config
+    assert 'host = "127.0.0.1"' not in config
+    assert (data / "state.toml").is_file()
 
 
 def _compose_config():

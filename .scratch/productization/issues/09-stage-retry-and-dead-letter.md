@@ -1,6 +1,6 @@
 # 09 — 阶段级自动重试、退避与死信
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P2
 Blocked by: 07
@@ -90,3 +90,7 @@ Spec: [spec.md](../spec.md)
 - 错误分类放在一个集中映射里（例如 `domain/retry.py` 或 `services/retry.py`），不要散落在每个 stage。
 - 重试日志要包含 `run_id`/`task_id`/`stage`/`attempt`/`error_code`/`delay_ms`。
 - 不要让自动重试掩盖配置错误；不可重试错误要直接暴露给用户。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收通过。kill worker-asr 后 lease 过期，transcribing attempt 2 重排并完成；死信路径未在真机重复注入，由 `tests/test_retry.py` / `tests/test_stage_tasks.py` 覆盖。见 [acceptance.md](../acceptance.md)。

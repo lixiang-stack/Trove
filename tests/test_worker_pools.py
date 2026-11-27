@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -19,7 +20,12 @@ from trove.domain.items import (
     STAGE_ORGANIZING,
     STAGE_TRANSCRIBING,
 )
-from trove.worker import WorkerThread, read_heartbeat, resolve_worker_pools
+from trove.worker import (
+    WorkerThread,
+    read_heartbeat,
+    resolve_worker_pools,
+    write_heartbeat,
+)
 
 from .fakes import FakeDownloader, FakeStack, wait_until
 
@@ -216,6 +222,40 @@ def test_heartbeat_merges_pool_processes(tmp_path):
     assert heartbeat["state"] == "busy"
     assert heartbeat["run_id"] == "run-download"
     assert {pool["name"] for pool in heartbeat["pools"]} == {"download", "asr"}
+
+
+def test_heartbeat_files_do_not_collide_across_containers(tmp_path, monkeypatch):
+    config = Config(home=tmp_path / "Trove")
+    config.ensure_layout()
+    runtime = SimpleNamespace(config=config)
+    monkeypatch.setattr("trove.worker._pid", lambda: 4242)
+    monkeypatch.setattr("trove.worker.worker_hostname", lambda: "container-a")
+    write_heartbeat(runtime, state="idle", pools=[{"name": "download"}])
+    monkeypatch.setattr("trove.worker.worker_hostname", lambda: "container-b")
+    write_heartbeat(runtime, state="idle", pools=[{"name": "asr"}])
+
+    assert sorted(path.name for path in config.cache_dir.glob("worker-*.json")) == [
+        "worker-container-a-4242.json",
+        "worker-container-b-4242.json",
+    ]
+    heartbeat = read_heartbeat(config)
+    assert heartbeat is not None
+    assert {pool["name"] for pool in heartbeat["pools"]} == {"download", "asr"}
+
+
+def test_heartbeat_process_alive_trusts_other_hosts(monkeypatch):
+    import socket
+
+    from trove.cli import _heartbeat_process_alive
+
+    current = socket.gethostname()
+    assert _heartbeat_process_alive(
+        {"pid": 999_999_999, "hostname": f"other-{current}"}
+    )
+    assert not _heartbeat_process_alive(
+        {"pid": 999_999_999, "hostname": current}
+    )
+    assert not _heartbeat_process_alive({"pid": 999_999_999})
 
 
 def _create_item(host, slug: str) -> tuple[str, str]:

@@ -342,6 +342,12 @@ def _heartbeat_process_alive(heartbeat: dict | None) -> bool:
     pid = heartbeat.get("pid")
     if not isinstance(pid, int) or pid <= 0:
         return False
+    hostname = heartbeat.get("hostname")
+    if isinstance(hostname, str) and hostname and hostname != socket.gethostname():
+        # The heartbeat came from another container/host, so its PID is not
+        # meaningful in this PID namespace. A fresh heartbeat is the liveness
+        # signal there.
+        return True
     try:
         os.kill(pid, 0)
     except OSError:

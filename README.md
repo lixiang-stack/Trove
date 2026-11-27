@@ -34,7 +34,7 @@ docker compose exec api trove auth set-password
 open http://127.0.0.1:8765
 ```
 
-如果 `api` 还没启动，等 `init` 完成后再执行 `docker compose exec`。`init` 服务会先执行数据库迁移；ASR 镜像还会在首次启动时下载约 1.25 GB 的 Paraformer 模型。首次启动会在 `trove-data` 卷里生成 `/home/trove/Trove/config.toml`，并把 `host` 设为 `0.0.0.0`。`api` 默认只发布到 `127.0.0.1:8765`；用 `TROVE_HOST_PORT` 改端口，只在可信反向代理后面才改 `TROVE_PUBLISH_ADDRESS`。
+如果 `api` 还没启动，等 `init` 完成后再执行 `docker compose exec`。`init` 服务会先执行数据库迁移；ASR 镜像还会在首次启动时下载约 1.25 GB 的 Paraformer 模型。全新数据目录会在 `trove-data` 卷里生成完整的 `/home/trove/Trove/config.toml`，并把 `host` 设为 `0.0.0.0`。升级已有卷时保留现有配置；如果旧配置没有 `[server]` 段，入口会补上并同样使用 `0.0.0.0`。`api` 默认只发布到 `127.0.0.1:8765`；用 `TROVE_HOST_PORT` 改端口，只在可信反向代理后面才改 `TROVE_PUBLISH_ADDRESS`。
 
 用户配置和数据都在 `trove-data` 卷；密码哈希和 session secret 在应用管理的 `state.toml`，不需要 `.env` 文件。从旧版 `/data` + `trove-config` 布局升级时，`trove-data` 卷根目录会直接变成 `/home/trove/Trove`，旧 `config.toml` 里的密码/session 会自动迁到 `state.toml`；旧 `trove-config` 卷里的 `llm.toml` 不再挂载，需要把 `[llm]` 字段手动合并到新的 `config.toml`。改密码时重新执行 `docker compose exec api trove auth set-password`。要构建不含 ASR 的小镜像：
 
@@ -164,7 +164,7 @@ Debug 包用 `adb reverse` 连接 `http://127.0.0.1:8765`；需要局域网明�
 
 ### config.toml
 
-首次启动会在数据目录生成完整的 `config.toml`；也可以运行 `uv run trove config init` 只创建配置文件。修改后重启 API 和 worker。
+全新数据目录会在首次启动时生成完整的 `config.toml`；已有配置文件不会被覆盖，缺失的 section 使用代码默认值。也可以运行 `uv run trove config init` 创建配置文件（已有配置会保留，只补齐缺失的 `[server]`）。Docker 入口在每次启动时确保 `[server]` 存在；旧配置缺少该段时会补上 `host = "0.0.0.0"`。修改后重启 API 和 worker。
 
 Docker 中编辑数据卷里的配置：
 
@@ -172,7 +172,14 @@ Docker 中编辑数据卷里的配置：
 docker compose cp api:/home/trove/Trove/config.toml ./trove-config.toml
 chmod 600 ./trove-config.toml
 ${EDITOR:-vi} ./trove-config.toml
-docker compose cp ./trove-config.toml api:/home/trove/Trove/config.toml
+docker compose exec -T api sh -c 'umask 077; cat > /home/trove/Trove/config.toml' < ./trove-config.toml
+docker compose restart api worker
+```
+
+写回时在容器内以 `trove` 用户覆盖文件，避免 `docker compose cp` 把宿主 UID/GID 带进数据卷。若已经用 `docker compose cp` 写回并看到 `Could not read config ... Permission denied`，先用 root 修复属主再重启：
+
+```bash
+docker compose run --rm --user root --entrypoint chown init trove:trove /home/trove/Trove/config.toml
 docker compose restart api worker
 ```
 

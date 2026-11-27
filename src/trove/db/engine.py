@@ -157,8 +157,13 @@ def verify_fts5(engine: Engine) -> None:
     try:
         with engine.begin() as connection:
             quoted = connection.dialect.identifier_preparer.quote(table)
-            connection.execute(text(f"CREATE VIRTUAL TABLE {quoted} USING fts5(content)"))
-            connection.execute(text(f"DROP TABLE {quoted}"))
+            # Probe in SQLite's connection-local TEMP schema. Creating and
+            # dropping a virtual table in the main schema changes its schema
+            # cookie and can race with an FTS query on another connection.
+            connection.execute(
+                text(f"CREATE VIRTUAL TABLE temp.{quoted} USING fts5(content)")
+            )
+            connection.execute(text(f"DROP TABLE temp.{quoted}"))
     except Exception as exc:  # sqlite3.OperationalError or SQLAlchemy wrapper
         raise RuntimeError(
             "This SQLite build lacks FTS5. Reinstall the Python 3.12 managed by uv"
