@@ -42,7 +42,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # must not invalidate this download.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
-        ca-certificates \
         curl \
         ffmpeg \
         libgomp1 \
