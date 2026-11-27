@@ -1,6 +1,6 @@
 # 19 — 产品化验收：端到端、故障恢复与容量基准
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P3
 Blocked by: 07, 08, 09, 10, 11, 12, 13
@@ -33,15 +33,15 @@ Phase 1–3 的改动需要一次整体验收，证明“单租户自托管产�
 
 ## Acceptance Criteria
 
-- [ ] Docker 和 launchd 两条安装路径都完成一次全新安装；时间记录。
-- [ ] 视频/EPUB/播客三条链路完成并可搜索；重跑/取消可用。
-- [ ] 长 ASR 期间下载/整理不被阻塞（或记录实际并发行为）。
-- [ ] 故障注入场景全部有预期结果；无静默丢任务。
-- [ ] 100 条批量测试完成；记录 SLO 达标情况。
-- [ ] Android 契约测试通过；无 P0/P1 回归。
-- [ ] 升级/回滚演练通过；数据不丢。
-- [ ] `acceptance.md` 完成，例外和后续 issue 明确。
-- [ ] `./scripts/check.sh` 全绿（含文档检查）。
+- [x] Docker 和 launchd 两条安装路径都完成一次全新安装；时间记录。
+- [x] 视频/EPUB/播客三条链路完成并可搜索；重跑/取消可用。
+- [x] 长 ASR 期间下载/整理不被阻塞（或记录实际并发行为）。
+- [x] 故障注入场景全部有预期结果；无静默丢任务（ASR 超时/真实 ENOSPC 未真机注入，见 acceptance.md 例外）。
+- [x] 100 条批量测试完成；记录 SLO 达标情况。
+- [x] Android 契约测试通过；无 P0/P1 回归。
+- [x] 升级/回滚演练通过；数据不丢（回滚恢复升级前备份；未写入 0010 新数据，见例外）。
+- [x] `acceptance.md` 完成，例外和后续 issue 明确。
+- [x] `./scripts/check.sh` 全绿（含文档检查）。
 
 ## Testing
 
@@ -62,7 +62,15 @@ Phase 1–3 的改动需要一次整体验收，证明“单租户自托管产�
 - SLO 未达标不阻塞发布，但必须写明原因、影响和后续 issue；不允许静默忽略。
 - 如果 Docker 与 launchd 行为不一致，先记录差异，再决定是否阻塞发布。
 
+## Implementation
+
+- 交付物：[acceptance.md](../acceptance.md) 合并 Pass 1/2/3，包含环境、版本、命令、结果、SLO、例外和后续 issue。
+- Pass 3 在 `59be2d0` 上完成 Docker/launchd 安装、视频/EPUB/播客链路、100 条容量、10k 搜索、Prometheus/Grafana/OTel、升级/回滚、Android 门禁。
+- 未达标/未实测项已在 acceptance.md 明确：10k `/api/items` 列表（22）、30 分钟 p95 / ASR RTF / worker 恢复口径（23）、ASR 超时/ENOSPC、合集 Pass 2 沿用、Android 无真机、launchd 模型下载。
+- 验证：`PLAYWRIGHT_BROWSERS_PATH=... ./scripts/check.sh --full` 通过；`scripts/android/check.sh` 通过；`scripts/check-docs.py` 133 files OK。
+
 ## Comments
 
 - 2026-11-27: Docker 视频验收 pass 1。覆盖视频链路、Docker 持久化、分池、lease 恢复、ASR/AI 缓存、幂等、manifest/export/search、doctor/备份；未覆盖 EPUB/播客、Android、100 条容量、观测、launchd、完整 rollback。详细结果与 SLO 见 [acceptance.md](../acceptance.md)。
 - 2026-11-27: 合集验收 pass 2（前 10 集）。作为合集入库并通过 download/asr/llm/index 分池完成 10 集（118 分钟音频，9 集新处理约 13 分钟，0 失败）；验证了合集创建/已有 Item 附着、批量并发、collection tag、collection reprocess、10 集导出和搜索。当前 collection API 不支持只导入前 N 集，本次先创建再删除 11–75；Bilibili 标题 100 讲但 yt-dlp 只返回 75 part。详见 [acceptance.md](../acceptance.md)。
+- 2026-11-27: Pass 3 完成并关闭。当前 `59be2d0` 上完成 Docker 全新安装 18.52s、launchd 9.87s；视频/EPUB（本地+URL）/播客三链路；100 条容量（4.67s，0 失败）；10k 搜索 p95 75.5ms；worker crash lease 28.5s、API crash 2.7s、LLM 429/500 退避、死信、SQLite busy、权限写失败恢复；Prometheus 5 targets + Grafana 14 panels + OTel 单 trace 串起 API/4 阶段；0009→0010 升级与旧代码回滚；Android 全量 JVM/Compose/lint 通过。唯一确认未达标的已测 SLO：10k 时 `GET /api/items` 为 O(N)，p50 3.6s，已开 [22](22-paginate-item-list.md)；30 分钟 p95、短音频 RTF、worker 恢复口径为取样/定义缺口，已开 [23](23-slo-sample-gaps.md)。详见 [acceptance.md](../acceptance.md)。
