@@ -16,6 +16,12 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     assert dockerfile.count("\nFROM ") >= 2
     assert "ARG INSTALL_ASR=true" in dockerfile
     assert "uv sync" in dockerfile and "--extra asr" in dockerfile
+    assert "--no-editable" not in dockerfile
+    assert "COPY --chmod=0755 docker/entrypoint.sh" in dockerfile
+    assert "COPY --chmod=0755 docker/trove" in dockerfile
+    assert "COPY src /app/src" in dockerfile
+    assert "PYTHONPATH=/app/src" in dockerfile
+    assert "chown -R" not in dockerfile
     assert "USER trove" in dockerfile
     assert "TROVE_HOME=" not in dockerfile
     assert "build-essential" not in dockerfile
@@ -35,12 +41,22 @@ def test_dockerfile_keeps_build_metadata_out_of_cached_layers():
     assert dockerfile.index("RUN apt-get update") < dockerfile.index(
         "ARG TROVE_BUILD_COMMIT"
     )
+    assert dockerfile.index("RUN apt-get update") < dockerfile.index(
+        "ENV PYTHONPATH"
+    )
     assert dockerfile.index("COPY --from=builder") < dockerfile.index(
         "ARG TROVE_BUILD_COMMIT"
     )
     assert dockerfile.index("ARG TROVE_BUILD_COMMIT") < dockerfile.index(
         "MODELSCOPE_CACHE"
     )
+
+
+def test_docker_trove_wrapper_runs_the_module_from_the_source_layer():
+    wrapper = (ROOT / "docker" / "trove").read_text(encoding="utf-8")
+
+    assert "exec /app/.venv/bin/python -m trove.cli" in wrapper
+    assert wrapper.startswith("#!/bin/sh\n")
 
 
 def test_dockerignore_excludes_local_and_secret_state():

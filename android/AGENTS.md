@@ -67,6 +67,7 @@
 在仓库根目录（与 CI/lefthook 一致，覆盖全部 module）：
 
 ```bash
+scripts/android/sdk-properties.sh           # first checkout; writes android/local.properties
 scripts/android/check.sh
 scripts/android/check.sh --no-daemon    # CI
 ```
