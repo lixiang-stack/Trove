@@ -16,9 +16,9 @@ from trove.domain.retry import (
     max_attempts_for,
     retry_delay_ms,
 )
-from trove.metrics import counter_value
 
 from .conftest import seed_item
+from .metrics_helpers import counter_value
 
 
 def _create_item(api_host, slug: str) -> tuple[str, str]:
@@ -221,13 +221,13 @@ def test_retry_delay_jitter_stays_within_bounds():
 def test_retryable_error_is_requeued_with_backoff_and_succeeds(api_host):
     _, run_id = _create_item(api_host, "retry-backoff")
     api_host.stack.downloader.fail_code = "download.network"
-    retries_before = counter_value("stage_retries_total", stage="downloading")
+    retries_before = counter_value("trove_stage_retries_total", stage="downloading")
 
     assert api_host.runtime.processing.claim_next(worker_id="worker-1") == run_id
     first = _latest_task(api_host, run_id)
     api_host.runtime.processing.process(run_id, "worker-1")
 
-    assert counter_value("stage_retries_total", stage="downloading") == retries_before + 1
+    assert counter_value("trove_stage_retries_total", stage="downloading") == retries_before + 1
 
     first = _task(api_host, run_id, first.id)
     assert (first.state, first.attempt, first.error_code) == (
@@ -308,7 +308,10 @@ def test_non_retryable_error_fails_without_a_new_attempt(api_host):
 def test_retryable_error_goes_dead_after_max_attempts_and_manual_retry_succeeds(api_host):
     item_id, run_id = _create_item(api_host, "retry-dead")
     api_host.stack.downloader.fail_code = "download.network"
-    dead_before = counter_value("stage_dead_total", stage="downloading")
+    dead_before = counter_value("trove_stage_dead_total", stage="downloading")
+    failures_before = counter_value(
+        "trove_stage_failures_total", stage="downloading", code="download.network"
+    )
 
     for attempt in range(1, 4):
         with api_host.runtime.sessions() as session:
@@ -333,7 +336,13 @@ def test_retryable_error_goes_dead_after_max_attempts_and_manual_retry_succeeds(
         run = session.get(Run, run_id)
         assert run is not None
         assert (run.state, run.error_code) == ("failed", "run.dead")
-    assert counter_value("stage_dead_total", stage="downloading") == dead_before + 1
+    assert counter_value("trove_stage_dead_total", stage="downloading") == dead_before + 1
+    assert (
+        counter_value(
+            "trove_stage_failures_total", stage="downloading", code="download.network"
+        )
+        == failures_before + 3
+    )
 
     api_host.stack.downloader.fail_code = None
     response = api_host.client.post(f"/api/items/{item_id}/retry")

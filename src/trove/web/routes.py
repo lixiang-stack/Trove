@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter
 
 from trove.web import api, html, pwa, shell
+from trove.web.api import metrics as metrics_api
 from trove.web.errors import install_exception_handlers
 from trove.web.schemas import ErrorResponse
 from trove.web.security import install_middleware
@@ -13,6 +14,9 @@ html_router = APIRouter()
 html_router.include_router(pwa.router)
 html_router.include_router(html.router)
 html_router.include_router(shell.router)
+
+metrics_router = APIRouter()
+metrics_router.include_router(metrics_api.router)
 
 COMMON_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorResponse, "description": "Authentication required"},
@@ -31,4 +35,5 @@ __all__ = [
     "html_router",
     "install_exception_handlers",
     "install_middleware",
+    "metrics_router",
 ]

@@ -1,6 +1,6 @@
 # 21 — 移除 Web 直接读 DB 的 import-linter baseline
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P3
 Blocked by: none
@@ -30,10 +30,10 @@ Related: [05](05-layering-guard.md)
 
 ## Acceptance Criteria
 
-- [ ] `pyproject.toml` 的 web→db contract 不再包含 `web.api.runs` baseline。
-- [ ] `web.api.health` 要么移除 baseline，要么在 issue 和代码中明确记录为永久例外。
-- [ ] `uv run lint-imports` 通过。
-- [ ] `./scripts/check.sh --fast` 通过，API 契约测试不回归。
+- [x] `pyproject.toml` 的 web→db contract 不再包含 `web.api.runs` baseline。
+- [x] `web.api.health` 要么移除 baseline，要么在 issue 和代码中明确记录为永久例外。
+- [x] `uv run lint-imports` 通过。
+- [x] `./scripts/check.sh --fast` 通过，API 契约测试不回归。
 
 ## Testing
 
@@ -49,3 +49,13 @@ Related: [05](05-layering-guard.md)
 ## Notes
 
 - 本 issue 只做 baseline 清理；05 的边界不因等待本 issue 而放宽。
+
+## Implementation
+
+- `LibraryService.run_detail` 读取 Run/Item、组装 bundle 和 run payload；`web/api/runs.py` 只做响应组装。
+- `ProcessingService.cancel` 现在对不存在的 Run 抛出 `RunNotFoundError`，取消 handler 直接使用返回的 Run，不再预读 DB。
+- 新增 `services/health.py` 汇总迁移状态和 FTS5，`web/api/health.py` 只调用 service。
+- `pyproject.toml` 的 web→db contract 改为无 basline 的 `Web does not depend on the database`；`docs/agents/code-map.md` 同步更新。
+- 验证：`uv run lint-imports` 6 kept / 0 broken；`test_api_contract.py`、`test_processing.py`、`test_host_seam.py`、`test_processing_recovery.py` 通过。
+
+## Comments

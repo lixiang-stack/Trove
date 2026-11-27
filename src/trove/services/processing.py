@@ -120,6 +120,12 @@ class ProcessingService:
     def queue_depth(self, stages: Collection[str]) -> int:
         return self._coordinator.queue_depth(stages)
 
+    def queue_depths(self) -> dict[str, int]:
+        return self._coordinator.queue_depths()
+
+    def oldest_lease_age_seconds(self) -> float:
+        return self._coordinator.oldest_lease_age_seconds()
+
     def heartbeat(self, run_id: str, worker_id: str) -> None:
         self._coordinator.heartbeat(run_id, worker_id)
 

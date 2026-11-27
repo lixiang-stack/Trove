@@ -23,7 +23,6 @@ from trove.db.models import AiResult, Artifact, Base, Item, ItemTag, Run, Tag
 from trove.domain.cache import AiCacheIdentity, ai_input_sha256
 from trove.domain.items import Platform, SourceType
 from trove.errors import PackageVersionError, ProcessingCancelled, ProcessingError
-from trove.metrics import counter_value
 from trove.ports import (
     AudioResult,
     BookChapterData,
@@ -42,6 +41,8 @@ from trove.services.stages.extract_text import ExtractTextStage
 from trove.services.stages.index import IndexStage
 from trove.services.stages.organize import OrganizeStage
 from trove.services.stages.transcribe import TranscribeStage
+
+from .metrics_helpers import counter_value
 
 
 @dataclass
@@ -473,22 +474,22 @@ def test_transcribe_stage_reuses_a_matching_transcript(env: StageEnv) -> None:
     _install_audio(env, item_id)
     transcriber = StubTranscriber()
     stage = TranscribeStage(env.package, ArtifactStore(env.package), transcriber)
-    hits_before = counter_value("external_cache_hits_total", cache="asr")
-    misses_before = counter_value("external_cache_misses_total", cache="asr")
-    seconds_before = counter_value("external_cache_saved_asr_seconds_total")
+    hits_before = counter_value("trove_external_cache_hits_total", cache="asr")
+    misses_before = counter_value("trove_external_cache_misses_total", cache="asr")
+    seconds_before = counter_value("trove_external_cache_saved_asr_seconds_total")
 
     _execute(env, stage, item_id, run_id)
     first = env.package.read_transcript(item_id)
     assert first is not None
     assert len(transcriber.calls) == 1
-    assert counter_value("external_cache_misses_total", cache="asr") == misses_before + 1
+    assert counter_value("trove_external_cache_misses_total", cache="asr") == misses_before + 1
 
     _execute(env, stage, item_id, run_id)
     assert len(transcriber.calls) == 1
     assert env.package.read_transcript(item_id) == first
-    assert counter_value("external_cache_hits_total", cache="asr") == hits_before + 1
+    assert counter_value("trove_external_cache_hits_total", cache="asr") == hits_before + 1
     assert (
-        counter_value("external_cache_saved_asr_seconds_total")
+        counter_value("trove_external_cache_saved_asr_seconds_total")
         == seconds_before + 2.0
     )
 
@@ -609,31 +610,31 @@ def test_organize_stage_reuses_matching_ai_result_without_calling_the_llm(
     _install_transcript(env, item_id)
     organizer = StubOrganizer()
     stage = OrganizeStage(env.package, ArtifactStore(env.package), organizer)
-    hits_before = counter_value("external_cache_hits_total", cache="ai")
-    misses_before = counter_value("external_cache_misses_total", cache="ai")
+    hits_before = counter_value("trove_external_cache_hits_total", cache="ai")
+    misses_before = counter_value("trove_external_cache_misses_total", cache="ai")
     input_tokens_before = counter_value(
-        "external_cache_saved_tokens_total", kind="input"
+        "trove_external_cache_saved_tokens_total", kind="input"
     )
     output_tokens_before = counter_value(
-        "external_cache_saved_tokens_total", kind="output"
+        "trove_external_cache_saved_tokens_total", kind="output"
     )
 
     _execute(env, stage, item_id, run_id)
     first = env.package.read_ai(item_id)
     assert first is not None
     assert len(organizer.calls) == 1
-    assert counter_value("external_cache_misses_total", cache="ai") == misses_before + 1
+    assert counter_value("trove_external_cache_misses_total", cache="ai") == misses_before + 1
 
     _execute(env, stage, item_id, run_id)
     assert len(organizer.calls) == 1
     assert env.package.read_ai(item_id) == first
-    assert counter_value("external_cache_hits_total", cache="ai") == hits_before + 1
+    assert counter_value("trove_external_cache_hits_total", cache="ai") == hits_before + 1
     assert (
-        counter_value("external_cache_saved_tokens_total", kind="input")
+        counter_value("trove_external_cache_saved_tokens_total", kind="input")
         == input_tokens_before + 10
     )
     assert (
-        counter_value("external_cache_saved_tokens_total", kind="output")
+        counter_value("trove_external_cache_saved_tokens_total", kind="output")
         == output_tokens_before + 5
     )
     with env.sessions() as session:

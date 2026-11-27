@@ -39,6 +39,9 @@ def test_load_config_creates_config_and_state(tmp_path):
     assert config.port == 8765
     assert config.llm.enabled is False
     assert config.worker_pools == ("all",)
+    assert config.metrics_enabled is True
+    assert config.metrics_host == "127.0.0.1"
+    assert config.metrics_worker_port == 8766
     assert config.password_hash is None
     assert config.session_secret
 
@@ -86,6 +89,11 @@ transcribing = 2
 [intake]
 ytdlp_cookies = "cookies.txt"
 
+[metrics]
+enabled = false
+host = "0.0.0.0"
+worker_port = 9101
+
 [llm]
 enabled = true
 model = "configured-model"
@@ -124,6 +132,9 @@ timeout_seconds = 12.5
     assert config.worker_concurrency["asr"] == 2
     assert config.worker_concurrency["llm"] == 3
     assert config.worker_concurrency["index"] == 1
+    assert config.metrics_enabled is False
+    assert config.metrics_host == "0.0.0.0"
+    assert config.metrics_worker_port == 9101
     assert config.stage_max_attempts["downloading"] == 4
     assert config.stage_max_attempts["transcribing"] == 2
     assert config.stage_max_attempts["organizing"] == 3

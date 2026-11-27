@@ -25,7 +25,13 @@ from trove.domain.items import (
 )
 from trove.domain.reading import parse_book_locator
 from trove.domain.tags import normalize_tag
-from trove.errors import ConflictError, NotFoundError, TroveError, ValidationError
+from trove.errors import (
+    ConflictError,
+    NotFoundError,
+    RunNotFoundError,
+    TroveError,
+    ValidationError,
+)
 from trove.logging_setup import tail_run_log
 from trove.ports import SearchIndex
 from trove.services.package_documents import source_document
@@ -309,6 +315,20 @@ class LibraryService:
                 )
             ).scalars().first()
             return item_bundle(session, item) if item is not None else None
+
+    def run_detail(self, run_id: str) -> tuple[ItemBundle, dict[str, Any]]:
+        with self.sessions() as session:
+            run = session.get(Run, run_id)
+            if run is None:
+                raise RunNotFoundError("Processing Run not found")
+            item = session.get(Item, run.item_id)
+            if item is None:
+                raise NotFoundError("Content not found")
+            bundle = item_bundle(session, item)
+            payload = self.run_payload(bundle)
+            if payload is None:
+                raise RunNotFoundError("Processing Run not found")
+            return bundle, payload
 
     def list_items(
         self,

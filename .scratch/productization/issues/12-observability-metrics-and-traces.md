@@ -1,6 +1,6 @@
 # 12 — 指标与追踪：Prometheus + OpenTelemetry
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P3
 Blocked by: 08
@@ -33,14 +33,14 @@ Spec: [spec.md](../spec.md)
 
 ## Acceptance Criteria
 
-- [ ] `/metrics` 可访问，包含上述指标；无高基数标签。
-- [ ] 一条完整 Item 处理后，能看到各 stage 的耗时、成功/失败、队列深度变化。
-- [ ] 一个 trace 能串起 HTTP → 队列 → stage → adapter；未配置 OTLP 时不影响运行。
-- [ ] Grafana dashboard 可导入，至少展示四个黄金信号。
-- [ ] ASR RTF、LLM tokens/cost、搜索延迟可从指标读出。
-- [ ] 指标命名/标签有测试或快照，防止后续随意改名。
-- [ ] 指标端点不泄露密码、token、URL 查询参数或 Item 文本。
-- [ ] `ruff`、`mypy`、现有测试通过。
+- [x] `/metrics` 可访问，包含上述指标；无高基数标签。
+- [x] 一条完整 Item 处理后，能看到各 stage 的耗时、成功/失败、队列深度变化。
+- [x] 一个 trace 能串起 HTTP → 队列 → stage → adapter；未配置 OTLP 时不影响运行。
+- [x] Grafana dashboard 可导入，至少展示四个黄金信号。
+- [x] ASR RTF、LLM tokens/cost、搜索延迟可从指标读出。
+- [x] 指标命名/标签有测试或快照，防止后续随意改名。
+- [x] 指标端点不泄露密码、token、URL 查询参数或 Item 文本。
+- [x] `ruff`、`mypy`、现有测试通过。
 
 ## Testing
 
@@ -60,3 +60,17 @@ Spec: [spec.md](../spec.md)
 - 先加 `prometheus-client` 和 `opentelemetry-sdk` 两个依赖；不要引入整套 agent。
 - 指标初始化要幂等，测试里重复创建 app 不能重复注册。
 - `/metrics` 在 Docker 内网可访问；如果绑定公网，必须加认证或只暴露给采集器。
+
+## Implementation
+
+- `trove/metrics.py` owns one process-wide Prometheus registry; collectors are created at import so repeated `create_app` is idempotent. The API serves `/metrics` (auth required) on its normal port; `trove worker` serves its process-local registry on `[metrics] host:[metrics] worker_port` (default `127.0.0.1:8766`). `[metrics] enabled = false` disables the worker listener; keep the host on loopback unless a collector shares the internal network.
+- Metrics cover stage duration/failures/retries/dead letters, queue depth, oldest lease age, ASR RTF, LLM tokens/cost, search duration/result count, HTTP route-template latency, and the existing external-cache counters (renamed with the `trove_` prefix).
+- Queue depth and lease age are DB probes evaluated at scrape time. `ProcessingService.queue_depths()` and `oldest_lease_age_seconds()` expose them; no stale worker-side gauges.
+- `trove/telemetry.py` installs the OTLP HTTP exporter only when `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set; otherwise spans are no-op. HTTP, queue-enqueue, stage, and ASR/LLM/search adapter spans are instrumented once at the executor/adapter boundary.
+- `RunStep.traceparent` (migration `0010_stage_traceparent`) stores the W3C context when a task is enqueued, so a worker in another process continues the HTTP trace. `trove.run_id`, `trove.item_id`, and `trove.stage` live on spans, not metric labels.
+- Route metrics use a reconstructed route template (including nested `/api` prefixes), never the concrete path or query string. Tests assert that ids, queries, and paths are absent from the exposition.
+- `docs/observability.md` documents endpoints, bearer-token scraping, label rules, OTLP variables, and operator checks. `docs/observability/trove-dashboard.json` covers the four golden signals plus stage, queue, retry/dead, ASR, LLM, and search panels.
+- Tests: `test_metrics.py` covers auth, series naming, queue/lease gauges, route templates, no high-cardinality labels, stage success/failure, ASR RTF, LLM usage, search metrics, worker listener, and the dashboard; `test_telemetry.py` covers no-op tracing and HTTP → queue → stage → adapter span parenting; `test_stage_tasks.py` asserts enqueued trace context.
+- Verified: `./scripts/check.sh --full` (ruff, mypy, import-linter, tests, docs) passes.
+
+## Comments

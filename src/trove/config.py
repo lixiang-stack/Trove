@@ -42,6 +42,8 @@ DEFAULT_WORKER_LEASE_SECONDS = 25
 DEFAULT_WORKER_HEARTBEAT_SECONDS = 5
 DEFAULT_WORKER_REAPER_INTERVAL_SECONDS = 5
 DEFAULT_WORKER_SHUTDOWN_TIMEOUT_SECONDS = 30
+DEFAULT_METRICS_HOST = "127.0.0.1"
+DEFAULT_METRICS_WORKER_PORT = 8766
 
 # The default `trove worker` stays a single serial claimer. Per-pool workers
 # use the resource-specific defaults below.
@@ -56,6 +58,13 @@ DEFAULT_POOL_CONCURRENCY: dict[str, int] = {
 
 def clamp_pool_concurrency(pool: str, value: int) -> int:
     return DEFAULT_POOL_CONCURRENCY[INDEX_POOL] if pool == INDEX_POOL else value
+
+
+def _validate_metrics_settings(host: str, port: int) -> None:
+    if not host.strip():
+        raise ConfigError("[metrics] host must not be empty")
+    if not 1 <= port <= 65535:
+        raise ConfigError("[metrics] worker_port must be between 1 and 65535")
 
 
 def default_llm_config_path() -> Path:
@@ -110,6 +119,9 @@ class Config:
     worker_concurrency: dict[str, int] = field(
         default_factory=lambda: dict(DEFAULT_POOL_CONCURRENCY)
     )
+    metrics_enabled: bool = True
+    metrics_host: str = DEFAULT_METRICS_HOST
+    metrics_worker_port: int = DEFAULT_METRICS_WORKER_PORT
     ytdlp_cookies: Path | None = None
     force_secure_cookies: bool = False
 
@@ -140,6 +152,7 @@ class Config:
             raise ConfigError("[worker] reaper_interval_seconds must be positive")
         if self.worker_shutdown_timeout_seconds <= 0:
             raise ConfigError("[worker] shutdown_timeout_seconds must be positive")
+        _validate_metrics_settings(self.metrics_host, self.metrics_worker_port)
         unknown_pools = set(self.worker_pools) - set(POOL_NAMES)
         if unknown_pools:
             raise ConfigError(
@@ -301,6 +314,7 @@ def load_config(home: Path | str | None = None) -> Config:
     limits = _section(values, "limits")
     asr = _section(values, "asr")
     worker = _section(values, "worker")
+    metrics = _section(values, "metrics")
     intake = _section(values, "intake")
     llm_values = values.get("llm")
     if llm_values is None:
@@ -398,6 +412,16 @@ def load_config(home: Path | str | None = None) -> Config:
         ),
         worker_pools=_worker_pools_from_values(worker),
         worker_concurrency=_worker_concurrency_from_values(worker),
+        metrics_enabled=_get_bool(metrics, "enabled", True, section="metrics"),
+        metrics_host=_get_str(
+            metrics, "host", DEFAULT_METRICS_HOST, section="metrics"
+        ),
+        metrics_worker_port=_get_int(
+            metrics,
+            "worker_port",
+            DEFAULT_METRICS_WORKER_PORT,
+            section="metrics",
+        ),
         ytdlp_cookies=_optional_path(
             _get_str(intake, "ytdlp_cookies", "", section="intake")
         ),
@@ -501,6 +525,13 @@ extracting_text = {STAGE_MAX_ATTEMPTS["extracting_text"]}
 transcribing = {STAGE_MAX_ATTEMPTS["transcribing"]}
 organizing = {STAGE_MAX_ATTEMPTS["organizing"]}
 indexing = {STAGE_MAX_ATTEMPTS["indexing"]}
+
+[metrics]
+# Prometheus endpoint on the worker (the API serves /metrics on its own port).
+# Keep this on loopback unless a collector runs in the same internal network.
+enabled = true
+host = {_toml_value(DEFAULT_METRICS_HOST)}
+worker_port = {DEFAULT_METRICS_WORKER_PORT}
 
 [intake]
 # Optional Netscape cookies file for yt-dlp. Relative paths are under ~/Trove.

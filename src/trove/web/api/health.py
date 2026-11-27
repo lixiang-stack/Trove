@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from trove import __version__
 from trove.build_info import build_info
-from trove.db.engine import fts5_available, migration_status
+from trove.services.health import database_health
 from trove.web.deps import runtime
 from trove.web.schemas import HealthResponse
 from trove.worker import heartbeat_is_fresh, read_heartbeat
@@ -37,14 +37,8 @@ def health(request: Request):
     }
     overall = 200
     try:
-        migration = migration_status(app_runtime.engine, app_runtime.config)
-        status["database"]["migration"] = migration
-        status["database"]["fts5"] = fts5_available(app_runtime.engine)
-        if not migration["up_to_date"]:
-            status["database"]["status"] = "not_migrated"
-            overall = 503
-        if not status["database"]["fts5"]:
-            status["database"]["status"] = "fts5_missing"
+        status["database"] = database_health(app_runtime.engine, app_runtime.config)
+        if status["database"]["status"] != "ok":
             overall = 503
     except Exception as exc:  # noqa: BLE001 - health must report, not raise
         status["database"] = {"status": "error", "error": str(exc)}

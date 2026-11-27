@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from trove import __version__
+from trove import __version__, metrics
 from trove.app import create_app
 from trove.composition import build_runtime
 from trove.config import (
@@ -39,6 +39,7 @@ from trove.db.engine import (
 from trove.domain.items import ASR_MODEL_MISSING_HINT, ASR_NOT_INSTALLED_HINT
 from trove.domain.worker_pools import ALL_POOL
 from trove.logging_setup import configure_logging
+from trove.telemetry import configure_tracing
 from trove.web.urls import locate_url
 from trove.worker import ensure_migrated, resolve_worker_pools, run_worker
 
@@ -221,27 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "serve":
         return _serve(config, args)
     if args.command == "worker":
-        try:
-            pools = resolve_worker_pools(
-                config,
-                pools=args.pool,
-                stages=args.stages,
-                concurrency=args.concurrency,
-            )
-        except ConfigError as exc:
-            print(f"Configuration error: {exc}", file=sys.stderr)
-            return 2
-        configure_logging(config, console=config.log_console)
-        runtime = build_runtime(config)
-        stop_event = threading.Event()
-
-        def stop_worker(_signum, _frame) -> None:
-            stop_event.set()
-
-        signal.signal(signal.SIGINT, stop_worker)
-        signal.signal(signal.SIGTERM, stop_worker)
-        run_worker(runtime, stop_event, pools=pools)
-        return 0
+        return _worker(config, args)
     if args.command == "db":
         return _db(config)
     if args.command == "search":
@@ -266,6 +247,42 @@ def main(argv: list[str] | None = None) -> int:
         return _sync(config, args)
     parser.error("Unknown command")
     return 2
+
+
+def _worker(config, args) -> int:
+    try:
+        pools = resolve_worker_pools(
+            config,
+            pools=args.pool,
+            stages=args.stages,
+            concurrency=args.concurrency,
+        )
+    except ConfigError as exc:
+        print(f"Configuration error: {exc}", file=sys.stderr)
+        return 2
+    configure_logging(config, console=config.log_console)
+    configure_tracing()
+    runtime = build_runtime(config)
+    metrics_server = (
+        metrics.start_worker_server(
+            runtime, host=config.metrics_host, port=config.metrics_worker_port
+        )
+        if config.metrics_enabled
+        else None
+    )
+    stop_event = threading.Event()
+
+    def stop_worker(_signum, _frame) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, stop_worker)
+    signal.signal(signal.SIGTERM, stop_worker)
+    try:
+        run_worker(runtime, stop_event, pools=pools)
+    finally:
+        if metrics_server is not None:
+            metrics_server.stop()
+    return 0
 
 
 def _serve(config, args) -> int:

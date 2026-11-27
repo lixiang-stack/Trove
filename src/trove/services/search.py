@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from trove import metrics, telemetry
 from trove.db.models import Item
 from trove.domain.search import snippet
 from trove.ports import IndexStatus, SearchIndex
@@ -65,8 +67,14 @@ class SearchService:
             max(limit * FILTER_FETCH_MULTIPLIER, MIN_FILTER_FETCH) if filtered else limit
         )
         results: list[SearchResultView] = []
+        started = time.monotonic()
+        with telemetry.span(
+            "trove.search",
+            attributes={"trove.search.limit": fetch_limit},
+        ):
+            search_results = self.search_index.search(query, limit=fetch_limit)
         with self.sessions() as session:
-            for result in self.search_index.search(query, limit=fetch_limit):
+            for result in search_results:
                 if allowed_ids is not None and result.item_id not in allowed_ids:
                     continue
                 item = session.get(Item, result.item_id)
@@ -91,6 +99,7 @@ class SearchService:
                 )
                 if len(results) == limit:
                     break
+        metrics.record_search(time.monotonic() - started, len(results))
         return results
 
     def index_status(self) -> IndexStatus:

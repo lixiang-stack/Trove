@@ -288,6 +288,7 @@ api_key = "ollama"
 | API 健康 | `curl -fsS http://127.0.0.1:8765/api/health` |
 | 应用日志 | `tail -f ~/Trove/logs/trove.log` |
 | 单次 Run 日志 | `tail -f ~/Trove/logs/runs/<run-id>.log` |
+| 指标 | `curl -H "Authorization: Bearer <token>" http://127.0.0.1:8765/metrics` |
 | Docker 状态 | `docker compose ps` |
 | Docker 日志 | `docker compose logs -f --tail=200 api worker` |
 
@@ -439,6 +440,7 @@ uv run trove sync reset-epoch
 | [docs/android.md](docs/android.md) | Android 构建、签名、证书和真机验收。 |
 | [docs/api-contract.md](docs/api-contract.md) | `/api` v1 兼容性、错误格式、请求 ID 和同步契约。 |
 | [docs/security.md](docs/security.md) | 安全回归清单与残余风险。 |
+| [docs/observability.md](docs/observability.md) | Prometheus 指标、OpenTelemetry trace、Grafana dashboard。 |
 | [docs/licenses.md](docs/licenses.md) | 依赖许可证。 |
 | [GLOSSARY.md](GLOSSARY.md) | Item、Collection、Processing Run 等领域术语。 |
 | [docs/adr/](docs/adr/) | 架构决策记录。 |

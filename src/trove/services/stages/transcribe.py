@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import time
 
 from sqlalchemy.orm import Session
 
+from trove import metrics, telemetry
 from trove.clock import utc_ms
 from trove.content_package import (
     TRANSCRIPT_FILENAME,
@@ -13,7 +15,6 @@ from trove.content_package import (
 )
 from trove.db.models import Item
 from trove.errors import PackageVersionError, ProcessingError, StorageError
-from trove.metrics import add, increment
 from trove.ports import StageContext, Transcriber
 from trove.services.artifacts import ArtifactStore
 from trove.services.package_documents import transcript_document
@@ -79,8 +80,8 @@ class TranscribeStage:
                         "saved_asr_seconds": saved_seconds,
                     },
                 )
-                increment("external_cache_hits_total", cache="asr")
-                add("external_cache_saved_asr_seconds_total", saved_seconds)
+                metrics.record_external_cache_hit("asr")
+                metrics.record_external_cache_saved_asr(saved_seconds)
                 return
             context.log(
                 "transcript cache miss: "
@@ -96,9 +97,22 @@ class TranscribeStage:
                     "model": self.transcriber.model,
                 },
             )
-            increment("external_cache_misses_total", cache="asr")
+            metrics.record_external_cache_miss("asr")
         audio_path = self.package.artifact_path(item.id, audio.path)
-        result = self.transcriber.transcribe(audio_path, context)
+        started = time.monotonic()
+        with telemetry.span(
+            "trove.asr.transcribe",
+            attributes={
+                "trove.run_id": context.run_id,
+                "trove.item_id": item.id,
+                "trove.stage": "transcribing",
+            },
+        ):
+            result = self.transcriber.transcribe(audio_path, context)
+        if audio.duration_sec and audio.duration_sec > 0:
+            metrics.record_asr_realtime_factor(
+                (time.monotonic() - started) / audio.duration_sec
+            )
         path = self.package.write_transcript(
             item.id,
             transcript_document(result, item, input_sha256=audio.sha256),
