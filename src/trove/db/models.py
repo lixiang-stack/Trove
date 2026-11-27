@@ -168,6 +168,7 @@ class RunStep(Base):
     worker_id: Mapped[str | None] = mapped_column(String(64))
     error_code: Mapped[str | None] = mapped_column(String(128))
     error_message: Mapped[str | None] = mapped_column(Text)
+    traceparent: Mapped[str | None] = mapped_column(String(128))
     started_at: Mapped[int | None] = mapped_column(Integer)
     finished_at: Mapped[int | None] = mapped_column(Integer)
 

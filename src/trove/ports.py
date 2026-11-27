@@ -55,6 +55,7 @@ class StageContext:
     should_cancel: Callable[[], bool]
     log: Callable[[str], None]
     force: bool = False
+    traceparent: str | None = None
 
     def check_cancelled(self) -> None:
         from trove.errors import ProcessingCancelled

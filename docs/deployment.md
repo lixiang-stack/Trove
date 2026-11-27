@@ -491,7 +491,7 @@ when `ok` is true:
     {
       "name": "database_revision",
       "status": "ok",
-      "message": "Database migration: 0009_external_call_cache",
+      "message": "Database migration: 0010_stage_traceparent",
       "fix": ""
     }
   ],
@@ -677,6 +677,18 @@ caffeinate -i -w "$(pgrep -f 'trove.cli worker' | head -1)"
 ```
 
 This is optional; launchd and SQLite recovery handle sleep/restart safely.
+
+### Metrics and traces
+
+The API serves Prometheus text at `/metrics` on the normal API port (auth
+required); the worker serves its process-local metrics on `127.0.0.1` at
+`[metrics] worker_port`. Point Prometheus at both processes. Set
+`OTEL_EXPORTER_OTLP_ENDPOINT` (and optionally `OTEL_SERVICE_NAME`) for the API
+and worker to export OpenTelemetry traces; without it tracing is no-op.
+
+See [observability.md](observability.md) for scrape configuration, token
+issuance, metric and label conventions, trace structure, and the Grafana
+dashboard.
 
 ### Uninstall
 

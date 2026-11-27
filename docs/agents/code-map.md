@@ -76,6 +76,8 @@ health is summarized by `services/health.py`.
 | DB model or schema | `db/models.py` + new Alembic migration |
 | Content package layout / document / manifest | `content_package.py` + `services/package_documents.py` |
 | FTS5 query / index | `adapters/search.py`; contract in `ports.py` |
+| Prometheus metrics / worker metrics listener | `metrics.py`, scrape API in `web/api/metrics.py`; docs in [observability](../observability.md) |
+| OpenTelemetry spans / traceparent handoff | `telemetry.py` + `worker.py`; migration `0010_stage_traceparent` |
 
 HTTP handlers and services do not contain raw SQL. Raw SQL belongs to adapters
 and `db/`; FTS5 SQL lives in `adapters/search.py`. The content package, not the

@@ -5,6 +5,7 @@ import logging
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from trove import metrics, telemetry
 from trove.clock import utc_ms
 from trove.content_package import (
     AI_FILENAME,
@@ -18,7 +19,6 @@ from trove.domain.cache import ai_input_sha256
 from trove.domain.organization import MAX_EXISTING_TAGS
 from trove.domain.tags import normalize_tag
 from trove.errors import PackageVersionError, StorageError, TroveError
-from trove.metrics import add, increment
 from trove.ports import Organizer, StageContext
 from trove.services.artifacts import ArtifactStore
 from trove.services.package_documents import ai_document
@@ -75,7 +75,7 @@ class OrganizeStage:
                     "prompt_version": prompt_version,
                 },
             )
-            increment("external_cache_misses_total", cache="ai")
+            metrics.record_external_cache_miss("ai")
         elif context.force:
             context.log("ai cache bypassed: explicit reprocess")
             logger.info(
@@ -93,14 +93,25 @@ class OrganizeStage:
             if item.collection_id
             else []
         )
-        result = self.organizer.organize(
-            text=source_text,
-            title=item.title,
-            existing_tags=collection_tags or self._tag_vocabulary(session),
-            context=context,
-            collection_title=collection.title if collection is not None else None,
-            collection_index=item.collection_index,
-            reuse_existing_tags=bool(collection_tags),
+        with telemetry.span(
+            "trove.llm.organize",
+            attributes={
+                "trove.run_id": context.run_id,
+                "trove.item_id": item.id,
+                "trove.stage": "organizing",
+            },
+        ):
+            result = self.organizer.organize(
+                text=source_text,
+                title=item.title,
+                existing_tags=collection_tags or self._tag_vocabulary(session),
+                context=context,
+                collection_title=collection.title if collection is not None else None,
+                collection_index=item.collection_index,
+                reuse_existing_tags=bool(collection_tags),
+            )
+        metrics.record_llm_usage(
+            result.input_tokens, result.output_tokens, result.cost_usd or 0.0
         )
         generated_at = utc_ms()
         path = self.package.write_ai(
@@ -183,10 +194,14 @@ class OrganizeStage:
                 "saved_cost_usd": document.cost_usd or 0,
             },
         )
-        increment("external_cache_hits_total", cache="ai")
-        add("external_cache_saved_tokens_total", document.input_tokens, kind="input")
-        add("external_cache_saved_tokens_total", document.output_tokens, kind="output")
-        add("external_cache_saved_cost_usd_total", document.cost_usd or 0)
+        metrics.record_external_cache_hit("ai")
+        metrics.EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="input").inc(
+            document.input_tokens
+        )
+        metrics.EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="output").inc(
+            document.output_tokens
+        )
+        metrics.EXTERNAL_CACHE_SAVED_COST.inc(document.cost_usd or 0)
 
     def _item_text(self, item: Item) -> str:
         transcript = self.package.read_transcript(item.id)

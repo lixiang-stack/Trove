@@ -7,6 +7,7 @@ from urllib.parse import quote, urlsplit
 from fastapi import Request
 from fastapi.responses import JSONResponse, PlainTextResponse, RedirectResponse, Response
 
+from trove import metrics, telemetry
 from trove.domain.sync import HOST_WEB_DEVICE
 from trove.services.auth import SESSION_COOKIE, SESSION_MAX_AGE, is_secure_request
 from trove.web.request_id import RequestIDMiddleware
@@ -61,7 +62,7 @@ def is_api(path: str) -> bool:
 
 
 def wants_json(request: Request) -> bool:
-    return is_api(request.url.path)
+    return is_api(request.url.path) or request.url.path == "/metrics"
 
 
 def unauthorized(request: Request) -> Response:
@@ -144,6 +145,28 @@ def bearer_token(request: Request) -> str | None:
     return token.strip()
 
 
+def route_template(request: Request) -> str:
+    """Return a low-cardinality template, including nested router prefixes."""
+    route = request.scope.get("route")
+    template = getattr(route, "path", None)
+    if not template:
+        return "unmatched"
+    actual = request.url.path
+    if template == "/":
+        return "/"
+    actual_parts = [part for part in actual.strip("/").split("/") if part]
+    template_parts = [part for part in template.strip("/").split("/") if part]
+    offset = len(actual_parts) - len(template_parts)
+    if offset < 0:
+        return template
+    for expected, received in zip(
+        template_parts, actual_parts[offset:], strict=True
+    ):
+        if not expected.startswith("{") and expected != received:
+            return template
+    return "/" + "/".join(actual_parts[:offset] + template_parts)
+
+
 def _authenticate(request: Request) -> tuple[bool, str | None]:
     runtime = request.app.state.runtime
     token = bearer_token(request)
@@ -162,8 +185,7 @@ def _authenticate(request: Request) -> tuple[bool, str | None]:
 
 
 def install_middleware(app) -> None:
-    @app.middleware("http")
-    async def security_and_logging(request: Request, call_next):
+    async def guard(request: Request, call_next):
         started = time.monotonic()
         runtime = app.state.runtime
         path = request.url.path
@@ -239,5 +261,23 @@ def install_middleware(app) -> None:
         else:
             response.headers.setdefault("Cache-Control", "no-store")
         return finish(response)
+
+    @app.middleware("http")
+    async def security_and_logging(request: Request, call_next):
+        started = time.monotonic()
+        with telemetry.http_server_span(request.method, request.headers) as span:
+            response = await guard(request, call_next)
+            template = route_template(request)
+            span.set_attribute("http.route", template)
+            span.set_attribute("http.response.status_code", response.status_code)
+            path = request.url.path
+            if not path.startswith("/static/") and path != "/metrics":
+                metrics.record_http_request(
+                    request.method,
+                    template,
+                    response.status_code,
+                    time.monotonic() - started,
+                )
+            return response
 
     app.add_middleware(RequestIDMiddleware)

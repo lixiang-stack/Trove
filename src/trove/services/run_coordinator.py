@@ -4,6 +4,7 @@ import logging
 import random
 import shutil
 import threading
+import time
 import traceback
 import uuid
 from collections.abc import Callable, Collection
@@ -14,11 +15,13 @@ from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
+from trove import metrics, telemetry
 from trove.clock import utc_ms
 from trove.config import Config
 from trove.content_package import ContentPackage, SourceDocument
 from trove.db.models import Item, Run, RunStep
 from trove.domain.items import (
+    ALL_STAGES,
     REPROCESSABLE_STAGES,
     STAGE_DOWNLOADING,
     STAGE_EXTRACTING_AUDIO,
@@ -50,7 +53,6 @@ from trove.errors import (
     ValidationError,
 )
 from trove.logging_setup import append_run_log
-from trove.metrics import increment
 from trove.ports import DOWNLOAD_MEDIA_FILENAME, SearchIndex, StageContext
 from trove.services.stages.base import StageHandler
 
@@ -247,6 +249,7 @@ class RunCoordinator:
             should_cancel=lambda: self._cancel_requested(run_id),
             log=lambda message: append_run_log(self.config, run_id, message),
             force=force,
+            traceparent=task.traceparent if task is not None else None,
         )
 
         if self._cancel_requested(run_id):
@@ -554,9 +557,9 @@ class RunCoordinator:
                 )
             session.commit()
         for stage in retried_stages:
-            increment("stage_retries_total", stage=stage)
+            metrics.record_stage_retry(stage)
         for stage in dead_stages:
-            increment("stage_dead_total", stage=stage)
+            metrics.record_stage_dead(stage)
         return reaped
 
     @staticmethod
@@ -676,6 +679,34 @@ class RunCoordinator:
                 ).scalar_one()
             )
 
+    def queue_depths(self) -> dict[str, int]:
+        now = self.clock()
+        depths = {stage: 0 for stage in ALL_STAGES}
+        with self.sessions() as session:
+            rows = session.execute(
+                select(RunStep.stage, func.count())
+                .where(
+                    RunStep.state == StageTaskState.QUEUED,
+                    RunStep.available_at <= now,
+                )
+                .group_by(RunStep.stage)
+            )
+            for stage, count in rows:
+                depths[str(stage)] = int(count)
+        return depths
+
+    def oldest_lease_age_seconds(self) -> float:
+        with self.sessions() as session:
+            started_at = session.execute(
+                select(func.min(RunStep.started_at)).where(
+                    RunStep.state == StageTaskState.RUNNING,
+                    RunStep.started_at.is_not(None),
+                )
+            ).scalar_one()
+        if started_at is None:
+            return 0.0
+        return max(0.0, (self.clock() - int(started_at)) / 1000)
+
     def heartbeat(self, run_id: str, worker_id: str) -> None:
         now = self.clock()
         with self.sessions() as session:
@@ -753,109 +784,136 @@ class RunCoordinator:
         context: StageContext,
         work_dir: Path,
     ) -> bool:
-        try:
-            with self.sessions() as session:
-                task = session.get(RunStep, task_id)
-                if task is None or task.state != StageTaskState.RUNNING:
-                    return False
-                if task.worker_id != worker_id:
-                    return False
-                item = session.get(Item, item_id)
-                if item is None:
-                    raise ProcessingError("internal.error", "Content not found")
-                source = self.package.read_source(item.id)
-                if source is None:
-                    raise ProcessingError(
-                        "storage.source_missing",
-                        "Content package is missing source.json",
-                    )
-                self._execute_stage(stage, session, item, source, context)
-                if not self._finish_task(
-                    session, item, task, now=self.clock(), worker_id=worker_id
-                ):
-                    session.rollback()
-                    append_run_log(
-                        self.config,
-                        run_id,
-                        f"stage {stage} lost its lease before completion; retry queued",
-                        level="warning",
-                    )
-                    return False
-                session.commit()
-                return True
-        except ProcessingCancelled:
-            self._cancel_running_task(run_id, task_id, stage)
-            self._cleanup_work_dir(work_dir, keep_download=True)
-            append_run_log(self.config, run_id, f"stage {stage} cancelled", level="warning")
-            self._try_index(run_id, item_id)
-            return False
-        except ProcessingError as exc:
-            self._handle_stage_error(
-                run_id,
-                task_id,
-                stage,
-                exc.code,
-                exc.message,
-                worker_id=worker_id,
-                details=exc.details,
-            )
-            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
-            append_run_log(
-                self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
-            )
-            self._try_index(run_id, item_id)
-            return False
-        except TroveError as exc:
-            self._handle_stage_error(
-                run_id,
-                task_id,
-                stage,
-                exc.code,
-                exc.message,
-                worker_id=worker_id,
-                details=exc.details,
-            )
-            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
-            append_run_log(
-                self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
-            )
-            self._try_index(run_id, item_id)
-            return False
-        except OSError as exc:
-            self._handle_stage_error(
-                run_id,
-                task_id,
-                stage,
-                "storage.error",
-                str(exc),
-                worker_id=worker_id,
-                details={"transient": is_transient_os_error(exc)},
-            )
-            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
-            append_run_log(
-                self.config, run_id, f"stage {stage} failed: storage.error", level="error"
-            )
-            self._try_index(run_id, item_id)
-            return False
-        except Exception as exc:  # noqa: BLE001 - boundary for a durable worker
-            append_run_log(
-                self.config,
-                run_id,
-                f"stage {stage} crashed: {traceback.format_exc()}",
-                level="error",
-            )
-            self._fail_run(
-                run_id,
-                task_id,
-                stage,
-                "internal.error",
-                "Internal error",
-                worker_id=worker_id,
-                details={"error": str(exc)},
-            )
-            self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
-            self._try_index(run_id, item_id)
-            return False
+        started = time.monotonic()
+        outcome = "failure"
+        with telemetry.span(
+            f"stage {stage}",
+            attributes={
+                "trove.run_id": run_id,
+                "trove.item_id": item_id,
+                "trove.stage": stage,
+            },
+            parent_traceparent=context.traceparent,
+        ) as span:
+            try:
+                with self.sessions() as session:
+                    task = session.get(RunStep, task_id)
+                    if task is None or task.state != StageTaskState.RUNNING:
+                        outcome = "skipped"
+                        return False
+                    if task.worker_id != worker_id:
+                        outcome = "skipped"
+                        return False
+                    item = session.get(Item, item_id)
+                    if item is None:
+                        raise ProcessingError("internal.error", "Content not found")
+                    source = self.package.read_source(item.id)
+                    if source is None:
+                        raise ProcessingError(
+                            "storage.source_missing",
+                            "Content package is missing source.json",
+                        )
+                    self._execute_stage(stage, session, item, source, context)
+                    if not self._finish_task(
+                        session, item, task, now=self.clock(), worker_id=worker_id
+                    ):
+                        session.rollback()
+                        append_run_log(
+                            self.config,
+                            run_id,
+                            f"stage {stage} lost its lease before completion; retry queued",
+                            level="warning",
+                        )
+                        telemetry.mark_error(span, "stage lease lost")
+                        metrics.record_stage_failure(stage, "run.lease_expired")
+                        return False
+                    session.commit()
+                    outcome = "success"
+                    return True
+            except ProcessingCancelled:
+                outcome = "cancelled"
+                self._cancel_running_task(run_id, task_id, stage)
+                self._cleanup_work_dir(work_dir, keep_download=True)
+                append_run_log(
+                    self.config, run_id, f"stage {stage} cancelled", level="warning"
+                )
+                self._try_index(run_id, item_id)
+                return False
+            except ProcessingError as exc:
+                telemetry.mark_error(span, exc.code)
+                self._handle_stage_error(
+                    run_id,
+                    task_id,
+                    stage,
+                    exc.code,
+                    exc.message,
+                    worker_id=worker_id,
+                    details=exc.details,
+                )
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+                append_run_log(
+                    self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
+                )
+                self._try_index(run_id, item_id)
+                return False
+            except TroveError as exc:
+                telemetry.mark_error(span, exc.code)
+                self._handle_stage_error(
+                    run_id,
+                    task_id,
+                    stage,
+                    exc.code,
+                    exc.message,
+                    worker_id=worker_id,
+                    details=exc.details,
+                )
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+                append_run_log(
+                    self.config, run_id, f"stage {stage} failed: {exc.code}", level="error"
+                )
+                self._try_index(run_id, item_id)
+                return False
+            except OSError as exc:
+                telemetry.mark_error(span, "storage.error")
+                self._handle_stage_error(
+                    run_id,
+                    task_id,
+                    stage,
+                    "storage.error",
+                    str(exc),
+                    worker_id=worker_id,
+                    details={"transient": is_transient_os_error(exc)},
+                )
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+                append_run_log(
+                    self.config, run_id, f"stage {stage} failed: storage.error", level="error"
+                )
+                self._try_index(run_id, item_id)
+                return False
+            except Exception as exc:  # noqa: BLE001 - boundary for a durable worker
+                telemetry.mark_error(span, "internal.error")
+                append_run_log(
+                    self.config,
+                    run_id,
+                    f"stage {stage} crashed: {traceback.format_exc()}",
+                    level="error",
+                )
+                self._fail_run(
+                    run_id,
+                    task_id,
+                    stage,
+                    "internal.error",
+                    "Internal error",
+                    worker_id=worker_id,
+                    details={"error": str(exc)},
+                )
+                self._cleanup_work_dir(work_dir, keep_download=stage != STAGE_DOWNLOADING)
+                self._try_index(run_id, item_id)
+                return False
+            finally:
+                metrics.record_stage_duration(
+                    stage, outcome, time.monotonic() - started
+                )
 
     def _execute_stage(
         self,
@@ -900,17 +958,22 @@ class RunCoordinator:
         attempt: int,
         max_attempts: int | None = None,
     ) -> RunStep:
-        task = RunStep(
-            run_id=run_id,
-            stage=stage,
-            state=StageTaskState.QUEUED,
-            attempt=attempt,
-            max_attempts=(
-                self._max_attempts(stage) if max_attempts is None else max_attempts
-            ),
-            available_at=now,
-        )
-        session.add(task)
+        with telemetry.span(
+            "queue.enqueue",
+            attributes={"trove.run_id": run_id, "trove.stage": stage},
+        ):
+            task = RunStep(
+                run_id=run_id,
+                stage=stage,
+                state=StageTaskState.QUEUED,
+                attempt=attempt,
+                max_attempts=(
+                    self._max_attempts(stage) if max_attempts is None else max_attempts
+                ),
+                available_at=now,
+                traceparent=telemetry.current_traceparent(),
+            )
+            session.add(task)
         return task
 
     def _enqueue_retry_task(
@@ -924,6 +987,7 @@ class RunCoordinator:
         ).scalars().first()
         if latest is not None and latest.state == StageTaskState.QUEUED:
             latest.available_at = now
+            latest.traceparent = telemetry.current_traceparent()
             return latest
         attempt = (latest.attempt + 1) if latest is not None else 1
         # The column stores the highest allowed attempt number. A manual retry
@@ -1151,6 +1215,8 @@ class RunCoordinator:
                 run.current_stage = None if clear_current_stage else stage
                 run.finished_at = now
             session.commit()
+        if stage is not None:
+            metrics.record_stage_failure(stage, code)
         if details is not None:
             append_run_log(
                 self.config,
@@ -1195,6 +1261,7 @@ class RunCoordinator:
                 max_attempts=task.max_attempts,
                 priority=task.priority,
                 available_at=now + delay_ms,
+                traceparent=telemetry.current_traceparent(),
             )
         )
         return True
@@ -1305,7 +1372,8 @@ class RunCoordinator:
                     session.rollback()
                     return False
                 session.commit()
-                increment("stage_retries_total", stage=stage)
+                metrics.record_stage_failure(stage, code)
+                metrics.record_stage_retry(stage)
                 self._log_stage_event(
                     run_id,
                     f"stage {stage} attempt {task.attempt} failed: {code}; "
@@ -1347,7 +1415,8 @@ class RunCoordinator:
                     session.rollback()
                     return False
                 session.commit()
-                increment("stage_dead_total", stage=stage)
+                metrics.record_stage_failure(stage, code)
+                metrics.record_stage_dead(stage)
                 self._log_stage_event(
                     run_id,
                     f"stage {stage} attempt {task.attempt} dead after {code}",
@@ -1382,6 +1451,7 @@ class RunCoordinator:
                 session.rollback()
                 return False
             session.commit()
+            metrics.record_stage_failure(stage, code)
             return False
 
     @staticmethod

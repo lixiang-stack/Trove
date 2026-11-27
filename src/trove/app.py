@@ -11,11 +11,13 @@ from trove.composition import Ports, build_runtime
 from trove.config import Config
 from trove.db.engine import fts5_available
 from trove.logging_setup import configure_logging
+from trove.telemetry import configure_tracing
 from trove.web.routes import (
     api_router,
     html_router,
     install_exception_handlers,
     install_middleware,
+    metrics_router,
 )
 from trove.web.security import PUBLIC_PATHS
 from trove.web.templating import STATIC_DIR
@@ -24,6 +26,7 @@ from trove.web.templating import STATIC_DIR
 def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
     config.ensure_layout()
     configure_logging(config, console=config.log_console)
+    configure_tracing()
     runtime = build_runtime(config, ports)
 
     @asynccontextmanager
@@ -48,6 +51,7 @@ def create_app(config: Config, ports: Ports | None = None) -> FastAPI:
     install_middleware(app)
     install_exception_handlers(app)
     app.include_router(api_router)
+    app.include_router(metrics_router)
     app.include_router(html_router)
     return app
 
