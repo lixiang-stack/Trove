@@ -1,56 +1,333 @@
 # Trove 产品化验收记录
 
-Status: in progress
+Status: complete
 Date: 2026-11-27
+Commit: `59be2d050a8cef40b385a65f051c43a47764cc69`（Pass 3 验收执行点；分支已同步 `main` 的 `ea64b89`）
 Spec: [spec.md](spec.md)
 Issues: [issues/](issues/)
 
+> 同步说明：验收执行后 `main` 合入了 Docker 依赖/源码分层（`bfe9e88`）和 Android SDK 自动配置（`37db00a`）。本分支已 rebase 到 `ea64b89`，并重跑质量门禁；Pass 3 的端到端/SLO 数据仍来自 `59be2d0`，未因这次同步重跑完整验收。
+
+本记录合并三次验收：
+
+- Pass 1：Docker 视频链路、分池、lease 恢复、缓存、幂等、manifest、doctor/备份。
+- Pass 2：Bilibili 合集前 10 集、批量下载、collection reprocess、导出、搜索。
+- Pass 3：当前 commit 上的 Docker/launchd 全新安装、EPUB/播客/视频三链路、故障注入、100 条容量、10k 搜索、Prometheus/Grafana/OTel、升级/回滚、Android 回归。
+
+Pass 1/2 的原始证据保留在下方；Pass 3 使用独立 `trove-acceptance` Compose project 和独立卷，未修改 Pass 1/2 数据。
+
 ## 环境
 
-- macOS（Apple Silicon / arm64）+ Docker Desktop。
-- 分支：`deploy-acceptance`，基于 `main` 的 `c3e4d65`；镜像 `trove:local` 从该 worktree 构建，包含 ASR。
-- 服务：`api`、默认 `worker`；分池模式用 `docker compose --profile pools` 启动 `worker-download / worker-asr / worker-llm / worker-index`。
-- 数据卷：`trove_trove-data`；验收后 `items=10`（合集前 10 集）、`runs=22`、`ai_results=22`、`collections=1`。
-- ASR：FunASR `paraformer-zh`，CPU。
-- LLM：本地 Ollama `qwen3.5:4b`，`http://host.docker.internal:11434/v1`，`prompt_version=organize-2`。
-- 认证：验收期间临时设置测试密码；结束后恢复原 `state.toml`，并验证旧 session 和临时密码均已失效。
-- 容器以 uid/gid `10001(trove)` 运行；`config.toml`、`state.toml` 为 `0600`。
+### 主机
 
-## 测试输入
+- macOS 14.6.1（23G93），Apple M1 Pro / arm64，Docker Desktop 29.5.2。
+- Python 3.12.14；uv 管理虚拟环境；FFmpeg/ffprobe 5.1.9（容器内）。
+- 磁盘：验收结束时剩余约 126 GB。
+- 分支 `productization-acceptance`，基于 `main` 的 `59be2d0`。
+- 镜像 `trove:acceptance`，`sha256:8f7af0c6...`，构建参数 `commit=59be2d050a8c`，`build_time=2026-11-27T07:35:53Z`。
 
-| 字段 | 值 |
+### Docker 路径
+
+- Compose project：`trove-acceptance`；端口 `127.0.0.1:18765`。
+- 全新命名卷：`trove-acceptance_trove-data`；首次 `up` 前只预置 ASR 模型缓存（1.2 GB，模型下载不计入安装 SLO）。
+- 服务：`api`、默认 `worker`；功能/容量阶段切换为 `worker-download`、`worker-asr`、`worker-llm`、`worker-index`。
+- ASR：FunASR `paraformer-zh`，CPU；LLM：本地 mock OpenAI-compatible 服务（`host.docker.internal:18080`），用于确定性验收；真实 Ollama `qwen3.5:4b` 链路见 Pass 1。
+- 认证：验收专用密码；结束时删除整个验收卷。
+
+### launchd 路径
+
+- 临时 home：`$HOME/.cache/trove-acceptance/launchd-home`；端口 `127.0.0.1:18766`。
+- 临时 LaunchAgents 目录：`$HOME/.cache/trove-acceptance/LaunchAgents`，未写入 `~/Library/LaunchAgents`。
+- `uv sync --extra asr` 已预热依赖；ASR 模型通过 `MODELSCOPE_CACHE` 复用验收缓存。模型下载不计入安装 SLO。
+- 安装后 `doctor --json` 全绿；结束后 `trove service uninstall`，未删除 `~/Trove`。
+
+### 测试数据
+
+- 真实视频：Bilibili `BV1MLqDYxEpN?p=1`，901.844667 s，标题 `2025年曾仕强道德经功成不居高清版 全100讲 p01 第1集 天地之始`，作者 `冉子学院`。
+- 真实播客：NPR The Indicator `https://feeds.npr.org/510325/podcast.xml`，episode `Will AI take my job? Ask an economist!`，224.94 s。
+- EPUB：本地 `tests/fixtures/aesop.epub`；URL 使用 GitHub 上公开的 IDPF `accessible_epub_3.epub`（4.05 MB）。
+- 100 条容量：`aesop.epub` 的 100 个唯一变体（每个 3.3 KB，追加唯一 `META-INF` 文件改变 checksum）。
+- 10k 搜索：`trove bench seed --count 10000`，最终 API `total=10,118` Items。
+
+## 全新安装
+
+### Docker Compose（干净卷）
+
+命令（镜像已构建，模型缓存已预置）：
+
+```bash
+export TROVE_IMAGE_TAG=acceptance TROVE_HOST_PORT=18765 TROVE_PUBLISH_ADDRESS=127.0.0.1
+docker compose -p trove-acceptance up -d
+```
+
+| 指标 | 结果 |
 | --- | --- |
-| URL | `https://www.bilibili.com/video/BV1MLqDYxEpN?p=1` |
-| 标题 | `2025年曾仕强道德经功成不居高清版 全100讲 p01 第1集 天地之始` |
-| 作者 | `冉子学院` |
-| 时长 | `901.844667s`（15m02s） |
-| 平台 | Bilibili |
-| Item ID | `48e1d08e-7998-4a24-9baa-4ecef2cbd710` |
+| 从 `up -d` 到 `/api/health` 200 | **18.52 s** |
+| `init` | exit 0 |
+| API health | `host`/`database`/`worker` 全 ok，migration `0010_stage_traceparent` |
+| 非 root | 容器 uid/gid `10001(trove)`；config/state `0600` |
+
+SLO ≤ 10 分钟，通过。镜像构建时间未计入（发布物为预构建镜像）。
+
+### macOS launchd
+
+```bash
+uv run trove --home "$HOME/.cache/trove-acceptance/launchd-home" config init \
+  --host 127.0.0.1 --port 18766
+TROVE_AGENTS_DIR="$HOME/.cache/trove-acceptance/LaunchAgents" \
+  ./scripts/install-launchd.sh --home "$HOME/.cache/trove-acceptance/launchd-home"
+```
+
+| 指标 | 结果 |
+| --- | --- |
+| 从 `install-launchd.sh` 到 `/api/health` 200 | **9.87 s** |
+| `launchctl print gui/$(id -u)/com.trove.api` | running，active count 1 |
+| `launchctl print gui/$(id -u)/com.trove.worker` | running，active count 1 |
+| `doctor --json` | `ok=true`，11 项全 ok（worker 首次心跳后） |
+| kill API（SIGKILL）到 health 恢复 | **13.72 s**，新 PID |
+| kill worker（SIGKILL）后 heartbeat | 更新为新 PID，`worker status=ok` |
+| uninstall | 两个 plist 删除，进程停止；`~/Trove` 未动 |
+
+SLO ≤ 10 分钟，通过。
+
+## 功能链路（Pass 3）
+
+### 视频 URL → ASR → 摘要/tag → 搜索
+
+- `POST /api/items` 201，0.053 s；下载池 3、ASR 1、LLM 2、index 1。
+- 运行步骤：
+
+| stage | 耗时 |
+| --- | --- |
+| downloading | 3.305 s |
+| extracting_audio | 8.458 s |
+| transcribing | 111.536 s |
+| organizing | 0.050 s |
+| indexing | 0.016 s |
+| 端到端 | **124.523 s** |
+
+- ASR RTF = 111.536 / 901.844667 = **0.1237**（≤ 0.15）。
+- 标题/作者/时长正确；摘要和 tags 由 mock LLM 生成；搜索 `道德经`、`Acceptance` 命中。
+- `/api/items/{id}/audio` Range 返回 `206`、`bytes 0-1023/7492450`、ETag=audio sha256。
+- `trove package verify` 通过。
+
+### EPUB 本地 / URL → 解析 → 摘要/tag → 阅读/搜索
+
+- 本地 `aesop.epub`：201，**1.53 s** 完成；`has_book=true`；`GET /api/items/{id}/book/chapters/0` 返回 4 段正文；搜索 `Aesop` 命中；package verify 通过。
+- URL `accessible_epub_3.epub`：201，**3.06 s** 完成；`source_type=epub_url`，`has_book=true`，摘要/tags 正常。
+
+### 播客单集 → 下载 → ASR → 搜索
+
+- NPR The Indicator，224.94 s 单集：201，**61.85 s** 完成。
+- 步骤：download 7.73 s、extract 3.06 s、transcribe 48.66 s、organize 0.035 s、index 0.016 s。
+- ASR RTF = 48.66 / 224.94 = **0.216**。短音频含固定模型加载开销，不作为 30 分钟音频 SLO 样本；900 s 视频样本为 0.1237。
+- `has_audio=true`，transcript 73 段；搜索 `economist` 命中。
+- 备注：第一次用本地 fake feed `acceptance-001` 时，mock server 把 `.m4a` 标成 `audio/mp4a-latm`，被下载白名单拒绝（`download.invalid_type`），已修复 mock 的 Content-Type 后改用真实公共 feed。该失败是测试夹具问题，不是产品缺陷。
+
+### 合集 / 批量下载 / 重跑
+
+Pass 2 已在 `deploy-acceptance`（`c3e4d65`）完成：Bilibili 前 10 集入库/分池下载/ASR/整理/索引，collection reprocess、导出和搜索均通过；具体数字见下方“Pass 1/2 细节”的 Pass 2 段，此处不重复。
+
+Pass 3 未重复执行合集批量下载；`c3e4d65..59be2d0` 的差异是 observability/run 读取重构，不修改 collection 入队/下载路径。当前 commit 的单集重跑与取消见下。
+
+### 重跑与取消
+
+- 视频 `POST /reprocess {"from_stage":"organizing"}`：202，1.02 s 完成；run log 有 `ai cache bypassed: explicit reprocess`；`ai_results` 增加。
+- 视频 `from_stage=transcribing`：显式重跑 ASR；用于 worker 崩溃注入（见下），attempt 2 完成后 run completed。
+- 播客 `from_stage=transcribing` 后立即 `POST /cancel`：run 在 transcribing 阶段变为 `cancelled`，错误 `run.cancelled`；没有继续 organizing/indexing。
+
+### 长 ASR 不阻塞下载/整理/索引
+
+- 视频进入 `transcribing` 后（创建后 13.16 s），创建本地 EPUB。
+- EPUB 在 **1.53 s** 内 completed；此时视频仍在 `transcribing`。
+- 分池 health 同时列出 `download/asr/llm/index` 四个 pool；下载池并发 3、LLM 2、index 1。
+
+## 故障注入
+
+| 场景 | 注入方式 | 观测结果 | 结论 |
+| --- | --- | --- | --- |
+| worker 崩溃 / 租约过期 | ASR 运行中 `kill -9` worker PID | attempt 1 `run.lease_expired`；lease 在 **28.5 s** 后回收；退避 32.6 s 后 attempt 2 完成；容器 RestartCount=1 | 自动恢复，无丢任务 |
+| API 崩溃 | `kill -9` API PID | **2.68 s** 后 health 恢复；新 PID；16 个既有 Item 保留；RestartCount=1 | 自动恢复 |
+| LLM 429 | mock 返回 429 | organizing attempt 1 `llm.failed`，约 30 s 后 attempt 2 完成 | 可重试、退避 |
+| LLM 5xx | mock 返回 500 | 同上；429/500 共 2 次失败、最终 0 失败 | 可重试 |
+| 死信 | 临时 `organizing` max_attempts=1（重启 API+所有 worker），mock 500 | stage `dead`，run `failed`，错误 `run.dead`；Item 保持可查询 | 死信明确，无静默丢失 |
+| 磁盘/权限写失败 | 处理中把 Item 目录 `chmod 500` | `storage.error`（EACCES）立即失败；恢复权限后 `POST /retry` 1.53 s 完成 | 不静默丢任务；EACCES 属永久错误，需人工重试 |
+| SQLite busy | 另一连接 `BEGIN EXCLUSIVE` 8 s | `POST /api/items` 等待 **7.126 s** 后 201；Item 正常完成 | busy_timeout=15 s 内串行化，不失败 |
+| ASR 超时 | 未注入（硬超时 4 h） | kill/lease 覆盖 ASR 挂起；`test_processing.py::test_command_timeout_is_marked_transient` 覆盖 subprocess timeout 归类 | 未实测，记录为缺口 |
+| ENOSPC 磁盘满 | 未注入（Docker Desktop 命名卷无配额） | 用 EACCES 验证 `storage.error` 路径；`domain/retry.py` 将 ENOSPC 归为 transient，`test_retry.py` 覆盖 | 未实测，记录为缺口 |
+
+## 容量
+
+### 100 条批量入队
+
+- 100 个唯一 EPUB 变体，批次入队 **3.37 s**（29.66 Item/s）。
+- 从第一条创建到全部 completed：**4.67 s**；吞吐 **1,283.57 Item/min**。
+- 100/100 completed，0 failed/cancelled。
+- 队列峰值：download/extract 4、organizing 14、indexing 24；active 峰值 5。
+- 峰值 RSS（采样 `docker stats`）：api 96.4 MiB、download 88.0、asr 79.0、llm 82.8、index 82.4；总计 **428.6 MiB**。
+- LLM 调用 **100** 次，0 失败。
+- 延迟：create p95 118 ms；列表轮询 p95 119 ms；health p95 20.7 ms；搜索 p95 58.4 ms。
+- 说明：EPUB 仅 3.3 KB、LLM 为本地 mock；该结果衡量队列/索引吞吐，不代表真实 ASR 负载。100 条批次全为 EPUB，无 ASR 任务；ASR RTF 见视频/播客链路（0.1237 / 0.216）。
+
+### 10k 搜索与 API 读
+
+`trove bench seed --count 10000` 用时 60.36 s；最终 10,118 Items。
+
+| 请求 | p50 | p95 | SLO | 结果 |
+| --- | --- | --- | --- | --- |
+| `GET /api/search?q=人工智能`（120 次） | 42.21 ms | **75.48 ms** | ≤ 300 ms | 通过 |
+| `GET /api/health`（100 次） | 8.21 ms | **13.01 ms** | ≤ 200 ms | 通过 |
+| `GET /api/items/{id}`（100 次） | 5.28 ms | **7.21 ms** | ≤ 200 ms | 通过 |
+| `GET /api/items?limit=1`（3 次） | 3,615 ms | 3,641 ms | ≤ 200 ms | **未达标** |
+| `GET /api/items?limit=50`（3 次） | 3,603 ms | 3,630 ms | ≤ 200 ms | **未达标** |
+
+根因：`LibraryService.list_items()` 加载全部未删除 Item 并构建完整 bundle，handler 之后才切片；10k 时每次列表请求都是 O(N)。已创建后续 issue [22](issues/22-paginate-item-list.md)。列表 p95 仅由 3 次采样得出，用于量级判断；严格 p95 由 22 的 100 次复测补齐。
+
+## 观测
+
+- Prometheus 抓取 5 个 target（api + 4 个 pool）全部 `up`。
+- Grafana 13.3.2；dashboard `Trove Host`（uid `trove-host`，14 panels）通过 provisioning 导入 `Trove` 文件夹。
+- 四个黄金信号（Grafana `/api/ds/query` 实际返回）：
+  - Traffic：`sum(rate(trove_http_request_duration_seconds_count[5m]))` ≈ 0.021 req/s。
+  - Latency：HTTP p95 ≈ **9.75 ms**。
+  - Errors：5xx ratio 查询为空（窗口内 0 个 5xx）；注入 500 后 `trove_stage_failures_total{code="llm.failed",stage="organizing"}=1`、`trove_stage_retries_total{stage="organizing"}=1`。
+  - Saturation：`trove_queue_depth` 6 个 stage 均为 0（空闲），有数据。
+- 其他指标：stage duration、ASR RTF、LLM tokens/cost、search latency/results、cache hit/miss 均有样本。
+- Trace：单条 Item 的 trace id `7efc0b816443487eb2888bd30283357e` 串起
+  `HTTP POST`（API）→ `queue.enqueue` → `stage extracting_text`（download worker）→
+  `queue.enqueue` → `stage organizing` + `trove.llm.organize`（llm worker）→
+  `queue.enqueue` → `stage indexing`（index worker）。
+  同一 trace 的 `trove.run_id` / `trove.item_id` 属性一致。
+
+## 升级 / 回滚
+
+- 上一版本 DB：Pass 1/2 卷的 `trove-0009_external_call_cache-20261127T071557Z.db`（`0009`，75 行 items 含 tombstone、22 runs；API 可见 10 条）。
+- 升级：当前代码 `trove db upgrade` 自动生成 `trove-0009...-20261127T081729Z.db`，迁移到 `0010_stage_traceparent`；items/runs 计数不变；容器内 `doctor --json` `ok=true`（worker 未启动为 warn）。
+- 回滚演练：
+  1. 停 API/worker，恢复 `0009` 备份，删除 `trove.db-wal`/`-shm`。
+  2. 用 `git archive c3e4d65 src` 的上一版本源码（`PYTHONPATH`）启动旧代码。
+  3. 旧代码 `doctor --json` `ok=true`，revision `0009`。
+  4. 旧代码 `serve --no-worker`：`/api/health` 200，登录 200，`/api/items` 返回 `total=10`（tombstone 不计）。
+  5. 数据未丢；回滚后再次升级路径已由 `db upgrade` 重复验证。
+
+## Android
+
+### 自动化门禁
+
+- `scripts/android/check.sh`：`BUILD SUCCESSFUL in 51s`；230 tasks（131 executed，99 from cache）。
+- 覆盖 `:app:assembleProdDebug` + app/core/playback/reader 的 JVM/Compose 单测与 lint。
+- 契约/同步/播放/搜索定向测试：`tests/test_contract_fixtures.py`、`test_sync.py`、`test_playback.py`、`test_search.py` 共 49 passed。
+- `scripts/android/device-check.sh`：真机 **Android 16 (API 36)** 上通过，覆盖 bundled SQLite/FTS5 和 platform manifest。
+
+### 真机核心功能（2026-11-27）
+
+设备：Android 16 / API 36 真机；App `0.1.0 (1)`；真实 Docker Host `http://127.0.0.1:8765`（API `0010`）；USB + `adb reverse`。按用户要求未测飞行模式、锁屏和 60 分钟后台。
+
+| # | 场景 | 结果 |
+| --- | --- | --- |
+| 1 | 登录/会话 | PASS（有限）— App 已持有真实 Host token；force-stop/restart 后仍保持会话和 Library。未重复密码登录/退出，避免无密码时锁死设备。 |
+| 2 | Library 同步 | PASS — `1 条内容 · 1 个合集`，合集 10 集；下拉刷新后仍为 `已同步`，数量与真实 Host 一致。 |
+| 3 | 音频播放 | PASS — p01 `15:01`；播放/暂停、`↻15`、倍速 `1.25×` 正常；按 Home 后 MediaSession 仍 `PLAYING`，媒体通知存在；Host 进度同步到 `387.294s / in_progress`。 |
+| 4 | 下载 | PASS（带观察）— p01 下载完成，显示 `已下载 · 离线可用`，本地 `audio.m4a` 7,492,450 B。播放中执行“移除下载”会把 UI 状态恢复为未下载，但文件删除会延迟到播放结束（pending deletion），未在播放中立即释放。 |
+| 5 | Transcript | PASS（只读）— 263 段中文逐字稿正常加载、可滚动；当前产品不支持点击分段 seek，因此未把“点击跳转”作为失败。 |
+| 6 | EPUB 阅读 | PASS — 通过 Add 公共 EPUB URL 入库；20 章，切到第 3 章；退出再进恢复 `3/20`；书内搜索 `code` 返回结果。测试 EPUB 已删除。 |
+| 7 | 搜索 | PASS — 搜索 `Accessible` 命中 1 条，显示标题、Tag、书文本摘录并可打开。中文 IME 输入未脚本化（真机输入法路径未覆盖）。 |
+| 8 | Tag / 进度同步 | PASS — 新增 `acceptance-test` Tag 后 Host 可见；播放进度到 Host `387.294s`。清理时删除测试 Tag、进度重置为 `0/unstarted`。观察：App 编辑 Tag 后 Host 把原有 AI Tag 的 `source` 也标成 `user`，需产品确认语义。 |
+| 9 | Add / 入库 | PASS — Add 识别 EPUB 直链并 201 创建；Host 完成 downloading/extracting_text/organizing；App Library 出现 `Accessible EPUB 3`，可阅读/搜索。 |
+| 10 | Inbox / 失败重试 | 未执行 — 真实 Library 没有 failed Item；为避免污染真实数据，没有创建合成失败项。 |
+| 11 | 合集 | PASS — 合集详情显示 10 集、10/10 处理完成、时长、已听/已下载计数和“下载全部”入口；未执行 10 集批量下载。 |
+| 12 | 设置 / 设备 | PASS — Settings 显示 Host/设备/API/App 版本、同步状态与 cursor、存储 12.4 MB、下载队列、移动网络/充电开关；“已授权设备”列出 3 个 token（含本机）。未执行撤销、退出登录或清除数据。 |
+
+清理：删除测试 EPUB、删除 `acceptance-test` Tag、把 p01 进度恢复为 `0/unstarted`；App 回到 `1 条内容 · 1 个合集`。本次未改生产数据之外的内容。
+
+
+## 质量门禁
+
+| 命令 | 结果 |
+| --- | --- |
+| `PLAYWRIGHT_BROWSERS_PATH=... ./scripts/check.sh --full` | exit 0；ruff、mypy（121 files）、lint-imports（6 kept/0 broken）、pytest 643 collected（含 29 browser，全部通过）、docs 133 files OK |
+| `./scripts/android/check.sh` | exit 0，BUILD SUCCESSFUL |
+| `uv run pytest -q tests/test_contract_fixtures.py tests/test_sync.py tests/test_playback.py tests/test_search.py` | 49 passed |
+| `uv run pytest -q -n 0 -m browser` | 29 passed（设置 `PLAYWRIGHT_BROWSERS_PATH` 后） |
+| 同步 `ea64b89` 后复跑 | `check.sh --full` exit 0；Android check exit 0（2 s，up-to-date）；`scripts/docker-smoke.sh` 通过 |
+
+注：未设置 `PLAYWRIGHT_BROWSERS_PATH` 时，测试 fixture 使用 pytest 临时 HOME，找不到浏览器而 skip；设置后实际执行并通过。
+
+## SLO 快照
+
+| SLO | Target | 本次观测 | 结果 |
+| --- | --- | --- | --- |
+| 30 分钟音频入库到可搜索 p95 | ≤ 15 分钟 | 15 分钟视频 124.5 s；3.75 分钟播客 61.9 s；未按 30 分钟样本和 p95 定义实测 | 部分验证（样本不足，见例外） |
+| ASR RTF（M1 Pro） | ≤ 0.15 | 900 s 视频 0.1237；225 s 播客 0.216（短音频固定开销）；30 分钟样本未测 | 部分验证（长音频通过，短音频超目标） |
+| API 读请求 p95 | ≤ 200 ms | health 13.0 ms；单 Item 7.2 ms；10k 列表 3,615 ms | **列表未达标** |
+| 搜索 p95（10k Item） | ≤ 300 ms | 75.48 ms | 通过 |
+| worker 崩溃恢复 | ≤ 30 s | lease 回收 28.5 s；任务在 32.6 s 退避后开始 attempt 2（kill→恢复约 61.1 s）；API crash 2.68 s | lease 回收达标；按任务恢复超 30 s |
+| 自动重试重复外部调用 | 0 | Pass 1 直接 stage 验证 ASR/AI cache hit 0 外部调用；Pass 3 显式重跑按设计绕过 cache | 通过（Pass 1 证据） |
+| 全新安装（不含模型下载） | ≤ 10 分钟 | Docker 18.52 s；launchd 9.87 s | 通过 |
+| 非源错误导致 Run 失败率 | < 2% | 100 条容量 0 失败；故障注入失败均可恢复或明确 dead | 通过 |
+
+## 复现命令（摘要）
+
+```bash
+# 质量门禁
+PLAYWRIGHT_BROWSERS_PATH="$HOME/Library/Caches/ms-playwright" ./scripts/check.sh --full
+./scripts/android/check.sh
+
+# Docker 全新安装
+export TROVE_IMAGE_TAG=acceptance TROVE_HOST_PORT=18765 TROVE_PUBLISH_ADDRESS=127.0.0.1
+docker compose -p trove-acceptance up -d
+curl -fsS http://127.0.0.1:18765/api/health
+
+# 功能链路（示例：视频）
+curl -b cookies -H 'content-type: application/json' \
+  -d '{"kind":"url","url":"https://www.bilibili.com/video/BV1MLqDYxEpN?p=1"}' \
+  http://127.0.0.1:18765/api/items
+
+# 容量 / 10k
+docker compose -p trove-acceptance exec -T api \
+  trove --home /home/trove/Trove bench seed --count 10000 --json
+
+# 观测
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:18765/metrics
+curl http://127.0.0.1:8766/metrics   # 在 worker 容器内
+
+# 故障注入示例
+docker compose -p trove-acceptance exec -T worker-asr sh -c 'kill -9 <worker-pid>'
+docker compose -p trove-acceptance exec -T api python -c \
+  'import sqlite3,time; c=sqlite3.connect("/home/trove/Trove/trove.db"); c.execute("BEGIN EXCLUSIVE"); time.sleep(8)'
+curl -X POST --data 429 http://127.0.0.1:18080/mock/mode   # 429 / 500 / ok
+```
+
+完整原始命令、JSON 结果和日志在本次验收的临时目录 `$TMPDIR/trove-acceptance/`
+（本次实际为 `/private/var/folders/72/3hksb2217fb4mmb9__gzby_m0000gp/T/opencode/trove-acceptance/`；临时目录，不随仓库提交）。
 
 ## Issue 结果
 
-只验收已实现的 issue：01–11、13。12、14–18、20、21 未实现或处于 gated / needs-triage；19 仍为进行中。
+只验收已实现的 issue：01–13、21。14–18、20 未实现或处于 gated / needs-triage；19 本次完成；22、23 为本次验收新增后续项。
 
 | Issue | 结果 | 证据 |
 | --- | --- | --- |
-| 01 ADR/SLO | 通过 | `docs/adr/0014-...` 与 spec SLO 表存在；15 分钟音频最终 5m22s 完成（含故障注入与人工等待），低于 15 分钟目标。 |
-| 02 API v1 / 幂等 | 通过 | 创建 201；同 key/body 重放 201 + `Idempotency-Replayed: true`；同 key/异 body 409 `idempotency.key_reused`；无 key 重复创建 200 + `deduplicated: true`；未登录 401 `auth.required`；重启后重放仍命中。 |
-| 03 拆分 ProcessingService | 通过 | 运行日志按 stage 记录；`RunCoordinator` / `services/stages/*` 结构测试全绿。 |
-| 04 拆分 LLM organizer | 通过 | 本地 Ollama 生成摘要和 3 个 tag；`input_tokens=2102`、`output_tokens=132`、`cost_usd=0.000644`（首次）。 |
+| 01 ADR/SLO | 通过 | `docs/adr/0014-...` 与 spec SLO 表存在；SLO 见本记录。 |
+| 02 API v1 / 幂等 | 通过 | Pass 1：201/重放 201 `Idempotency-Replayed: true`/409/无 key 200 dedupe/401；重启后仍命中。 |
+| 03 ProcessingService 拆分 | 通过 | 运行日志按 stage 记录；`RunCoordinator` / `services/stages/*` 结构测试全绿。 |
+| 04 LLM organizer 拆分 | 通过 | Pass 1 本地 Ollama 生成摘要和 3 tags；Pass 3 mock LLM 100 次调用 0 失败。 |
 | 05 分层门禁 | 通过 | `lint-imports`: 6 kept / 0 broken。 |
-| 06 manifest / schema_version | 通过 | `manifest.json` schema_version=1，含 audio/transcript/ai 三个 artifact 的 sha256/size/mime；`trove package verify` 通过；导出 zip 含 manifest。 |
-| 07 StageTask 队列 / 租约 | 通过 | 初始 run 的 transcribing attempt 1 在 worker 被杀后以 `run.lease_expired` 失败并重排 attempt 2；最终 run completed。 |
-| 08 worker 池 / 并发 | 通过（修复后） | 四个池分别领取 download/asr/llm/index；health 同时列出四个 pool；发现并修复 heartbeat 文件名跨容器冲突。 |
-| 09 重试 / 退避 / 死信 | 部分通过 | 租约过期触发 attempt 2 并在完成 ASR 后继续；死信未在真机重复注入，由现有单元测试覆盖。 |
-| 10 外部调用缓存 | 通过 | 用“会抛错的 transcriber/organizer”直接调用 stage：ASR/AI 均 cache hit，未发生外部调用；显式 reprocess 日志为 `ai cache bypassed: explicit reprocess`。 |
-| 11 Docker Compose 打包 | 通过 | 分支镜像重建；`down` / `up -d` 后 Item、搜索、manifest 保留；API 健康；非 root；doctor 通过。 |
-| 12 指标 / tracing | 未实现 | 无 Prometheus / OpenTelemetry；不在本次范围。 |
-| 13 升级 / 回滚 / doctor | 部分通过 | `doctor --json` ok；`/api/health` 含 version/build/commit/time；在线备份生成并校验 `items=1/runs=3/ai_results=3`；未重复完整 rollback 演练。 |
+| 06 manifest / schema_version | 通过 | manifest schema_version=1；audio/transcript/ai sha256/size/mime；package verify 通过。 |
+| 07 StageTask 队列 / 租约 | 通过 | 崩溃注入 attempt 1 `run.lease_expired`，attempt 2 完成；取消可用。 |
+| 08 worker 池 / 并发 | 通过 | 四池分别领取；health 同时列出四池；heartbeat 文件跨容器独立。 |
+| 09 重试 / 退避 / 死信 | 通过 | 429/500 退避重试；max_attempts=1 注入 `dead` + `run.dead`；失败 Item 可查询/重试。 |
+| 10 外部调用缓存 | 通过 | Pass 1 ASR/AI cache hit 0 外部调用；Pass 3 显式 reprocess 日志 `ai cache bypassed`。 |
+| 11 Docker Compose 打包 | 通过 | 全新卷 up/down/up 数据保留；非 root；doctor 通过；ASR/ slim 镜像构建可用。 |
+| 12 指标 / tracing | 通过 | Prometheus 5 target up；Grafana 14 panels；OTel 单 trace 串起 API→4 阶段/adapter。 |
+| 13 升级 / 回滚 / doctor | 通过 | 0009→0010 升级备份/计数一致；旧代码回滚 doctor/health/login/items 通过。 |
 | 14–18 | 未实现 / gated | 研究或 Phase 4 服务抽取。 |
-| 19 整体验收 | 进行中 | 本报告覆盖单集视频 + 合集前 10 集链路、Docker、分池、故障恢复、缓存、幂等、manifest、doctor/备份；EPUB/播客、Android、100 条容量、观测、launchd、完整回滚仍待做。 |
-| 20–21 | 未实现 | ASR warm pool / Web DB baseline 清理。 |
+| 19 整体验收 | 完成 | 本记录。 |
+| 20 | needs-triage | ASR warm pool。 |
+| 21 Web DB baseline 清理 | 通过 | `lint-imports` 无 baseline；本次全量门禁通过。 |
+| 22 | 新增后续 | 10k Item 列表 O(N)，见 [22](issues/22-paginate-item-list.md)。 |
+| 23 | 新增后续 | 补齐 30 分钟 p95、ASR RTF 分桶、worker 恢复口径，见 [23](issues/23-slo-sample-gaps.md)。 |
 
-## 处理时间线
+## 处理时间线（Pass 1）
 
 初始 run `8cbe2747-5b50-4cb9-8851-f69569465bd2`：
 
@@ -68,101 +345,51 @@ Issues: [issues/](issues/)
 | 04:49:14.136 | organizing 完成（11.3s） |
 | 04:49:14.166 | indexing 完成，run completed |
 
-从创建到完成 321.7s（含故障注入和约 2 分钟人工等待）；纯处理时间约 2m30s。15 分钟音频满足 SLO（≤15 分钟）。
+从创建到完成 321.7s（含故障注入和约 2 分钟人工等待）；纯处理时间约 2m30s。
 
-显式 reprocess：
+## Pass 1/2 细节（保留）
 
-- `from_stage=organizing`：202 + 新 run `9881ff96-...`，`force=1`，8.1s 完成；`ai_results` 从 1 增加到 2，新增成本。
-- `from_stage=transcribing`：202 + 新 run `3195d677-...`，`force=1`，ASR 100.5s（RTF 0.111），总 112.5s 完成；worker 日志显示 `ai cache bypassed: explicit reprocess`。
+### Pass 1：Docker 视频、分池、缓存、幂等
 
-## 分池与 heartbeat
+- 单集 15 分钟视频最终 5m22s 完成（含故障注入与人工等待），低于 15 分钟目标。
+- 分池修复：heartbeat 文件名改为 `worker-<hostname>-<pid>.json`；lease `worker_id` 含 hostname；doctor/内置 worker 在 hostname 不同时信任 fresh heartbeat。回归测试覆盖同 PID 不同 hostname。
+- 内容包：`audio.m4a` 7,492,450 B、`transcript.json` 34,121 B（263 段）、`ai.json`、`source.json`、`manifest.json`；package verify 通过；`/api/export` 7.3 MB zip。
+- 缓存：用“会抛错的 transcriber/organizer”直接调用 stage：ASR `transcript cache hit ... saved_asr_seconds=901.844667 cost=0`；AI `ai cache hit ... cached=true cost=0 saved_input_tokens=2111 saved_output_tokens=112 saved_cost_usd=0.00063812`。
+- 幂等：201/重放 201 + `Idempotency-Replayed: true`/同 key 异 body 409 `idempotency.key_reused`/无 key 重复创建 200 + `deduplicated: true`/未登录 401 `auth.required`；重启后重放仍命中。
+- 运维：`docker compose down` 后 `up -d` Item/搜索/manifest 保留；`doctor --json ok=true`；在线备份 0600、544,768 B、revision 0009。
 
-分池模式下四个 worker 都运行在各自容器里，PID 都是 `7`。旧实现用 `cache/worker-<pid>.json`，导致：
+### Pass 2：合集前 10 集
 
-- 四个 worker 只有 3 个 heartbeat 文件，`/api/health` 的 pool 列表在 download/asr/llm/index 之间闪烁；
-- 临时文件 `.tmp` 同名，`worker-asr` 在 `os.replace` 时抛出 `FileNotFoundError`，触发容器重启。
+- Collection ID `23fd8970-cde7-401e-bba3-cda6e84f7c0b`；标题 100 讲但 yt-dlp 只返回 75 part（上游可见范围）。
+- 已有 p1 被识别为同源 Episode（`collection.episode_attach`）；`added=74`、`attached=1`、`run_count=74`。
+- 为只取前 10 集：停 worker，创建合集后删除 `collection_index` 11–75，再启动分池；被删集数未下载/转写。
+- 分池：download=3、asr=1、llm=2、index=1；05:12–05:25 约 13 分钟完成 10 集；`completed=10`、`failed=0`。
+- 总音频 7,083.148503 s；单集 ASR 48.78–125.92 s，RTF 0.111–0.141；organizing 4.77–11.24 s。
+- 下载池并发 3；05:12:03 时 3 active/6 queued；05:12:43 下载/抽取完成，ASR 继续串行，长 ASR 未阻塞下载。
+- 首轮 tags 一致：`Tao Te Ching`、`Zeng Shiqiang`、`Taoism`。
+- `collection reprocess --from-stage organizing --reset-ai-tags`：删除 30 条 AI tag link，排队 10 个 run，约 70 s；`ai_results` 12→22，总成本 $0.013218，input 43,769/output 2,293 tokens；显式重跑绕过 cache。
+- 重跑后 tags 分叉（并发 LLM 后完成者看不到先完成者新增 tag），记录为观察项。
+- 搜索：`道德经`/`老子` 10 集，`无为` 3 集，`上善若水` 仅 p8；导出 57,697,491 B zip，51 entries，10 个 manifest/index。
+- 合集分集数与标题不一致（100 vs 75）为上游/yt-dlp 可见范围，不是 Trove 截断。
 
-修复：
+## 遗留问题与后续
 
-- heartbeat 文件名改为 `worker-<hostname>-<pid>.json`；
-- payload 增加 `hostname`；
-- lease 的 `worker_id` 也包含 hostname（截断到 16 字符，保证 `String(64)` 内）；
-- doctor / 内置 worker 存活检查在 hostname 不同时信任 fresh heartbeat，不再用其他容器命名空间里的 PID 误判；
-- 增加回归测试：不同 hostname、相同 PID 不再冲突；跨 host fresh heartbeat 被信任。
-
-修复后分池验证：
-
-- `cache/` 下出现 4 个独立 heartbeat 文件，health 同时列出 `download/asr/llm/index` 四个 pool；
-- run 日志中的 claim 分别来自 `worker-<hostname>-7-asr-0`、`...-llm-0`、`...-index-0`；
-- 无 worker 启动/运行错误，`doctor` 在 api 容器内也返回 `worker ok`。
-
-## 内容包、搜索与播放
-
-- 内容包目录：`audio.m4a`（7,492,450 B）、`transcript.json`（34,121 B，263 段）、`ai.json`、`source.json`、`manifest.json`。
-- `manifest.json` 三个 artifact 的 sha256/size 与 `trove package verify` 一致。
-- 搜索 `道德经`、`老子` 均返回该 Item。
-- `/api/items/{id}/audio` 支持 Range：`206`、`Content-Range: bytes 0-1023/7492450`、`ETag` 为 audio sha256。
-- `/api/export` 返回 7.3 MB zip，含 `source.json`、`audio.m4a`、`transcript.json`、`ai.json`、`manifest.json`、`index.md`。
-- 摘要由本地 LLM 生成；重跑 organizing 后摘要/tag 会变化（模型非确定性），不是缓存 bug。
-
-## 缓存验证
-
-在真实容器内直接调用 stage，并把 transcriber/organizer 换成“被调用就抛错”的 fake：
-
-- ASR：`transcript cache hit: audio_sha256=14c4... model=paraformer-zh; saved_asr_seconds=901.844667 cost=0`。
-- AI：`ai cache hit: input_sha256=577e... model=qwen3.5:4b prompt_version=organize-2; cached=true cost=0 saved_input_tokens=2111 saved_output_tokens=112 saved_cost_usd=0.00063812`。
-
-说明 `transcript.json` / `ai.json` 的 hash、model、prompt_version 键生效，且 cache hit 不发生外部调用。
-
-## Docker / 运维
-
-- `docker compose up -d --build` 从 worktree 构建并启动成功；API `healthy`。
-- `docker compose down`（不带 `-v`）后 `up -d`：Item、run、搜索、manifest 全部保留。
-- `docker compose exec api trove doctor --json`：`ok=true`，permissions/DB/FTS5/password/port/ffmpeg/ffprobe/yt-dlp/asr/content_packages/worker/disk 均正常。
-- `/api/health`：`api_version=0.1.0`，build 字段存在（commit/build_time 为 `unknown`，因为本次未传 build args），DB revision `0009_external_call_cache`。
-- 在线备份：`trove-0009_external_call_cache-...db`，`0600`，544,768 B；备份内 `items=1`、`runs=3`、`ai_results=3`、revision `0009`。
-
-## 合集验收（前 10 集）
-
-- URL：`https://www.bilibili.com/video/BV1MLqDYxEpN`
-- Collection ID：`23fd8970-cde7-401e-bba3-cda6e84f7c0b`
-- 合集标题：`2025年曾仕强道德经功成不居高清版 全100讲`；标题写 100 讲，但 yt-dlp `--flat-playlist` 实际只返回 75 个 part（`playlist_count=75`）。这是上游/yt-dlp 的可见范围，不是 Trove 截断。
-- 已有的 p1 Item 被识别为同源 Episode，inspect 返回 `collection.episode_attach` 警告；创建结果：`added=74`、`attached=1`、`run_count=74`，初始合集 `episode_count=75`。
-- 当前 API 没有“只导入前 N 集”参数。为了满足“只取前 10 集”，先停 worker，创建合集后删除 `collection_index` 11–75 的 65 个 Item，再启动分池。删除发生在下载前，被删集数没有下载/转写；最终合集 `episode_count=10`。
-- 分池运行：`download=3`、`asr=1`、`llm=2`、`index=1`。p1 已在此前完成，p2–p10 共 9 集新处理。
-- 05:12–05:25（约 13 分钟）全部完成：`completed=10`、`failed=0`、`cancelled=0`。
-- 总音频时长 `7083.148503s`（118m03s）。单集 ASR `48.78–125.92s`，RTF `0.111–0.141`，全部低于 0.15；organizing `4.77–11.24s`。
-- 下载池并发 3：05:12:03 时 download 有 3 个 active、6 个 queued；到 05:12:43 下载/抽取已全部完成，ASR 继续串行运行。长 ASR 期间下载没有被阻塞。
-- 下载完成后 Episode 标题从 `Episode N` 更新为真实分集标题（如 `p08 第8集 上善若水`）。
-- 首轮完成后 10 集使用一致的 collection tag 词表：`Tao Te Ching`、`Zeng Shiqiang`、`Taoism`。
-- 执行 `trove collection reprocess <id> --from-stage organizing --reset-ai-tags`：删除 30 条 AI tag link，排队 10 个 organizing run，约 70s 完成；`ai_results` 12→22，总成本 `$0.013218`、input 43,769、output 2,293 tokens。显式重跑绕过了 AI cache。
-- 重跑后 tags 出现分叉（`philosophy/tao-te-ching/wu-you` vs `Laozi/Non-action/Natural Order` 等）。原因是两个 LLM worker 并发整理，后完成的 Item 才能看到前面新增的 tag；记录为观察项，不阻塞验收。
-- 搜索：`道德经`/`老子` 命中 10 集，`无为` 3 集，`上善若水` 仅 p8。
-- 导出：57,697,491 B zip，51 个 entry，10 个 item 目录、10 个 `manifest.json` 和 `index.md`。
-- `trove package verify` 对 p2/p10 通过；`source.json` 带 collection 元数据（index 1/2/10）；p10 音频 Range 返回 206、ETag 为 audio sha256。
-- Doctor `ok=true`；四个 pool 的 heartbeat 同时可见；批次期间 worker 日志无 traceback/FileNotFound；library 57 MB，磁盘剩余 51.7 GB。
-
-## SLO 快照
-
-| SLO | Target | 本次观测 |
-| --- | --- | --- |
-| 30 分钟音频入库到可搜索 p95 | ≤ 15 分钟 | 单集 15 分钟音频 5m22s（含故障注入和人工等待）；合集 10 集（118 分钟音频，9 集新处理）约 13m。 |
-| ASR RTF（M1 Pro 参考机） | ≤ 0.15 | 单集 0.111 / 0.120；合集 10 集 0.111–0.141。 |
-| API 读请求 p95 | ≤ 200 ms | 本机 health/items/search 均为个位数到几十 ms（未做 10k Item 压测）。 |
-| 搜索 p95（10k Item） | ≤ 300 ms | 10 Item 合集查询 1–10 条结果；未做 10k 规模。 |
-| worker 崩溃恢复 | ≤ 30 秒 | lease 在 kill 后约 24s 被回收并重排；下一 attempt 退避约 29s。 |
-| 自动重试重复外部调用 | 0 | ASR/AI cache hit 验证为 0 次外部调用。 |
-| 全新安装（不含模型下载） | ≤ 10 分钟 | 本次为已有卷升级/重建，未重新计时全新安装。 |
-| 非源错误导致 Run 失败率 | < 2% | 本样本 0 个非源错误失败（1 次 lease 重试为注入故障）。 |
-
-## 遗留与后续
-
-1. **未做真机覆盖**：EPUB、播客、Android 契约、100 条容量、launchd、完整 rollback 演练、Prometheus/tracing（issue 12）。
-2. **合集不能只导入前 N 集**：当前 `POST /api/collections` 会创建所有可发现 Episode；本次先停 worker、创建 75 集、删除 11–75，再启动 worker，未下载被删集数。若这是常见需求，建议新增 `limit` 或 Episode 选择参数。
-3. **合集分集数与标题不一致**：Bilibili 标题写 100 讲，但 yt-dlp 只返回 75 个 part；这是上游/yt-dlp 可见范围，记录为外部数据差异。
-4. **合集重跑 tag 分叉**：`--reset-ai-tags` 后两个 LLM worker 并发整理，早期 Item 看不到后续新增 tag；标签词表不一致。若要求强一致，可考虑先收敛词表再批量整理。
-5. **死信未在真机重复注入**：lease 重试已验证；死信路径由 `tests/test_retry.py` / `tests/test_stage_tasks.py` 覆盖。
-6. **`language` 为空**：transcript 有分段，但 `language` 为 null；FunASR 未返回语言，不影响播放/搜索，记录为观察项。
-7. **摘要语言**：中文音频会得到中文或英文摘要（取决于本地模型输出）；是否要求摘要跟随内容语言，需要在产品层明确，不是本次验收阻塞项。
-8. **`docker kill` 语义**：手工 kill 被 Compose 视为手动停止，未自动重启；真实崩溃由 `restart: unless-stopped` 处理。故障注入时因此人工切换到默认 worker。
-9. **旧 heartbeat 文件**：升级后旧 `worker-<pid>.json` 仍留在 cache，15s 后变为 stale；7 天后由 prune 清理，不影响新逻辑。
+1. **10k 列表 SLO 未达标**：`/api/items` 为 O(N)，10k 时 p50 3.6 s；后续 [22](issues/22-paginate-item-list.md)。这是本次唯一确认未达标的已测 SLO。
+2. **SLO 取样/口径缺口**：30 分钟 p95 未按定义实测；短音频 ASR RTF 0.216 超过 0.15；worker 恢复按 lease 回收 28.5 s 达标、按任务恢复约 61.1 s 超 30 s。后续 [23](issues/23-slo-sample-gaps.md)。
+3. **ASR 超时未真机注入**：硬超时 4 h；kill/lease 覆盖挂起恢复，subprocess timeout 归类由 `test_processing.py::test_command_timeout_is_marked_transient` 覆盖。
+4. **真实 ENOSPC 未注入**：Docker Desktop 命名卷无磁盘配额；用 EACCES 验证 `storage.error` 路径，ENOSPC 归类由 `test_retry.py` 覆盖。若需要，可在 Linux + loop device/tmpfs 上补做。
+5. **合集批量下载未在 Pass 3 重跑**：沿用 Pass 2 `c3e4d65` 证据；后续 diff 为 observability/run 读取重构，不触碰 collection 入队/下载。
+6. **Android 真机已补测（2026-11-27）**：Android 16 真机上通过 Library 同步、播放/后台/通知、下载、Transcript、EPUB 阅读/书内搜索、搜索、Tag/进度同步、Add、合集和设置/设备检查。未测：飞行模式/离线切换、锁屏和 60 分钟后台、密码登录/退出、Inbox 失败重试（真实库无 failed Item）、中文 IME、批量下载、Caddy/Tailscale HTTPS、release APK。
+7. **launchd 安装使用临时 home/agents，且未重新下载 ASR 模型**：安装时间不含模型下载（SLO 允许）；`doctor` 用共享 `MODELSCOPE_CACHE` 通过。正式机器首次安装仍需 `trove setup` 下载 1.25 GB。
+8. **Docker 安装使用预构建镜像和预置模型缓存**：干净卷/网络已测；镜像构建时间和模型下载未计入。发布验收应按 `TROVE_BUILD_COMMIT/TIME` 重建镜像。
+9. **LLM 使用 mock**：Pass 3 为了可重复和成本，使用确定性 mock；真实 Ollama/DeepSeek 链路见 Pass 1/2。生产 LLM 失败注入（429/5xx）用 mock 覆盖。
+10. **Grafana/Prometheus 为临时容器**：dashboard 通过 provisioning 导入并用 `/api/ds/query` 验证四个黄金信号；未保存长期截图。生产部署按 `docs/observability.md` 配置 scrape token。
+11. **10k 搜索为合成数据**：`trove bench seed` 生成，不代表真实语料 recall；搜索 p95 数据只验证延迟 SLO。
+12. **Pass 1 旧 heartbeat 文件**：升级后旧 `worker-<pid>.json` 15 s 后 stale，7 天后 prune，不影响新逻辑。
+13. **摘要语言**：中文音频可能得到中文或英文摘要（取决于 LLM 输出）；产品层未强制跟随内容语言。
+14. **合集重跑 tag 分叉**：并发 LLM worker 下词表可能不一致；若要求强一致，先收敛词表再批量整理。
+15. **`language` 为空**：Pass 1 的 transcript 有分段但 `language` 为 null（FunASR 未返回语言），不影响播放/搜索。
+16. **`docker kill` 语义**：Compose 把 `docker kill` 视为手动停止，不一定触发 `restart: unless-stopped`；Pass 1 因此人工切换 worker。Pass 3 改用容器内 `kill -9` 真实进程，RestartCount 增加。
+17. **回滚只验证升级前数据**：回滚恢复 0009 备份后未写入 0010 新数据，因此“0010 新内容包在 0009 下可读”未单独复测；manifest schema 仍为 1，旧包可读由 ADR-0008 与既有测试覆盖。
+18. **Android 编辑 Tag 后 source 变化**：真机给 p01 新增 `acceptance-test` 后，Host 上原有 3 个 AI Tag 的 `source` 也变成 `user`。需确认这是 App 全量提交 Tag 的预期语义，还是应保留 AI 来源；本次不阻塞。
+19. **Android 播放中移除下载延迟删除**：播放中的 Item 执行“移除下载”会立即恢复 UI 未下载状态，但本地文件进入 pending deletion，播放结束后才删除；需确认这与“移除下载”的用户预期一致。

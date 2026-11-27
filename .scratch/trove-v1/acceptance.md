@@ -74,7 +74,7 @@ the M3 checks below were run on the attached device.
 | In-book search / Chinese IME UI path | covered by device FTS test, not scripted through IME | [23](issues/23-v1-release-device-acceptance.md) |
 | Storage-full/quota, password change, Chinese IME search path | manual coverage gaps | [23](issues/23-v1-release-device-acceptance.md) |
 | First-sync/play/download timing not measured | performance acceptance partial; search p95 is measured | [23](issues/23-v1-release-device-acceptance.md) |
-| OEM periodic-sync soak under Xiaomi background limits | reliability risk | [23](issues/23-v1-release-device-acceptance.md) |
+| OEM periodic-sync soak under aggressive background limits | reliability risk | [23](issues/23-v1-release-device-acceptance.md) |
 
 ## Scope audit
 
