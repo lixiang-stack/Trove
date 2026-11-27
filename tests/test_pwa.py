@@ -14,7 +14,8 @@ def test_manifest_and_service_worker_are_public(api_host):
     assert manifest.status_code == 200
     assert manifest.headers["content-type"].startswith("application/manifest+json")
     payload = json.loads(manifest.text)
-    assert payload["name"] == "拾藏 Trove"
+    assert payload["name"] == "归藏 Trove"
+    assert payload["short_name"] == "归藏"
     assert payload["display"] == "standalone"
     assert payload["start_url"] == "/library"
     assert payload["scope"] == "/"

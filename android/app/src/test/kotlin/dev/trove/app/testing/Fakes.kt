@@ -535,7 +535,11 @@ class TestAppContainer(
     player = fakePlayer,
     allowDebugCleartext = allowDebugCleartext,
     backgroundSyncEnabled = false,
-)
+) {
+    fun closeForTest() {
+        close()
+    }
+}
 
 data class TestHarness(
     val container: TestAppContainer,

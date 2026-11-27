@@ -1,35 +1,35 @@
 from __future__ import annotations
 
-PROMPT_VERSION = "organize-2"
+PROMPT_VERSION = "organize-3"
 
-SINGLE_TAG_LIMIT = "2-3 tags"
-SINGLE_TAG_LIMIT_REUSE = "2-3 existing tags"
-MAP_TAG_LIMIT = "up to 2 tags"
-MAP_TAG_LIMIT_REUSE = "up to 2 existing tags"
+SINGLE_TAG_LIMIT = "2-3 个标签"
+SINGLE_TAG_LIMIT_REUSE = "2-3 个现有标签"
+MAP_TAG_LIMIT = "最多 2 个标签"
+MAP_TAG_LIMIT_REUSE = "最多 2 个现有标签"
 
 SYSTEM_PROMPT = (
-    "You organize a personal library. Return only a JSON object with "
-    '"summary" (1-2 sentences) and "tags" (2-3 short, reusable tags). '
-    "Prefer tags from the provided existing tags. Only propose a new tag when "
-    "no existing tag fits, at most one per item, and never use episode titles, "
-    "chapter names, or one-off phrases as tags. "
-    "Do not include markdown or commentary."
+    "你负责整理个人内容库。只返回一个 JSON 对象，包含 "
+    '"summary"（1-2 句话）和 "tags"（2-3 个简短、可复用的标签）。'
+    "摘要和标签必须使用简体中文，即使原文是英文。"
+    "优先复用提供的现有标签；只有在现有标签都不合适时才提出新标签，"
+    "每条内容最多提出一个新标签；不要用单集标题、章节名或一次性短语作为标签。"
+    "不要输出 Markdown 或额外说明。"
 )
 
 MAP_INSTRUCTIONS = (
-    "Summarize this chunk of a longer work in one sentence and propose up to "
-    "two reusable tags. Return only JSON with keys summary and tags."
+    "用一句话概括这段较长内容的一部分，并提出最多两个可复用标签。"
+    "只返回 JSON，键为 summary 和 tags。"
 )
 
 SINGLE_INSTRUCTIONS = (
-    "Summarize the full content in 1-2 sentences and propose 2-3 reusable tags. "
-    "Return only JSON with keys summary and tags."
+    "用 1-2 句话概括完整内容，并提出 2-3 个可复用标签。"
+    "只返回 JSON，键为 summary 和 tags。"
 )
 
 REDUCE_INSTRUCTIONS = (
-    "Combine the chunk summaries into one 1-2 sentence summary that covers the "
-    "whole work. Propose 2-3 reusable tags, preferring the existing tags. "
-    "Return only JSON with keys summary and tags."
+    "把各段摘要合并成一段 1-2 句话的完整摘要。"
+    "提出 2-3 个可复用标签，优先复用现有标签。"
+    "只返回 JSON，键为 summary 和 tags。"
 )
 
 
@@ -76,21 +76,21 @@ def _prompt(
     reuse_existing_tags: bool = False,
     prefix: str,
 ) -> str:
-    vocabulary = ", ".join(existing_tags) if existing_tags else "(none yet)"
+    vocabulary = "、".join(existing_tags) if existing_tags else "（暂无）"
     lead = f"{prefix} " if prefix else ""
     collection = ""
     if collection_title:
-        position = f" (episode {collection_index})" if collection_index is not None else ""
+        position = f"（第 {collection_index} 集）" if collection_index is not None else ""
         collection = (
-            f"Collection: {collection_title}{position}\n"
-            "Tags describe the collection or series, not the episode.\n"
+            f"合集：{collection_title}{position}\n"
+            "标签描述合集或系列，而不是单集。\n"
         )
-    reuse = "Use existing tags only.\n" if reuse_existing_tags else ""
+    reuse = "只使用现有标签。\n" if reuse_existing_tags else ""
     return (
         f"{lead}{instructions}\n\n"
-        f"Title: {title}\n"
+        f"标题：{title}\n"
         f"{collection}{reuse}"
-        f"Existing tags: {vocabulary}\n"
-        f"Requested tags: {tag_limit}\n\n"
-        f"Content:\n{content}"
+        f"现有标签：{vocabulary}\n"
+        f"要求的标签数：{tag_limit}\n\n"
+        f"内容：\n{content}"
     )

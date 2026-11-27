@@ -85,6 +85,7 @@ class TroveDatabaseTest {
                     "collection_title",
                     "collection_platform",
                     "collection_source_url",
+                    "source_url_raw",
                 )
             )
         )

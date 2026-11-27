@@ -64,7 +64,7 @@ def _result(
     finish_reason: str | None = "stop",
 ) -> ChatResult:
     return ChatResult(
-        content=json.dumps({"summary": summary, "tags": tags or ["tag"]}),
+        content=json.dumps({"summary": summary, "tags": tags or ["标签"]}),
         input_tokens=input_tokens,
         output_tokens=output_tokens,
         finish_reason=finish_reason,
@@ -72,7 +72,7 @@ def _result(
 
 
 def test_single_chunk_uses_one_call_and_records_cost(tmp_path):
-    chat = FakeChatClient([_result("摘要", ["Alpha"], input_tokens=100, output_tokens=20)])
+    chat = FakeChatClient([_result("摘要", ["记忆"], input_tokens=100, output_tokens=20)])
     workflow = OrganizationWorkflow(_llm(chunk_chars=1_000), chat)
 
     result = workflow.organize(
@@ -86,7 +86,7 @@ def test_single_chunk_uses_one_call_and_records_cost(tmp_path):
     assert chat.calls[0].max_tokens == 1024
     assert "短文本" in chat.calls[0].messages[1]["content"]
     assert result.summary == "摘要"
-    assert result.tags == ["Alpha"]
+    assert result.tags == ["记忆"]
     assert result.model == "deepseek-flash"
     assert result.prompt_version == PROMPT_VERSION
     assert result.input_tokens == 100
@@ -112,8 +112,8 @@ def test_long_text_maps_every_chunk_then_reduces(tmp_path):
     text = "\n".join(f"chunk-{index} " + "内容" * 30 for index in range(6))
     llm = _llm(chunk_chars=120)
     chunks = chunk_text(text.strip(), llm.chunk_chars)
-    responses = [_result(f"map {index}", ["Beta"]) for index in range(len(chunks))]
-    responses.append(_result("覆盖全文的最终摘要。", ["Alpha", "Beta"]))
+    responses = [_result(f"map {index}", ["记忆"]) for index in range(len(chunks))]
+    responses.append(_result("覆盖全文的最终摘要。", ["记忆", "智能体"]))
     chat = FakeChatClient(responses)
     workflow = OrganizationWorkflow(llm, chat)
 
@@ -127,14 +127,31 @@ def test_long_text_maps_every_chunk_then_reduces(tmp_path):
     assert len(chat.calls) == len(chunks) + 1
     prompts = [call.messages[1]["content"] for call in chat.calls]
     for index in range(len(chunks)):
-        assert f"Chunk {index + 1}/{len(chunks)}." in prompts[index]
+        assert f"第 {index + 1}/{len(chunks)} 段。" in prompts[index]
         assert f"chunk-{index}" in prompts[index]
-    assert "Combine the chunk summaries" in prompts[-1]
+    assert "把各段摘要合并成一段" in prompts[-1]
     assert "1. map 0" in prompts[-1]
     assert result.summary == "覆盖全文的最终摘要。"
-    assert result.tags == ["Alpha", "Beta"]
+    assert result.tags == ["记忆", "智能体"]
     assert result.input_tokens == (len(chunks) + 1) * 10
     assert result.output_tokens == (len(chunks) + 1) * 5
+
+
+def test_non_chinese_ai_tags_and_vocabulary_are_dropped(tmp_path):
+    chat = FakeChatClient([_result("摘要", ["philosophy", "道家哲学"])])
+    workflow = OrganizationWorkflow(_llm(), chat)
+
+    result = workflow.organize(
+        text="短文本",
+        title="tags",
+        existing_tags=[f"english{index}" for index in range(40)] + ["道家哲学"],
+        context=_context(tmp_path),
+    )
+
+    assert result.tags == ["道家哲学"]
+    prompt = chat.calls[0].messages[1]["content"]
+    assert "english0" not in prompt
+    assert "道家哲学" in prompt
 
 
 def test_empty_text_fails_without_calling_the_client(tmp_path):

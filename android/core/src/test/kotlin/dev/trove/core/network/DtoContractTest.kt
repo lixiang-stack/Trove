@@ -19,6 +19,7 @@ class DtoContractTest {
         val item = manifest.items.single()
         assertEquals("5f6f6cfa-8a59-4e2e-9a69-1a1f9f7f2c10", item.id)
         assertEquals(7, item.version)
+        assertEquals("https://www.youtube.com/watch?v=dQw4w9WgXcQ", item.sourceUrlRaw)
         assertEquals(listOf("AI", "记忆"), item.tags)
         assertEquals("audio", item.files.first().kind)
         assertEquals("42", manifest.nextCursor)

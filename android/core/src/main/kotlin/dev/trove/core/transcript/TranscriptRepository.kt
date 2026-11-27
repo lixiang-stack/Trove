@@ -37,6 +37,16 @@ class TranscriptRepository(
         }
 
     suspend fun ensureParsed(itemId: String): TranscriptLoadResult {
+        return try {
+            ensureParsedUnsafe(itemId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            TranscriptLoadResult.Failed
+        }
+    }
+
+    private suspend fun ensureParsedUnsafe(itemId: String): TranscriptLoadResult {
         val cached = database.transcriptSegmentDao().countForItem(itemId)
         if (cached > 0) return TranscriptLoadResult.Ready(cached)
         val artifact = database.artifactDao().find(itemId, "transcript")

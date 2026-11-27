@@ -147,7 +147,7 @@ fun SearchScreen(
                 text = when {
                     state.loading -> "正在搜索…"
                     state.error != null -> state.error
-                    state.query.isBlank() -> "搜索标题、摘要、transcript、书文本和 Tag。"
+                    state.query.isBlank() -> "搜索标题、摘要、transcript、书文本和标签。"
                     state.localOnly -> "离线 · 仅搜索已下载内容 · ${state.results.size} 个 Item"
                     else -> "${state.results.size} 个 Item 命中「${state.query.trim()}」 · 按 Item 聚合"
                 },
@@ -246,7 +246,7 @@ private fun SearchField(query: String, onQuery: (String) -> Unit) {
                 .weight(1f)
                 .padding(start = 6.dp)
                 .testTag("search-input"),
-            placeholder = { Text("搜标题、摘要、transcript、书、Tag", color = TroveColors.Muted) },
+            placeholder = { Text("搜标题、摘要、transcript、书、标签", color = TroveColors.Muted) },
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color.Transparent,

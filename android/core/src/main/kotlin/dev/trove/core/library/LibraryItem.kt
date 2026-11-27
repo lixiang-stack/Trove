@@ -41,6 +41,7 @@ data class LibraryItem(
     val hasAudio: Boolean,
     val hasBook: Boolean,
     val artifacts: List<LocalArtifact>,
+    val sourceUrlRaw: String? = null,
 ) {
     val audioArtifact: LocalArtifact? get() = artifacts.firstOrNull { it.kind == "audio" }
 
@@ -103,6 +104,7 @@ fun ItemWithDetails.toLibraryItem(): LibraryItem = LibraryItem(
     lastConsumedAt = item.lastConsumedAt,
     hasAudio = item.hasAudio,
     hasBook = item.hasBook,
+    sourceUrlRaw = item.sourceUrlRaw,
     artifacts = artifacts.sortedBy { it.kind }.map {
         LocalArtifact(
             kind = it.kind,

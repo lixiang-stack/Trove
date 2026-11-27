@@ -229,14 +229,7 @@ private fun MainShell(
     }
 
     fun openItem(itemId: String) {
-        val item = libraryState.allItems.firstOrNull { it.id == itemId }
-        if (item?.isBookOnly == true &&
-            item.bookArtifact?.downloadState == "completed"
-        ) {
-            openReader(itemId)
-        } else {
-            openPlayer(itemId, autoPlay = false)
-        }
+        openPlayer(itemId, autoPlay = false)
     }
 
     fun openTranscript(itemId: String, focusSeq: Int? = null, query: String = "") {
@@ -296,7 +289,7 @@ private fun MainShell(
                         onQuickPlay = { itemId ->
                             val item = libraryState.allItems.firstOrNull { it.id == itemId }
                             if (item?.let { it.isBookOnly } == true) {
-                                openItem(itemId)
+                                openReader(itemId)
                             } else {
                                 playerViewModel.open(itemId, autoPlay = true)
                             }

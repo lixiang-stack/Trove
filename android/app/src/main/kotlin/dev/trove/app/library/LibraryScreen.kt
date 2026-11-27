@@ -164,7 +164,7 @@ fun LibraryScreen(
                 Column(modifier = Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.Bottom) {
                         Text(
-                            "拾藏",
+                            "归藏",
                             style = MaterialTheme.typography.displaySmall,
                             color = TroveColors.Ink,
                         )

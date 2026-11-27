@@ -24,7 +24,7 @@ import androidx.sqlite.execSQL
         PendingDeletionEntity::class,
         CollectionDownloadIntentEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class TroveDatabase : RoomDatabase() {
@@ -114,10 +114,26 @@ abstract class TroveDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) = migrate { db.execSQL(it) }
+
+            override fun migrate(connection: SQLiteConnection) = migrate { connection.execSQL(it) }
+
+            private fun migrate(execSQL: (String) -> Unit) {
+                execSQL("ALTER TABLE items ADD COLUMN source_url_raw TEXT")
+            }
+        }
+
         fun create(context: Context): TroveDatabase =
             Room.databaseBuilder(context, TroveDatabase::class.java, NAME)
                 .setDriver(BundledSQLiteDriver())
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .build()
 
         fun inMemory(context: Context): TroveDatabase =

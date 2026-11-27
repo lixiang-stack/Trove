@@ -12,6 +12,7 @@ import dev.trove.core.library.LibraryRepository
 import dev.trove.core.transcript.TranscriptLoadResult
 import dev.trove.core.transcript.TranscriptRepository
 import dev.trove.core.transcript.queryMatches
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -90,7 +91,13 @@ class TranscriptViewModel(
         val itemId = target.value?.itemId ?: return
         loading.value = true
         viewModelScope.launch {
-            loadResult.value = transcriptRepository.ensureParsed(itemId)
+            loadResult.value = try {
+                transcriptRepository.ensureParsed(itemId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                TranscriptLoadResult.Failed
+            }
             loading.value = false
         }
     }

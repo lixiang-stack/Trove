@@ -124,6 +124,7 @@ class SyncEngineTest {
         assertEquals(listOf("a", "b"), items.map { it.id }.sorted())
         val a = database.itemDao().findDetails("a")!!
         assertEquals(setOf("AI", "记忆"), a.tags.map { it.name }.toSet())
+        assertEquals("https://www.youtube.com/watch?v=a", a.item.sourceUrlRaw)
         assertEquals(42.5, a.item.audioPositionSec, 0.0)
         assertEquals(7, a.item.stateSeq)
         assertEquals("4", database.syncCursorDao().current()?.contentCursor)
@@ -991,6 +992,7 @@ class SyncEngineTest {
         version = version,
         sourceType = "video_url",
         platform = "youtube",
+        sourceUrlRaw = "https://www.youtube.com/watch?v=$id",
         collectionId = collectionId,
         title = title,
         author = "作者",

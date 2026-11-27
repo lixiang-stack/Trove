@@ -1,4 +1,4 @@
-# Trove（拾藏）
+# Trove（归藏）
 
 Trove 是一个自托管的个人长内容库：把 B 站/YouTube 视频、播客和 EPUB 收进同一个 Library，在自己的 Host（Mac 或 Linux 机器）上完成下载、抽取、转写和整理，再用网页或 Android 客户端收听、阅读和检索。音频是主要消费方式，文本是组织和检索的底稿。
 
@@ -87,8 +87,8 @@ docker compose exec api trove doctor --json
 
 1. **Add**：粘贴链接、填本地绝对路径，或上传文件。
 2. **Library**：查看处理状态；正在处理或失败的内容在 Inbox 中，逐字稿和元数据在详情页。
-3. **Continue / Search**：继续上次收听或阅读；搜索标题、摘要、逐字稿、书文本和 Tag。
-4. **可选**：配置 [LLM](#llm-配置) 后，新内容会生成摘要和 Tag；已有内容可在详情页重新整理。
+3. **Continue / Search**：继续上次收听或阅读；搜索标题、摘要、逐字稿、书文本和标签。
+4. **可选**：配置 [LLM](#llm-配置) 后，新内容会生成摘要和标签；已有内容可在详情页重新整理。
 
 ## 产品架构
 
@@ -135,7 +135,19 @@ Trove 是单租户自托管应用：浏览器和 Android 只访问 Host 的 `/ap
 uv run trove collection reprocess <collection_id> --from-stage transcribing
 ```
 
-`--from-stage organizing` 只重新生成摘要和 Tag，不重新转写；`--reset-ai-tags` 会先删除合集的 AI Tag 再排队，用户手动添加的 Tag 保留。Run 由 worker 执行，所以 worker 必须运行同一份代码和模型；不要对同一个 `~/Trove` 同时运行两个 worker。
+`--from-stage organizing` 只重新生成摘要和标签，不重新转写；`--reset-ai-tags` 会先删除合集的 AI 标签再排队，用户手动添加的标签保留。Run 由 worker 执行，所以 worker 必须运行同一份代码和模型；不要对同一个 `~/Trove` 同时运行两个 worker。
+
+升级到中文摘要/标签后，已有内容不会自动改变。需要一次性重跑旧内容的合集：
+
+```bash
+uv run trove collection reprocess <collection_id> --from-stage organizing --reset-ai-tags
+```
+
+Docker 部署在容器里执行：
+
+```bash
+docker compose exec api trove collection reprocess <collection_id> --from-stage organizing --reset-ai-tags
+```
 
 重新转写会覆盖旧逐字稿；想保留就先把 `~/Trove/library/<item_id>/transcript.json` 复制到别处。没有配置 LLM 时，新逐字稿仍会写入和索引，但 `organizing` 会失败；配置后重试 Item 即可。M1 Pro 参考机上单路转写约占用 2.8 GB 峰值内存和一个 CPU 核心。
 
@@ -414,7 +426,7 @@ uv run trove sync reset-epoch
 | 搜索没有结果 | 运行 `uv run trove index status` 查看覆盖；必要时 `uv run trove index rebuild`。 |
 | 重新转写提示音频缺失 | 音频产物已不存在，重新入库该 Item。 |
 | 合集重处理没有执行 | worker 没运行，或 worker 仍在跑旧代码/旧模型；重启后再排队。 |
-| 标签越来越多 | 用 `uv run trove collection reprocess <id> --reset-ai-tags` 重建该合集的 AI Tag。 |
+| 标签越来越多 | 用 `uv run trove collection reprocess <id> --reset-ai-tags` 重建该合集的 AI 标签。 |
 | Android release 无法连接 | release 拒绝明文 HTTP；配置 Caddy/Tailscale HTTPS，并按 [docs/android.md](docs/android.md) 安装证书。 |
 
 ## 开发与测试

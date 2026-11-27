@@ -15,6 +15,7 @@ data class ItemEntity(
     val version: Int,
     @ColumnInfo(name = "source_type") val sourceType: String,
     val platform: String,
+    @ColumnInfo(name = "source_url_raw") val sourceUrlRaw: String? = null,
     @ColumnInfo(name = "collection_id") val collectionId: String? = null,
     @ColumnInfo(name = "collection_index") val collectionIndex: Int? = null,
     @ColumnInfo(name = "collection_title") val collectionTitle: String? = null,
