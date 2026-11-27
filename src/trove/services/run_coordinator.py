@@ -45,6 +45,7 @@ from trove.errors import (
     NotFoundError,
     ProcessingCancelled,
     ProcessingError,
+    RunNotFoundError,
     TroveError,
     ValidationError,
 )
@@ -377,7 +378,7 @@ class RunCoordinator:
         with self.sessions() as session:
             run = session.get(Run, run_id)
             if run is None:
-                raise TroveError("Processing Run not found")
+                raise RunNotFoundError("Processing Run not found")
             if run.state in TERMINAL_RUN_STATES:
                 return run
             running = self._running_task(session, run_id)
@@ -415,7 +416,7 @@ class RunCoordinator:
             session.rollback()
             run = session.get(Run, run_id)
             if run is None:
-                raise TroveError("Processing Run not found")
+                raise RunNotFoundError("Processing Run not found")
             if run.state in TERMINAL_RUN_STATES:
                 return run
             self._request_cancel(session, run, now)

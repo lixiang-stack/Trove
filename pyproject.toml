@@ -127,16 +127,11 @@ source_modules = ["trove.web"]
 forbidden_modules = ["trove.adapters"]
 allow_indirect_imports = true
 
-# Baseline: health checks need the engine for FTS5 and migration status;
-# api/runs.py reads Run/Item directly (see docs/agents/code-map.md). Remove both
-# once those handlers go through services.
+# Web reads Run/Item and health state through services; keep direct DB access out
+# of the HTTP layer.
 [[tool.importlinter.contracts]]
-name = "Web reads the database only through approved boundaries"
+name = "Web does not depend on the database"
 type = "forbidden"
 source_modules = ["trove.web"]
 forbidden_modules = ["trove.db"]
 allow_indirect_imports = true
-ignore_imports = [
-  "trove.web.api.health -> trove.db.engine",
-  "trove.web.api.runs -> trove.db.models",
-]
