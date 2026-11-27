@@ -18,6 +18,10 @@ def test_dockerfile_builds_a_non_root_runtime_with_optional_asr():
     assert "uv sync" in dockerfile and "--extra asr" in dockerfile
     assert "USER trove" in dockerfile
     assert "TROVE_HOME=" not in dockerfile
+    assert "build-essential" not in dockerfile
+    assert "curl" in dockerfile
+    assert "ca-certificates" not in dockerfile
+    assert "urllib.request" not in dockerfile
     assert 'VOLUME ["/home/trove/Trove"]' in dockerfile
     assert "HEALTHCHECK" in dockerfile
     assert "EXPOSE 8765" in dockerfile
@@ -60,6 +64,8 @@ def test_compose_publishes_only_loopback_and_keeps_named_data():
     assert "api_key" not in compose
     assert "trove-config:" not in compose
     assert "TROVE_PASSWORD" not in compose
+    assert "curl" in compose
+    assert "urllib.request" not in compose
     assert "stop_grace_period: 45s" in compose
 
 

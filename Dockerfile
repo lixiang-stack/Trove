@@ -11,10 +11,9 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
 
 ARG INSTALL_ASR=true
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends build-essential \
-    && rm -rf /var/lib/apt/lists/*
 
+# The locked dependencies install from wheels or pure-Python sdists; crcmod
+# falls back to its pure-Python implementation when no compiler is present.
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN if [ "${INSTALL_ASR}" = "true" ]; then \
@@ -43,7 +42,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # must not invalidate this download.
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends \
-        ca-certificates \
         curl \
         ffmpeg \
         libgomp1 \
