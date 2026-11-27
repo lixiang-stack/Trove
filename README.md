@@ -141,15 +141,19 @@ uv run trove collection reprocess <collection_id> --from-stage transcribing
 
 ### Android 客户端
 
-首次构建先写入本机 Android SDK 路径（gitignored），之后直接运行 Gradle：
+**首次使用**：写入本机 Android SDK 路径（gitignored）：
 
 ```bash
 scripts/android/sdk-properties.sh
-cd android
-./gradlew :app:assembleProdDebug
 ```
 
-Debug 包用 `adb reverse` 连接 `http://127.0.0.1:8765`；需要局域网明文调试时用 `lanDebug`。Release 包拒绝明文 HTTP，需要 Caddy/Tailscale 提供的 HTTPS。签名、Caddy 根证书、OEM 后台限制和真机验收步骤见 [docs/android.md](docs/android.md)。
+**真机调试**：确保真实 Host 在 `http://127.0.0.1:8765` 运行（例如另一个终端执行 `uv run trove serve`），手机通过 USB 连接后运行：
+
+```bash
+scripts/android/use-real-host.sh
+```
+
+脚本会构建并安装 `prodDebug`、设置 `adb reverse` 到 `http://127.0.0.1:8765` 并启动 App；`--no-build`、`--clear-data`、`--port` 见脚本 `--help`。需要局域网明文调试时用 `lanDebug`。Release 包拒绝明文 HTTP，需要 Caddy/Tailscale 提供的 HTTPS。签名、Caddy 根证书、OEM 后台限制和真机验收步骤见 [docs/android.md](docs/android.md)。
 
 ## 配置
 
@@ -427,9 +431,12 @@ uv run trove sync reset-epoch
 | 场景 | 命令 |
 | --- | --- |
 | Docker 冒烟测试 | `scripts/docker-smoke.sh` |
+| Android SDK 初始化 | `scripts/android/sdk-properties.sh` |
 | Android 构建与测试 | `scripts/android/check.sh` |
+| Android 真机调试（真实 Host） | `scripts/android/use-real-host.sh` |
 | Android 设备检查 | `scripts/android/device-check.sh` |
-| Android 验收 Host | `scripts/android/acceptance-host.sh` |
+| Android 验收 Host（临时数据） | `scripts/android/acceptance-host.sh` |
+| Android release 检查 | `scripts/android/release-check.sh` |
 | 发布前只读检查 | `scripts/release-check.sh` |
 | 搜索索引覆盖 | `uv run trove index status --json` |
 | 重建搜索索引 | `uv run trove index rebuild` |
