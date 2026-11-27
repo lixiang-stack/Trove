@@ -21,6 +21,7 @@ import dev.trove.playback.PlaybackRequest
 import dev.trove.playback.PlaybackState
 import dev.trove.playback.PlayerGateway
 import java.io.File
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -264,7 +265,15 @@ class PlayerViewModel(
 
     fun refreshTranscript() {
         val itemId = selectedId.value ?: return
-        viewModelScope.launch { transcriptRepository.ensureParsed(itemId) }
+        viewModelScope.launch {
+            try {
+                transcriptRepository.ensureParsed(itemId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // Transcript load failures surface through the transcript state.
+            }
+        }
     }
 
     private fun autoSync(itemId: String) {

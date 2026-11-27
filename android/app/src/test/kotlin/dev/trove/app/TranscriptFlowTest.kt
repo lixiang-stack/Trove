@@ -29,6 +29,9 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ExternalResource
+import org.junit.rules.RuleChain
+import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -36,17 +39,29 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36])
 class TranscriptFlowTest {
+    private var harness: TestHarness? = null
+    private val compose = createComposeRule()
+    private val cleanup = object : ExternalResource() {
+        override fun after() {
+            harness?.container?.closeForTest()
+            harness = null
+        }
+    }
+
     @get:Rule
-    val compose = createComposeRule()
+    val rules: TestRule = RuleChain.outerRule(cleanup).around(compose)
+
+    private fun newHarness(context: Context): TestHarness =
+        testHarness(
+            context,
+            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
+            settingsStore = FakeSettingsStore("https://host.example"),
+        ).also { harness = it }
 
     @Test
     fun transcriptRendersAndSearchesOfflineCopy() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val harness = testHarness(
-            context,
-            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
-            settingsStore = FakeSettingsStore("https://host.example"),
-        )
+        val harness = newHarness(context)
         harness.api.manifestError = TroveNetworkException("offline")
         runBlocking { seedTranscriptItem(harness) }
         val viewModel = SessionViewModel(harness.container.sessionController)
@@ -83,11 +98,7 @@ class TranscriptFlowTest {
     @Test
     fun transcriptLoadsOnlineWithoutDownloadingItem() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val harness = testHarness(
-            context,
-            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
-            settingsStore = FakeSettingsStore("https://host.example"),
-        )
+        val harness = newHarness(context)
         harness.api.manifestError = TroveNetworkException("offline")
         harness.api.transcriptResponse = TranscriptResponseDto(
             itemId = "item-1",
@@ -114,11 +125,7 @@ class TranscriptFlowTest {
     @Test
     fun transcriptNotDownloadedShowsPrompt() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val harness = testHarness(
-            context,
-            tokenStore = FakeTokenStore(StoredCredential("token", "device-1", "Pixel")),
-            settingsStore = FakeSettingsStore("https://host.example"),
-        )
+        val harness = newHarness(context)
         harness.api.manifestError = TroveNetworkException("offline")
         runBlocking { seedTranscriptItem(harness, downloaded = false) }
         val viewModel = SessionViewModel(harness.container.sessionController)
