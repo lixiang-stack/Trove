@@ -24,11 +24,13 @@ open http://127.0.0.1:8765
 ```
 
 If `api` is not running yet, wait for `init` to finish and rerun the `exec`
-command. `init` applies migrations before `api` and `worker` start. On first start the
-entrypoint creates `/home/trove/Trove/config.toml` with `host = "0.0.0.0"` so the
-API is reachable from the published port. The API publishes only on
-`127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`; bind
-another interface only behind a trusted reverse proxy.
+command. `init` applies migrations before `api` and `worker` start. On a fresh
+volume the entrypoint creates the full `/home/trove/Trove/config.toml` with
+`host = "0.0.0.0"` so the API is reachable from the published port. On an
+upgraded volume existing settings are preserved; if the old config has no
+`[server]` section, the entrypoint adds one with `0.0.0.0`. The API publishes
+only on `127.0.0.1` by default. Override the host port with `TROVE_HOST_PORT`;
+bind another interface only behind a trusted reverse proxy.
 
 There is no `.env` file and no `trove-config` volume. User configuration lives in
 `/home/trove/Trove/config.toml` on the `trove-data` volume; the app-managed
@@ -93,13 +95,27 @@ docker compose up -d
 ### Configuration and LLM
 
 User settings live in `/home/trove/Trove/config.toml`; `state.toml` is
-app-managed. To edit the container copy from the host:
+app-managed. Existing config files are preserved rather than replaced: missing
+sections use the code defaults, and `trove config init` adds a missing
+`[server]` section without overwriting existing values. The Docker entrypoint
+repairs a legacy config that lacks `[server]` by adding `host = "0.0.0.0"`. To
+edit the container copy from the host:
 
 ```bash
 docker compose cp api:/home/trove/Trove/config.toml ./trove-config.toml
 chmod 600 ./trove-config.toml
 ${EDITOR:-vi} ./trove-config.toml
-docker compose cp ./trove-config.toml api:/home/trove/Trove/config.toml
+docker compose exec -T api sh -c 'umask 077; cat > /home/trove/Trove/config.toml' < ./trove-config.toml
+docker compose restart api worker
+```
+
+The write-back runs as the container's `trove` user. Writing with
+`docker compose cp` preserves the host UID/GID and can leave the file
+unreadable inside the container. If that already happened and the logs show
+`Could not read config ... Permission denied`, repair ownership and restart:
+
+```bash
+docker compose run --rm --user root --entrypoint chown init trove:trove /home/trove/Trove/config.toml
 docker compose restart api worker
 ```
 

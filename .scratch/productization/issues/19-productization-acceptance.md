@@ -61,3 +61,8 @@ Phase 1–3 的改动需要一次整体验收，证明“单租户自托管产�
 - 验收不是“再跑一遍测试”；要记录可复现的命令、环境、版本和数据规模。
 - SLO 未达标不阻塞发布，但必须写明原因、影响和后续 issue；不允许静默忽略。
 - 如果 Docker 与 launchd 行为不一致，先记录差异，再决定是否阻塞发布。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收 pass 1。覆盖视频链路、Docker 持久化、分池、lease 恢复、ASR/AI 缓存、幂等、manifest/export/search、doctor/备份；未覆盖 EPUB/播客、Android、100 条容量、观测、launchd、完整 rollback。详细结果与 SLO 见 [acceptance.md](../acceptance.md)。
+- 2026-11-27: 合集验收 pass 2（前 10 集）。作为合集入库并通过 download/asr/llm/index 分池完成 10 集（118 分钟音频，9 集新处理约 13 分钟，0 失败）；验证了合集创建/已有 Item 附着、批量并发、collection tag、collection reprocess、10 集导出和搜索。当前 collection API 不支持只导入前 N 集，本次先创建再删除 11–75；Bilibili 标题 100 讲但 yt-dlp 只返回 75 part。详见 [acceptance.md](../acceptance.md)。

@@ -1,6 +1,6 @@
 # 11 — Docker/Compose 自托管打包
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P3
 Blocked by: 01, 08
@@ -94,3 +94,7 @@ ADRs: [0006](../../../docs/adr/0006-native-launchd-tailscale.md)
 - 镜像分层：依赖层、源码层、ASR 层分开，避免每次改代码重装 torch。
 - `docker compose` 的 worker 池参数依赖 08；本 issue 在 08 完成后为各 pool 提供 profile。
 - 文档要明确：Docker 不是唯一路径，macOS 用户仍可用 launchd。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收通过。分支镜像重建、非 root、health、`down`/`up` 数据持久化、导出/搜索均验证。见 [acceptance.md](../acceptance.md)。

@@ -4,9 +4,11 @@ set -eu
 home="${HOME}/Trove"
 mkdir -p "$home"
 
-if [ ! -f "${home}/config.toml" ]; then
-    trove config init --host 0.0.0.0
-fi
+# Create the full template on a fresh volume. On an upgraded volume, keep the
+# existing settings but add [server] with a container-reachable host if the
+# legacy config predates that section. An explicit [server] section is
+# preserved.
+trove config init --host 0.0.0.0
 
 if [ "$#" -eq 0 ]; then
     set -- serve

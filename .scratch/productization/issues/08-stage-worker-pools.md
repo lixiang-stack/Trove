@@ -1,6 +1,6 @@
 # 08 — 按阶段 worker 池与并发配置
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P2
 Blocked by: 07
@@ -72,10 +72,12 @@ StageTask 让任务可以按阶段领取，但还需要运行形态：下载、A
   `TROVE_WORKER_SHUTDOWN_TIMEOUT_SECONDS` (default 30) remaining task heartbeats
   are stopped and their leases are left for the next reaper, which requeues them
   as a new attempt.
-- Each worker process writes `cache/worker-<pid>.json`; `read_heartbeat` merges
-  fresh processes into one payload. `/api/health` exposes each pool's `name`,
-  `concurrency`, `active`, `queued` depth, claimed `stages`, and `run_id` under
-  `worker.pools`. Prometheus counters stay in ticket 12.
+- Each worker process writes `cache/worker-<hostname>-<pid>.json`; the hostname
+  keeps split-pool containers from colliding on the same PID. `read_heartbeat`
+  merges fresh processes into one payload. Worker ids also include the hostname.
+  `/api/health` exposes each pool's `name`, `concurrency`, `active`, `queued`
+  depth, claimed `stages`, and `run_id` under `worker.pools`. Prometheus
+  counters stay in ticket 12.
 - Pool claim loops log and continue after transient DB/heartbeat failures instead
   of letting the thread exit silently.
 - `deploy.py` renders one worker agent per selected pool, for example
@@ -93,3 +95,7 @@ StageTask 让任务可以按阶段领取，但还需要运行形态：下载、A
 - 线程池 + SQLAlchemy sessionmaker 可行，但要确保每个任务独立 session，不跨线程共享 Session。
 - ASR 子进程已经是进程隔离；先不要引入新的进程管理框架。
 - 默认并发要保守；M1 Pro 上 ASR 并发 2 可能触发内存压力，先 1。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收通过（分池 download/asr/llm/index）。发现 split-pool heartbeat 文件名只含 PID，跨容器冲突导致 worker 崩溃和 health pool 闪烁；已改为 hostname+pid 并加回归测试。见 [acceptance.md](../acceptance.md)。

@@ -319,6 +319,24 @@ def test_fts_table_can_be_written_and_deleted(tmp_path):
         assert session.execute(text("SELECT count(*) FROM search_fts")).scalar() == 0
 
 
+def test_verify_fts5_probes_a_temp_table(tmp_path, monkeypatch):
+    _, engine, _ = _database(tmp_path)
+    statements: list[str] = []
+    original = Connection.execute
+
+    def capture(self, statement, *args, **kwargs):
+        statements.append(str(statement))
+        return original(self, statement, *args, **kwargs)
+
+    monkeypatch.setattr(Connection, "execute", capture)
+    verify_fts5(engine)
+
+    assert any(
+        statement.startswith("CREATE VIRTUAL TABLE temp.")
+        for statement in statements
+    )
+
+
 def test_fts5_missing_fails_with_actionable_message(tmp_path, monkeypatch):
     _, engine, _ = _database(tmp_path)
     original = Connection.execute

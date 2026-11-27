@@ -1,6 +1,6 @@
 # 10 — LLM/ASR 外部调用幂等缓存
 
-Status: ready-for-agent
+Status: resolved
 Type: task
 Milestone: P2
 Blocked by: 04, 07
@@ -89,3 +89,7 @@ ADRs: [0007](../../../docs/adr/0007-deepseek-organization-limits.md)
 - 缓存是“避免重复副作用”，不是“让显式重跑失效”；force 语义必须在 API/CLI 文档里写清楚。
 - ASR 的 transcript 已经写入内容包；优先从内容包读取 hash，避免再建一张缓存表。
 - LLM 结果同时存在 `AiResult` 历史和 `ai.json`；以内容包为准，DB 只做查询索引。
+
+## Comments
+
+- 2026-11-27: Docker 视频验收通过。在真实容器内用会抛错的 transcriber/organizer 调用 stage，ASR/AI 均命中 cache；显式 reprocess 走 bypass。见 [acceptance.md](../acceptance.md)。
