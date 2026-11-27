@@ -14,21 +14,14 @@ ARG INSTALL_ASR=true
 
 # The locked dependencies install from wheels or pure-Python sdists; crcmod
 # falls back to its pure-Python implementation when no compiler is present.
+# The uv cache survives lockfile changes, so dependency rebuilds reuse wheels.
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-RUN if [ "${INSTALL_ASR}" = "true" ]; then \
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    if [ "${INSTALL_ASR}" = "true" ]; then \
         uv sync --frozen --no-dev --no-install-project --extra asr; \
     else \
         uv sync --frozen --no-dev --no-install-project; \
-    fi
-# Keep README out of the dependency layer: doc-only changes must not trigger a
-# PyTorch download when rebuilding from another worktree.
-COPY README.md ./
-COPY src ./src
-RUN if [ "${INSTALL_ASR}" = "true" ]; then \
-        uv sync --frozen --no-dev --no-editable --extra asr; \
-    else \
-        uv sync --frozen --no-dev --no-editable; \
     fi
 
 FROM python:3.12-slim-bookworm AS runtime
@@ -55,10 +48,12 @@ RUN groupadd --gid 10001 trove \
     && install -d -o trove -g trove -m 0700 \
         /home/trove/Trove /home/trove/Trove/models
 
+# Dependencies are stable across source changes and stay in their own layer.
 COPY --from=builder /app/.venv /app/.venv
-COPY docker/entrypoint.sh /usr/local/bin/trove-entrypoint
-RUN chmod 0755 /usr/local/bin/trove-entrypoint \
-    && chown -R root:root /app
+COPY --chmod=0755 docker/entrypoint.sh /usr/local/bin/trove-entrypoint
+COPY --chmod=0755 docker/trove /usr/local/bin/trove
+COPY src /app/src
+ENV PYTHONPATH=/app/src
 
 # Runtime paths and build metadata go last so releases only rebuild tiny layers.
 ARG TROVE_BUILD_COMMIT=unknown
