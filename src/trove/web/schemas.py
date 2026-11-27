@@ -461,6 +461,7 @@ class SyncItemSchema(BaseModel):
     version: int
     source_type: str
     platform: str
+    source_url_raw: str | None = None
     collection_id: str | None = None
     collection_index: int | None = None
     collection_title: str | None = None

@@ -192,9 +192,9 @@ def test_collection_organizer_passes_series_context_and_reuses_tags(tmp_path):
 
     assert result.tags == ["道德经", "道家哲学"]
     prompt = requests[0]["messages"][1]["content"]
-    assert "Collection: 道德经全讲 (episode 3)" in prompt
-    assert "Tags describe the collection or series" in prompt
-    assert "Use existing tags only." in prompt
+    assert "合集：道德经全讲（第 3 集）" in prompt
+    assert "标签描述合集或系列" in prompt
+    assert "只使用现有标签。" in prompt
 
 
 def test_collection_reuse_fills_the_shared_tag_set(tmp_path):
@@ -224,9 +224,9 @@ def test_long_text_is_mapped_and_reduced_without_dropping_chunks(tmp_path):
         body = json.loads(request.content)
         requests.append(body)
         prompt = body["messages"][1]["content"]
-        if "Combine the chunk summaries" in prompt:
-            return _json_response("覆盖全文的最终摘要。", ["Alpha", "Beta"])
-        return _json_response(f"map summary {len(requests)}", ["Beta"])
+        if "把各段摘要合并成一段" in prompt:
+            return _json_response("覆盖全文的最终摘要。", ["记忆", "智能体"])
+        return _json_response(f"map summary {len(requests)}", ["记忆"])
 
     config = _config(tmp_path)
     config.llm.chunk_chars = 120
@@ -238,7 +238,7 @@ def test_long_text_is_mapped_and_reduced_without_dropping_chunks(tmp_path):
         context=_context(tmp_path),
     )
     assert result.summary == "覆盖全文的最终摘要。"
-    assert result.tags == ["Alpha", "Beta"]
+    assert result.tags == ["记忆", "智能体"]
     assert len(requests) > 2
     combined = "\n".join(body["messages"][1]["content"] for body in requests)
     for index in range(6):

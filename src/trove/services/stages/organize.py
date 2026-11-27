@@ -17,6 +17,7 @@ from trove.content_package import (
 from trove.db.models import AiResult, Collection, Item, ItemTag, Tag
 from trove.domain.cache import ai_input_sha256
 from trove.domain.organization import MAX_EXISTING_TAGS
+from trove.domain.search import is_cjk
 from trove.domain.tags import normalize_tag
 from trove.errors import PackageVersionError, StorageError, TroveError
 from trove.ports import Organizer, StageContext
@@ -220,20 +221,22 @@ class OrganizeStage:
 
     @staticmethod
     def _tag_vocabulary(session: Session) -> list[str]:
-        return [
+        names = [
             str(name)
             for name in session.execute(
                 select(Tag.name)
                 .join(ItemTag, ItemTag.tag_id == Tag.id)
                 .group_by(Tag.id)
                 .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
-                .limit(MAX_EXISTING_TAGS)
             ).scalars()
         ]
+        return [
+            name for name in names if any(is_cjk(char) for char in name)
+        ][:MAX_EXISTING_TAGS]
 
     @staticmethod
     def _collection_tag_vocabulary(session: Session, collection_id: str) -> list[str]:
-        return [
+        names = [
             str(name)
             for name in session.execute(
                 select(Tag.name)
@@ -246,9 +249,11 @@ class OrganizeStage:
                 )
                 .group_by(Tag.id)
                 .order_by(func.count(ItemTag.item_id).desc(), Tag.normalized_name)
-                .limit(MAX_EXISTING_TAGS)
             ).scalars()
         ]
+        return [
+            name for name in names if any(is_cjk(char) for char in name)
+        ][:MAX_EXISTING_TAGS]
 
     @staticmethod
     def _replace_ai_tags(session: Session, item_id: str, tags: list[str]) -> None:

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ collection.title }} · 合集 · 拾藏{% endblock %}
+{% block title %}{{ collection.title }} · 合集 · 归藏{% endblock %}
 {% block main %}
 <div class="breadcrumb">
   <a href="/collections" hx-get="/collections" hx-target="#main" hx-select="#main" hx-push-url="true">← 合集</a>
@@ -111,7 +111,7 @@
   {% endif %}
 </section>
 
-<p class="hint">只读：不支持重命名、编辑 Tag 或改封面；删除和重试会同步到 App。</p>
+<p class="hint">只读：不支持重命名、编辑标签或改封面；删除和重试会同步到 App。</p>
 
 <dialog id="delete-collection" class="confirm-dialog">
   <h2>删除合集？</h2>

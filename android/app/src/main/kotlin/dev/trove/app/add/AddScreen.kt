@@ -232,7 +232,7 @@ fun AddScreen(
 
                 SupportHint()
                 Text(
-                    "转写/书文本会分块发送给 DeepSeek 生成摘要和 Tag；Host 会执行 URL、平台、SSRF 和大小校验。",
+                    "转写/书文本会分块发送给 DeepSeek 生成摘要和标签；Host 会执行 URL、平台、SSRF 和大小校验。",
                     style = MaterialTheme.typography.bodySmall,
                     color = TroveColors.Muted,
                     modifier = Modifier
@@ -724,7 +724,7 @@ private fun processingErrorLabel(code: String?, message: String?): String = when
     code.startsWith("auth.") -> "登录已失效，请重新登录。"
     code.startsWith("drm.") -> "内容受 DRM 保护，无法处理。"
     code.startsWith("asr.") -> "转写失败，请重试或检查音频。"
-    code.startsWith("llm.") -> "摘要/Tag 生成失败，请重试。"
+    code.startsWith("llm.") -> "摘要/标签 生成失败，请重试。"
     code.startsWith("storage.") -> "Host 存储失败，请检查磁盘空间。"
     code.startsWith("download.") -> "Host 下载源文件失败，请重试。"
     code.startsWith("ebook.") -> "EPUB 下载或解析失败。"

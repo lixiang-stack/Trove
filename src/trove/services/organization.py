@@ -26,6 +26,7 @@ from trove.domain.organization_prompts import (
     SINGLE_TAG_LIMIT_REUSE,
     build_messages,
 )
+from trove.domain.search import is_cjk
 from trove.errors import ProcessingError
 from trove.ports import ChatClient, OrganizationResult, StageContext
 
@@ -89,7 +90,7 @@ class OrganizationWorkflow:
                 f"Organization needs about {estimated_input} input tokens; limit is "
                 f"{llm.max_input_tokens_per_item}",
             )
-        vocabulary = normalize_tags(existing_tags, limit=MAX_EXISTING_TAGS)
+        vocabulary = _chinese_vocabulary(existing_tags)
         single_tag_limit = (
             SINGLE_TAG_LIMIT_REUSE if reuse_existing_tags else SINGLE_TAG_LIMIT
         )
@@ -131,7 +132,7 @@ class OrganizationWorkflow:
                     collection_title=collection_title,
                     collection_index=collection_index,
                     reuse_existing_tags=reuse_existing_tags,
-                    prefix=f"Chunk {index}/{len(chunks)}.",
+                    prefix=f"第 {index}/{len(chunks)} 段。",
                     remaining_calls=llm.max_calls_per_item - calls_used,
                 )
                 input_tokens += used_input
@@ -147,7 +148,7 @@ class OrganizationWorkflow:
                 title=title,
                 instructions=REDUCE_INSTRUCTIONS,
                 content=reduce_content,
-                existing_tags=normalize_tags(vocabulary + map_tags, limit=MAX_EXISTING_TAGS),
+                existing_tags=_chinese_vocabulary(vocabulary + map_tags),
                 tag_limit=single_tag_limit,
                 collection_title=collection_title,
                 collection_index=collection_index,
@@ -283,4 +284,16 @@ def _tags(payload: dict[str, Any]) -> list[str]:
     tags = payload.get("tags")
     if not isinstance(tags, list):
         return []
-    return normalize_tags([str(tag) for tag in tags])
+    raw = [str(tag) for tag in tags]
+    return _chinese_tags(normalize_tags(raw, limit=max(len(raw), 1)))[
+        :MAX_TAGS_PER_ITEM
+    ]
+
+
+def _chinese_vocabulary(tags: list[str]) -> list[str]:
+    normalized = normalize_tags(tags, limit=max(len(tags), 1))
+    return _chinese_tags(normalized)[:MAX_EXISTING_TAGS]
+
+
+def _chinese_tags(tags: list[str]) -> list[str]:
+    return [tag for tag in tags if any(is_cjk(char) for char in tag)]

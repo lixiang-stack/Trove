@@ -531,6 +531,7 @@ class SyncService:
             "version": item.version,
             "source_type": item.source_type,
             "platform": item.platform,
+            "source_url_raw": item.source_url_raw,
             "collection_id": item.collection_id,
             "collection_index": item.collection_index,
             "collection_title": (

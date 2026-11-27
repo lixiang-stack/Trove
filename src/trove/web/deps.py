@@ -148,7 +148,7 @@ def search_dimensions(runtime: Runtime) -> list[tuple[str, str, list[tuple[str, 
     return [
         ("type", "Type", list(SOURCE_TYPE_LABELS.items())),
         ("consumption", "Status", list(CONSUMPTION_LABELS.items())),
-        ("tag", "Tag", [(name, name) for name, _ in runtime.library.tag_counts()]),
+        ("tag", "标签", [(name, name) for name, _ in runtime.library.tag_counts()]),
         ("source", "Source", list(PLATFORM_LABELS.items())),
     ]
 

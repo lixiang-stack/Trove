@@ -62,6 +62,7 @@ def test_ref_labels():
     assert ref_label("transcript", "3:65000") == "transcript · 01:05"
     assert ref_label("book", "2:4") == "Book · 2:4"
     assert ref_label("title", "title") == "Title"
+    assert ref_label("tag", "标签") == "标签"
 
 
 def test_query_words_keep_phrases_for_snippets():

@@ -97,7 +97,7 @@ class DownloadWorker(
         val text = if (itemId == null) "正在准备下载" else "正在下载"
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("拾藏")
+            .setContentTitle("归藏")
             .setContentText(text)
             .setOngoing(true)
             .setOnlyAlertOnce(true)

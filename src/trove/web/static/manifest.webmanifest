@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "拾藏 Trove",
-  "short_name": "Trove",
+  "name": "归藏 Trove",
+  "short_name": "归藏",
   "description": "A personal long-content library. Listen, read, and search your own collection.",
   "start_url": "/library",
   "scope": "/",

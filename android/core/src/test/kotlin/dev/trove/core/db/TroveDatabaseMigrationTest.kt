@@ -102,6 +102,47 @@ class TroveDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migration5To6AddsSourceUrlRaw() {
+        helper.createDatabase(TEST_DB, 5).use { database ->
+            database.execSQL(
+                """
+                INSERT INTO items (
+                    id, version, source_type, platform, title, fetched_at,
+                    processing_state, has_audio, has_book, consumption_state,
+                    audio_position_sec, content_seq, state_seq, download_state,
+                    last_synced_at
+                ) VALUES (
+                    'item-1', 1, 'video_url', 'youtube', 'Before migration', 1,
+                    'completed', 1, 0, 'unstarted',
+                    0, 1, 1, 'none',
+                    1
+                )
+                """.trimIndent()
+            )
+        }
+
+        val migrated = helper.runMigrationsAndValidate(
+            TEST_DB,
+            6,
+            true,
+            TroveDatabase.MIGRATION_5_6,
+        )
+        migrated.use { database ->
+            val columns = mutableSetOf<String>()
+            database.query("PRAGMA table_info(items)").use { cursor ->
+                while (cursor.moveToNext()) {
+                    columns += cursor.getString(cursor.getColumnIndexOrThrow("name"))
+                }
+            }
+            assertTrue(columns.contains("source_url_raw"))
+            database.query("SELECT title FROM items WHERE id = 'item-1'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Before migration", cursor.getString(0))
+            }
+        }
+    }
+
     private companion object {
         const val TEST_DB = "trove-migration-test.db"
     }

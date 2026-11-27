@@ -384,6 +384,7 @@ class SyncEngine(
                     version = dto.version,
                     sourceType = dto.sourceType,
                     platform = dto.platform,
+                    sourceUrlRaw = dto.sourceUrlRaw,
                     collectionId = dto.collectionId,
                     collectionIndex = dto.collectionIndex,
                     collectionTitle = dto.collectionTitle,

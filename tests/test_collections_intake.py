@@ -6,6 +6,7 @@ import shutil
 from sqlalchemy import select
 
 from trove.db.models import Run
+from trove.domain.search import is_cjk
 from trove.ports import AudioResult, LinkProbeResult, VideoInfo
 
 from .fakes import FIXTURES, video_collection
@@ -139,7 +140,12 @@ def test_collection_episodes_share_tags_and_context(host, monkeypatch):
         calls, host.stack.organizer.existing_tags_calls, strict=True
     ):
         if call[2]:
-            assert set(host.stack.organizer.tags) <= set(existing)
+            expected = {
+                tag
+                for tag in host.stack.organizer.tags
+                if any(is_cjk(char) for char in tag)
+            }
+            assert expected <= set(existing)
 
 
 def test_collection_reprocess_cli_resets_ai_tags(host, monkeypatch, capsys):

@@ -37,6 +37,7 @@ def test_manifest_returns_compact_items_files_and_cursor(host):
         author="Author",
         summary="Summary",
         tags=["Memory", "AI"],
+        source_url_raw="https://www.bilibili.com/video/BV1xx",
     )
     host.login()
     payload = _manifest(host)
@@ -48,6 +49,7 @@ def test_manifest_returns_compact_items_files_and_cursor(host):
     assert item["id"] == bundle.item.id
     assert item["version"] == bundle.item.version
     assert item["title"] == "Manifest Item"
+    assert item["source_url_raw"] == "https://www.bilibili.com/video/BV1xx"
     assert item["tags"] == ["AI", "Memory"]
     assert item["processing_state"] == "completed"
     assert item["has_audio"] is True

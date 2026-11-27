@@ -97,4 +97,5 @@ fun dev.trove.core.network.ItemDto.toLibraryItem(): LibraryItem = LibraryItem(
     hasAudio = hasAudio,
     hasBook = hasBook,
     artifacts = emptyList(),
+    sourceUrlRaw = sourceUrlRaw,
 )

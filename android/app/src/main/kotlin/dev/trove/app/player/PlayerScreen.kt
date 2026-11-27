@@ -2,8 +2,15 @@ package dev.trove.app.player
 
 import android.Manifest
 import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
+import android.widget.Toast
 import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -104,6 +111,22 @@ private val SPEEDS = listOf(1f, 1.25f, 1.5f, 2f)
 
 private fun speedLabel(speed: Float): String =
     if (speed == speed.toInt().toFloat()) speed.toInt().toString() else speed.toString()
+
+private fun openSourceLink(context: Context, url: String) {
+    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    try {
+        context.startActivity(intent)
+    } catch (_: ActivityNotFoundException) {
+        Toast.makeText(context, R.string.player_source_link_failed, Toast.LENGTH_SHORT).show()
+    }
+}
+
+private fun copySourceLink(context: Context, url: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("Trove", url))
+    Toast.makeText(context, R.string.player_source_link_copied, Toast.LENGTH_SHORT).show()
+}
 
 private fun nextSpeed(speed: Float): Float {
     val index = SPEEDS.indexOf(speed).takeIf { it >= 0 } ?: 0
@@ -301,7 +324,7 @@ private fun TagEditorDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = TroveColors.Paper2,
-        title = { Text("编辑 Tag") },
+        title = { Text("编辑标签") },
         text = {
             Column {
                 OutlinedTextField(
@@ -310,7 +333,7 @@ private fun TagEditorDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("tag-input"),
-                    placeholder = { Text("输入 Tag 后添加") },
+                    placeholder = { Text("输入标签后添加") },
                     singleLine = true,
                 )
                 TextButton(
@@ -466,7 +489,7 @@ private fun PlayerTopBar(
                         },
                     )
                     DropdownMenuItem(
-                        text = { Text("编辑 Tag") },
+                        text = { Text("编辑标签") },
                         onClick = {
                             onDismissMenu()
                             onEditTags()
@@ -517,6 +540,7 @@ private fun PlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val item = state.item ?: return
+    val context = LocalContext.current
     val playback = state.playback
     val isBook = item.isBookOnly
     val isCurrent = playback.itemId == item.id
@@ -562,7 +586,39 @@ private fun PlayerContent(
             item.tags.forEach { tag ->
                 TrovePill("#$tag", dark = true)
             }
-            TrovePill("编辑 Tag", onClick = onEditTags, dark = true)
+            TrovePill("编辑标签", onClick = onEditTags, dark = true)
+        }
+        val sourceUrl = item.sourceUrlRaw?.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
+        }
+        val sourceIsVideo = item.sourceType == "video_url" && sourceUrl != null
+        val sourceIsEpub = item.sourceType == "epub_url" && sourceUrl != null
+        if (sourceIsVideo || sourceIsEpub) {
+            Row(
+                modifier = Modifier.padding(top = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TrovePill(
+                    text = stringResource(
+                        if (sourceIsVideo) {
+                            R.string.player_open_source_video
+                        } else {
+                            R.string.player_copy_source_link
+                        }
+                    ),
+                    onClick = {
+                        sourceUrl.let { url ->
+                            if (sourceIsVideo) {
+                                openSourceLink(context, url)
+                            } else {
+                                copySourceLink(context, url)
+                            }
+                        }
+                    },
+                    modifier = Modifier.testTag("player-source-link"),
+                    dark = true,
+                )
+            }
         }
         if (item.processingState == "failed") {
             Text(

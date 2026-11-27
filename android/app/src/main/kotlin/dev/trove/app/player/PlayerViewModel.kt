@@ -230,7 +230,7 @@ class PlayerViewModel(
                 .onFailure { error ->
                     tagError.value = when (error) {
                         is dev.trove.core.tags.InvalidTagException -> error.toUserMessage()
-                        else -> "Tag 保存失败，请重试。"
+                        else -> "标签保存失败，请重试。"
                     }
                 }
         }

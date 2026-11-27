@@ -128,5 +128,5 @@ def ref_label(doc_kind: str, ref: str) -> str:
     if doc_kind == "summary":
         return "Summary"
     if doc_kind == "tag":
-        return "Tag"
+        return "标签"
     return doc_kind

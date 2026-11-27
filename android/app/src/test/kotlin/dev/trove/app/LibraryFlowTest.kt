@@ -80,8 +80,35 @@ class LibraryFlowTest {
 
         compose.onNodeWithTag("library-item-item-1").performScrollTo().performClick()
         waitForTag(compose, "player-screen")
+        compose.onNodeWithTag("player-source-link").assertIsDisplayed()
+        compose.onNodeWithText("播放原视频").assertIsDisplayed()
     }
 
+
+    @Test
+    fun downloadedBookOpensItemPageAndShowsCopyLink() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val harness = signedInHarness(context)
+        harness.api.manifestResponse = ManifestDto(
+            items = listOf(syncBook("book-1", "可复制链接的书")),
+            tombstones = emptyList(),
+            nextCursor = "1",
+            hasMore = false,
+            epoch = "epoch",
+        )
+        val viewModel = SessionViewModel(harness.container.sessionController)
+        compose.setContent { TroveApp(viewModel, harness.container) }
+
+        waitForTag(compose, "library-item-book-1")
+        runBlocking {
+            harness.container.database.artifactDao()
+                .setDownloadState("book-1", "book", "completed", null)
+        }
+        compose.waitForIdle()
+        compose.onNodeWithTag("library-item-book-1").performScrollTo().performClick()
+        waitForTag(compose, "player-screen")
+        compose.onNodeWithText("复制原始链接").performScrollTo().assertIsDisplayed()
+    }
 
     @Test
     fun inProgressItemQuickPlayResumes() {
@@ -154,7 +181,9 @@ class LibraryFlowTest {
         waitForTag(compose, "player-screen")
         waitForTag(compose, "player-error")
 
-        compose.onNodeWithText("网络连接失败，无法播放。请检查网络后重试。").assertIsDisplayed()
+        compose.onNodeWithText("网络连接失败，无法播放。请检查网络后重试。")
+            .performScrollTo()
+            .assertIsDisplayed()
     }
 
     @Test
@@ -271,6 +300,38 @@ class LibraryFlowTest {
         waitForText(compose, "已同步 · 1 项等待下载")
     }
 
+    private fun syncBook(
+        id: String,
+        title: String,
+    ) = SyncItemDto(
+        id = id,
+        version = 1,
+        sourceType = "epub_url",
+        platform = "web",
+        sourceUrlRaw = "https://example.com/book.epub",
+        title = title,
+        author = "作者",
+        publishedAt = null,
+        fetchedAt = 1_790_000_000_000,
+        language = "zh",
+        durationSec = null,
+        summary = "书摘要",
+        tags = listOf("书"),
+        processingState = "completed",
+        hasAudio = false,
+        hasBook = true,
+        files = listOf(
+            SyncFileDto(
+                kind = "book",
+                sha256 = "b".repeat(64),
+                size = 100,
+                mime = "application/epub+zip",
+                version = 1,
+                url = "/api/items/$id/files/book",
+            )
+        ),
+    )
+
     private suspend fun seedLocalItem(
         harness: dev.trove.app.testing.TestHarness,
         downloadState: String = "none",
@@ -328,6 +389,7 @@ class LibraryFlowTest {
         version = 1,
         sourceType = "video_url",
         platform = platform,
+        sourceUrlRaw = "https://www.youtube.com/watch?v=$id",
         title = title,
         author = "作者",
         publishedAt = "2026-10-01",

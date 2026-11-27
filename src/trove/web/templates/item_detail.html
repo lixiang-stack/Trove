@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "macros.html" import status_panel with context %}
-{% block title %}{{ bundle.item.title }} · 拾藏{% endblock %}
+{% block title %}{{ bundle.item.title }} · 归藏{% endblock %}
 {% block main %}
 <article class="detail-page">
   <nav class="breadcrumbs" aria-label="面包屑">
@@ -20,14 +20,14 @@
           {% if bundle.tag_sources.get(tag.id) == 'ai' %}<span class="tag-source">AI</span>{% endif %}
           <form method="post" action="/items/{{ bundle.item.id }}/tags/delete" class="tag-delete">
             <input type="hidden" name="tag" value="{{ tag.name }}">
-            <button type="submit" aria-label="删除 Tag {{ tag.name }}" title="删除 Tag">×</button>
+            <button type="submit" aria-label="删除标签 {{ tag.name }}" title="删除标签">×</button>
           </form>
         </span>
         {% endfor %}
-        {% if not bundle.tags %}<span class="muted">尚无 Tag</span>{% endif %}
+        {% if not bundle.tags %}<span class="muted">尚无标签</span>{% endif %}
       </div>
       <form method="post" action="/items/{{ bundle.item.id }}/tags/add" class="inline-form tag-add-form">
-        <input name="tag" placeholder="添加 Tag" maxlength="64" required autocomplete="off">
+        <input name="tag" placeholder="添加标签" maxlength="64" required autocomplete="off">
         <button type="submit" class="secondary">添加</button>
       </form>
       <div class="detail-actions">
