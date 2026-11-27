@@ -11,7 +11,7 @@ import logging
 import threading
 from collections.abc import Mapping
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any
+from typing import Any, Protocol
 
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
@@ -23,6 +23,18 @@ from prometheus_client import (
 )
 
 logger = logging.getLogger("trove.metrics")
+METRICS_PATH = "/metrics"
+
+
+class ProcessingProbe(Protocol):
+    def queue_depths(self) -> dict[str, int]: ...
+
+    def oldest_lease_age_seconds(self) -> float: ...
+
+
+class RuntimeProbe(Protocol):
+    @property
+    def processing(self) -> ProcessingProbe: ...
 
 REGISTRY = CollectorRegistry(auto_describe=True)
 
@@ -127,26 +139,6 @@ EXTERNAL_CACHE_SAVED_COST = Counter(
     registry=REGISTRY,
 )
 
-_COUNTERS: dict[str, Counter] = {
-    "trove_stage_failures_total": STAGE_FAILURES,
-    "trove_stage_retries_total": STAGE_RETRIES,
-    "trove_stage_dead_total": STAGE_DEAD,
-    "trove_llm_tokens_total": LLM_TOKENS,
-    "trove_llm_cost_usd_total": LLM_COST,
-    "trove_external_cache_hits_total": EXTERNAL_CACHE_HITS,
-    "trove_external_cache_misses_total": EXTERNAL_CACHE_MISSES,
-    "trove_external_cache_saved_asr_seconds_total": EXTERNAL_CACHE_SAVED_ASR_SECONDS,
-    "trove_external_cache_saved_tokens_total": EXTERNAL_CACHE_SAVED_TOKENS,
-    "trove_external_cache_saved_cost_usd_total": EXTERNAL_CACHE_SAVED_COST,
-}
-_HISTOGRAMS: dict[str, Histogram] = {
-    "trove_stage_duration_seconds": STAGE_DURATION,
-    "trove_asr_realtime_factor": ASR_REALTIME_FACTOR,
-    "trove_search_duration_seconds": SEARCH_DURATION,
-    "trove_search_results": SEARCH_RESULTS,
-    "trove_http_request_duration_seconds": HTTP_DURATION,
-}
-
 
 def record_stage_duration(stage: str, outcome: str, seconds: float) -> None:
     STAGE_DURATION.labels(stage=stage, outcome=outcome).observe(seconds)
@@ -211,33 +203,29 @@ def render(
     return generate_latest(REGISTRY)
 
 
-def counter_value(name: str, **labels: Any) -> float:
-    counter = _COUNTERS[name]
-    child = counter.labels(**labels) if labels else counter
-    return child._value.get()
+def render_for_runtime(runtime: RuntimeProbe) -> bytes:
+    return render(
+        queue_depths=runtime.processing.queue_depths(),
+        lease_age_seconds=runtime.processing.oldest_lease_age_seconds(),
+    )
 
 
-def histogram_count(name: str, **labels: Any) -> float:
-    metric = _HISTOGRAMS[name]
-    for family in metric.collect():
-        for sample in family.samples:
-            if not sample.name.endswith("_count"):
-                continue
-            if all(sample.labels.get(key) == str(value) for key, value in labels.items()):
-                return float(sample.value)
-    return 0.0
+def record_external_cache_saved_asr(seconds: float) -> None:
+    EXTERNAL_CACHE_SAVED_ASR_SECONDS.inc(seconds)
 
 
-def reset() -> None:
-    for metric in (*_COUNTERS.values(), *_HISTOGRAMS.values()):
-        metric.clear()
-    QUEUE_DEPTH.clear()
-    WORKER_LEASE_AGE.clear()
+def record_external_cache_saved_tokens(
+    *, input_tokens: int, output_tokens: int, cost_usd: float
+) -> None:
+    EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="input").inc(input_tokens)
+    EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="output").inc(output_tokens)
+    EXTERNAL_CACHE_SAVED_COST.inc(cost_usd)
 
 
 class MetricsServer:
     def __init__(self, server: ThreadingHTTPServer) -> None:
         self._server = server
+        self._started = False
         self.thread = threading.Thread(
             target=server.serve_forever, name="trove-metrics", daemon=True
         )
@@ -247,25 +235,28 @@ class MetricsServer:
         return int(self._server.server_address[1])
 
     def start(self) -> MetricsServer:
-        self.thread.start()
+        if not self._started:
+            self.thread.start()
+            self._started = True
         return self
 
     def stop(self) -> None:
-        self._server.shutdown()
+        if self._started:
+            self._server.shutdown()
+            self.thread.join(timeout=2)
+            self._started = False
         self._server.server_close()
-        self.thread.join(timeout=2)
 
 
-def start_worker_server(runtime: Any, *, host: str, port: int) -> MetricsServer | None:
+def start_worker_server(
+    runtime: RuntimeProbe, *, host: str, port: int
+) -> MetricsServer | None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802 - http.server API
-            if self.path.split("?", 1)[0] != "/metrics":
+            if self.path.split("?", 1)[0] != METRICS_PATH:
                 self.send_error(404)
                 return
-            body = render(
-                queue_depths=runtime.processing.queue_depths(),
-                lease_age_seconds=runtime.processing.oldest_lease_age_seconds(),
-            )
+            body = render_for_runtime(runtime)
             self.send_response(200)
             self.send_header("Content-Type", CONTENT_TYPE_LATEST)
             self.send_header("Content-Length", str(len(body)))
@@ -282,4 +273,4 @@ def start_worker_server(runtime: Any, *, host: str, port: int) -> MetricsServer 
             "metrics server could not bind %s:%s: %s", host, port, exc
         )
         return None
-    return MetricsServer(server)
+    return MetricsServer(server).start()

@@ -557,8 +557,10 @@ class RunCoordinator:
                 )
             session.commit()
         for stage in retried_stages:
+            metrics.record_stage_failure(stage, "run.lease_expired")
             metrics.record_stage_retry(stage)
         for stage in dead_stages:
+            metrics.record_stage_failure(stage, "run.dead")
             metrics.record_stage_dead(stage)
         return reaped
 
@@ -825,7 +827,6 @@ class RunCoordinator:
                             level="warning",
                         )
                         telemetry.mark_error(span, "stage lease lost")
-                        metrics.record_stage_failure(stage, "run.lease_expired")
                         return False
                     session.commit()
                     outcome = "success"

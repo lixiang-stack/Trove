@@ -16,9 +16,9 @@ from trove.domain.retry import (
     max_attempts_for,
     retry_delay_ms,
 )
-from trove.metrics import counter_value
 
 from .conftest import seed_item
+from .metrics_helpers import counter_value
 
 
 def _create_item(api_host, slug: str) -> tuple[str, str]:
@@ -309,6 +309,9 @@ def test_retryable_error_goes_dead_after_max_attempts_and_manual_retry_succeeds(
     item_id, run_id = _create_item(api_host, "retry-dead")
     api_host.stack.downloader.fail_code = "download.network"
     dead_before = counter_value("trove_stage_dead_total", stage="downloading")
+    failures_before = counter_value(
+        "trove_stage_failures_total", stage="downloading", code="download.network"
+    )
 
     for attempt in range(1, 4):
         with api_host.runtime.sessions() as session:
@@ -334,6 +337,12 @@ def test_retryable_error_goes_dead_after_max_attempts_and_manual_retry_succeeds(
         assert run is not None
         assert (run.state, run.error_code) == ("failed", "run.dead")
     assert counter_value("trove_stage_dead_total", stage="downloading") == dead_before + 1
+    assert (
+        counter_value(
+            "trove_stage_failures_total", stage="downloading", code="download.network"
+        )
+        == failures_before + 3
+    )
 
     api_host.stack.downloader.fail_code = None
     response = api_host.client.post(f"/api/items/{item_id}/retry")

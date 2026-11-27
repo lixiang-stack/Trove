@@ -63,7 +63,7 @@ Spec: [spec.md](../spec.md)
 
 ## Implementation
 
-- `trove/metrics.py` owns one process-wide Prometheus registry; collectors are created at import so repeated `create_app` is idempotent. The API serves `/metrics` (auth required) on its normal port; `trove worker` serves its process-local registry on `config.host:[metrics] worker_port` (default 8766). `[metrics] enabled = false` disables the worker listener.
+- `trove/metrics.py` owns one process-wide Prometheus registry; collectors are created at import so repeated `create_app` is idempotent. The API serves `/metrics` (auth required) on its normal port; `trove worker` serves its process-local registry on `[metrics] host:[metrics] worker_port` (default `127.0.0.1:8766`). `[metrics] enabled = false` disables the worker listener; keep the host on loopback unless a collector shares the internal network.
 - Metrics cover stage duration/failures/retries/dead letters, queue depth, oldest lease age, ASR RTF, LLM tokens/cost, search duration/result count, HTTP route-template latency, and the existing external-cache counters (renamed with the `trove_` prefix).
 - Queue depth and lease age are DB probes evaluated at scrape time. `ProcessingService.queue_depths()` and `oldest_lease_age_seconds()` expose them; no stale worker-side gauges.
 - `trove/telemetry.py` installs the OTLP HTTP exporter only when `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` is set; otherwise spans are no-op. HTTP, queue-enqueue, stage, and ASR/LLM/search adapter spans are instrumented once at the executor/adapter boundary.

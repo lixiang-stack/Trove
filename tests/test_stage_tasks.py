@@ -6,9 +6,9 @@ from sqlalchemy import select
 
 from trove.clock import utc_ms
 from trove.db.models import Run, RunStep
-from trove.metrics import counter_value
 
 from .conftest import seed_item
+from .metrics_helpers import counter_value
 
 
 def _create_item(api_host, slug: str) -> tuple[str, str]:
@@ -142,6 +142,9 @@ def test_dependency_blocks_the_next_stage(api_host):
 def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
     _, run_id = _create_item(api_host, "lease-expired")
     retries_before = counter_value("trove_stage_retries_total", stage="downloading")
+    failures_before = counter_value(
+        "trove_stage_failures_total", stage="downloading", code="run.lease_expired"
+    )
     assert api_host.runtime.processing.claim_next(worker_id="worker-1") == run_id
     expired = _task(api_host, run_id, state="running")
     with api_host.runtime.sessions() as session:
@@ -150,6 +153,14 @@ def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
 
     assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
     assert counter_value("trove_stage_retries_total", stage="downloading") == retries_before + 1
+    assert (
+        counter_value(
+            "trove_stage_failures_total",
+            stage="downloading",
+            code="run.lease_expired",
+        )
+        == failures_before + 1
+    )
 
     with api_host.runtime.sessions() as session:
         old = session.get(RunStep, expired.id)
@@ -188,6 +199,9 @@ def test_expired_lease_is_requeued_as_a_new_attempt(api_host):
 def test_expired_lease_goes_dead_after_max_attempts(api_host):
     _, run_id = _create_item(api_host, "lease-dead")
     dead_before = counter_value("trove_stage_dead_total", stage="downloading")
+    failures_before = counter_value(
+        "trove_stage_failures_total", stage="downloading", code="run.dead"
+    )
     assert api_host.runtime.processing.claim_next(worker_id="worker-1") == run_id
     task = _task(api_host, run_id, state="running")
     with api_host.runtime.sessions() as session:
@@ -198,6 +212,12 @@ def test_expired_lease_goes_dead_after_max_attempts(api_host):
 
     assert api_host.runtime.processing.reap_expired(now=utc_ms()) == 1
     assert counter_value("trove_stage_dead_total", stage="downloading") == dead_before + 1
+    assert (
+        counter_value(
+            "trove_stage_failures_total", stage="downloading", code="run.dead"
+        )
+        == failures_before + 1
+    )
 
     with api_host.runtime.sessions() as session:
         dead = session.get(RunStep, task.id)

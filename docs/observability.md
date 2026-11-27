@@ -16,7 +16,8 @@ The API and worker run in separate processes, so Prometheus must scrape both.
 Metrics are process-local; the API endpoint does not proxy worker metrics.
 
 `/metrics` is not a public path. Authenticate with a device token (bearer) or a
-signed-in cookie. To issue a read-only scrape token:
+signed-in cookie. To issue a dedicated scrape token (it has the same API access
+as any device token, so keep it on the Host or a trusted network):
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8765/api/auth/device-token \
@@ -42,11 +43,13 @@ scrape_configs:
 ```
 
 In Docker Compose, scrape `api:8765` with a token and `worker:8766` over the
-internal network. Do not publish the worker metrics port. On a Host exposed
-through Tailscale or Caddy, keep the API endpoint behind auth or expose only the
-scrape path to the collector.
+internal network. The worker listener defaults to `127.0.0.1`, so set
+`[metrics] host = "0.0.0.0"` inside the worker container when the collector is a
+separate container; do not publish that port. On a Host exposed through
+Tailscale or Caddy, keep the API endpoint behind auth or expose only the scrape
+path to the collector.
 
-The worker listener follows `[server] host` and uses
+The worker listener uses `[metrics] host` (default `127.0.0.1`) and
 `[metrics] worker_port` (default `8766`). Disable it with:
 
 ```toml

@@ -322,11 +322,12 @@ class LibraryService:
             if run is None:
                 raise RunNotFoundError("Processing Run not found")
             item = session.get(Item, run.item_id)
-            if item is None or item.deleted_at is not None:
+            if item is None:
                 raise NotFoundError("Content not found")
             bundle = item_bundle(session, item)
             payload = self.run_payload(bundle)
-            assert payload is not None
+            if payload is None:
+                raise RunNotFoundError("Processing Run not found")
             return bundle, payload
 
     def list_items(

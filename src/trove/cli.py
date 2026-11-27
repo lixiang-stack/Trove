@@ -265,7 +265,7 @@ def _worker(config, args) -> int:
     runtime = build_runtime(config)
     metrics_server = (
         metrics.start_worker_server(
-            runtime, host=config.host, port=config.metrics_worker_port
+            runtime, host=config.metrics_host, port=config.metrics_worker_port
         )
         if config.metrics_enabled
         else None

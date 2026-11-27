@@ -23,7 +23,6 @@ from trove.db.models import AiResult, Artifact, Base, Item, ItemTag, Run, Tag
 from trove.domain.cache import AiCacheIdentity, ai_input_sha256
 from trove.domain.items import Platform, SourceType
 from trove.errors import PackageVersionError, ProcessingCancelled, ProcessingError
-from trove.metrics import counter_value
 from trove.ports import (
     AudioResult,
     BookChapterData,
@@ -42,6 +41,8 @@ from trove.services.stages.extract_text import ExtractTextStage
 from trove.services.stages.index import IndexStage
 from trove.services.stages.organize import OrganizeStage
 from trove.services.stages.transcribe import TranscribeStage
+
+from .metrics_helpers import counter_value
 
 
 @dataclass

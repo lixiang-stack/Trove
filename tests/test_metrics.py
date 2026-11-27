@@ -1,18 +1,23 @@
 from __future__ import annotations
 
+import argparse
 import json
 import re
+import socket
 from pathlib import Path
 
 import httpx
 import pytest
 from sqlalchemy import select
 
-from trove import metrics
+from trove import cli, metrics
 from trove.clock import utc_ms
+from trove.config import Config
+from trove.db.engine import upgrade_database
 from trove.db.models import RunStep
 
 from .conftest import seed_item
+from .metrics_helpers import counter_value, histogram_count
 
 EXPECTED_METRICS = {
     "trove_stage_duration_seconds",
@@ -109,14 +114,14 @@ def test_metrics_track_queue_depth_and_oldest_lease(api_host):
 def test_metrics_record_search_latency_and_result_count(host):
     seed_item(host, title="Metrics Searchable Item")
     host.login()
-    before_count = metrics.histogram_count("trove_search_duration_seconds")
-    before_results = metrics.histogram_count("trove_search_results")
+    before_count = histogram_count("trove_search_duration_seconds")
+    before_results = histogram_count("trove_search_results")
 
     response = host.client.get("/api/search", params={"q": "metrics"})
     assert response.status_code == 200
 
-    assert metrics.histogram_count("trove_search_duration_seconds") == before_count + 1
-    assert metrics.histogram_count("trove_search_results") == before_results + 1
+    assert histogram_count("trove_search_duration_seconds") == before_count + 1
+    assert histogram_count("trove_search_results") == before_results + 1
 
 
 @pytest.mark.ffmpeg
@@ -144,10 +149,10 @@ def test_complete_item_records_stage_and_external_call_metrics(host):
             rf'(?=[^}}]*stage="{stage}")[^}}]*\}}',
             text,
         ), stage
-    assert metrics.histogram_count("trove_asr_realtime_factor") > 0
-    assert metrics.counter_value("trove_llm_tokens_total", kind="input") > 0
-    assert metrics.counter_value("trove_llm_tokens_total", kind="output") > 0
-    assert metrics.counter_value("trove_llm_cost_usd_total") > 0
+    assert histogram_count("trove_asr_realtime_factor") > 0
+    assert counter_value("trove_llm_tokens_total", kind="input") > 0
+    assert counter_value("trove_llm_tokens_total", kind="output") > 0
+    assert counter_value("trove_llm_cost_usd_total") > 0
 
 
 def test_stage_failure_metric_uses_stable_error_code(api_host):
@@ -169,7 +174,6 @@ def test_stage_failure_metric_uses_stable_error_code(api_host):
 def test_worker_metrics_server_serves_the_same_registry(api_host):
     server = metrics.start_worker_server(api_host.runtime, host="127.0.0.1", port=0)
     assert server is not None
-    server.start()
     try:
         response = httpx.get(f"http://127.0.0.1:{server.port}/metrics", timeout=5)
         assert response.status_code == 200
@@ -177,6 +181,33 @@ def test_worker_metrics_server_serves_the_same_registry(api_host):
         assert httpx.get(f"http://127.0.0.1:{server.port}/nope", timeout=5).status_code == 404
     finally:
         server.stop()
+
+
+def test_worker_command_starts_and_stops_the_metrics_listener(tmp_path, monkeypatch):
+    port = _free_port()
+    config = Config(home=tmp_path / "Trove", metrics_worker_port=port)
+    config.ensure_layout()
+    upgrade_database(config)
+    monkeypatch.setattr("trove.cli.signal.signal", lambda *_args: None)
+    seen: list[int] = []
+
+    def fake_run_worker(_runtime, _stop_event, *, pools=None):
+        response = httpx.get(f"http://127.0.0.1:{port}/metrics", timeout=5)
+        seen.append(response.status_code)
+
+    monkeypatch.setattr("trove.cli.run_worker", fake_run_worker)
+    args = argparse.Namespace(pool=[], stages=None, concurrency=None)
+
+    assert cli._worker(config, args) == 0
+    assert seen == [200]
+    with pytest.raises(httpx.TransportError):
+        httpx.get(f"http://127.0.0.1:{port}/metrics", timeout=1)
+
+
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
 
 def test_grafana_dashboard_uses_the_documented_metrics():

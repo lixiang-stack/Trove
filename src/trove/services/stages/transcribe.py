@@ -81,7 +81,7 @@ class TranscribeStage:
                     },
                 )
                 metrics.record_external_cache_hit("asr")
-                metrics.EXTERNAL_CACHE_SAVED_ASR_SECONDS.inc(saved_seconds)
+                metrics.record_external_cache_saved_asr(saved_seconds)
                 return
             context.log(
                 "transcript cache miss: "

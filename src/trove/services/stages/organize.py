@@ -195,13 +195,11 @@ class OrganizeStage:
             },
         )
         metrics.record_external_cache_hit("ai")
-        metrics.EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="input").inc(
-            document.input_tokens
+        metrics.record_external_cache_saved_tokens(
+            input_tokens=document.input_tokens,
+            output_tokens=document.output_tokens,
+            cost_usd=document.cost_usd or 0,
         )
-        metrics.EXTERNAL_CACHE_SAVED_TOKENS.labels(kind="output").inc(
-            document.output_tokens
-        )
-        metrics.EXTERNAL_CACHE_SAVED_COST.inc(document.cost_usd or 0)
 
     def _item_text(self, item: Item) -> str:
         transcript = self.package.read_transcript(item.id)

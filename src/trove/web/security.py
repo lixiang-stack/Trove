@@ -62,7 +62,7 @@ def is_api(path: str) -> bool:
 
 
 def wants_json(request: Request) -> bool:
-    return is_api(request.url.path) or request.url.path == "/metrics"
+    return is_api(request.url.path) or request.url.path == metrics.METRICS_PATH
 
 
 def unauthorized(request: Request) -> Response:
@@ -271,7 +271,10 @@ def install_middleware(app) -> None:
             span.set_attribute("http.route", template)
             span.set_attribute("http.response.status_code", response.status_code)
             path = request.url.path
-            if not path.startswith("/static/") and path != "/metrics":
+            if (
+                not path.startswith("/static/")
+                and path != metrics.METRICS_PATH
+            ):
                 metrics.record_http_request(
                     request.method,
                     template,
